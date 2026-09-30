@@ -13,7 +13,7 @@
 | 4. 摄像头注入 | complete | mediaserverd BWNodeOutput hook 和 AVCapture delegate fallback，保留原帧回退 |
 | 5. 打包与验证 | complete | Theos Makefile、安装说明、Python AST/协议/WebSocket/FFmpeg 冒烟检查；iOS deb 需在 macOS/Linux + Theos 上构建 |
 | 6. OBS 控制插件 | complete | OBS Lua 脚本控制虚拟摄像头、发送器和连接状态；Windows 可执行文件 |
-| 7. OBS 验证 | in_progress | dshow 视频传输、启停清理、Lua 语法、本地 Windows ZIP 构建通过；等待 GitHub Actions 构建，OBS 本机安装受网络下载阻碍 |
+| 7. OBS 验证 | in_progress | dshow 视频传输、启停清理、Lua 语法、本地与 GitHub Actions Windows ZIP 构建通过；真实 OBS 面板和 iPhone 直播 App 待设备实测 |
 
 ## Constraints
 - 当前工作区为空，无法复用现成工程。
