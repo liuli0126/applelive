@@ -34,6 +34,16 @@ ffmpeg -list_devices true -f dshow -i dummy
 
 系统声音通常需要 VB-CABLE、Voicemeeter 或声卡的 Stereo Mix 作为 dshow 设备。
 
+## OBS 视频源
+
+使用 OBS 脚本插件时，不需要手动输入下面的命令。独立运行发送器可指定 OBS 虚拟摄像头：
+
+```powershell
+python sender.py --video-device "OBS Virtual Camera" --audio-device "CABLE Output (VB-Audio Virtual Cable)"
+```
+
+OBS 脚本及可执行文件的使用说明见 `../obs-plugin/README.md`。
+
 ## USB
 
-USB 仍然使用 WebSocket。先在电脑侧运行 `sender.py --host 127.0.0.1`，再运行 `usb_forward.ps1` 建立端口转发，tweak 地址填写 `127.0.0.1:8765`。端口转发命令因 iOS/越狱环境而异，脚本会直接调用已安装的 `pymobiledevice3`，不会伪造 USB 已连接状态。
+当前版本尚未实现 USB 传输。`usb_forward.ps1` 会解释为什么普通 usbmux 正向转发不能直接用于现有 iPhone 主动连接的 LAN 协议，不会虚报 USB 已连接。

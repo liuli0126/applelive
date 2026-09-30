@@ -7,18 +7,19 @@
 ## 当前目录
 
 - `desktop_sender/`：Windows 发送端和局域网/USB 端口转发脚本。
+- `obs-plugin/`：OBS 脚本控制面板与 Windows 发送器，安装见 [OBS 插件说明](obs-plugin/README.md)。
 - `ios-tweak/`：Theos + CydiaSubstrate/ElleKit tweak 源码。
 - `findings.md`：协议和越狱注入点记录。
 
 ## 运行链路
 
 ```text
-Windows desktop + audio device
+OBS program or Windows desktop + audio device
           |
           | FFmpeg H.264 / float32 PCM
           v
    WebSocket :8765
-       | LAN or USB port forward
+       | LAN
        v
 iOS tweak -> VideoToolbox -> latest CVPixelBuffer
        |                         |
@@ -65,9 +66,9 @@ python sender.py --host 0.0.0.0 --port 8765 --audio-device "CABLE Output"
 
 `--audio-device` 是 FFmpeg dshow 设备名。系统声音通常需要 VB-CABLE、Voicemeeter 或声卡 Stereo Mix；不传该参数时，视频仍传输，但 tweak 保留手机原始麦克风。
 
-## USB 测试
+## USB 状态
 
-USB 端口转发不属于 WebSocket 协议本身。当前 tweak 是 iPhone 主动连接 PC，因此需要越狱侧的反向 TCP 隧道，把设备 `127.0.0.1:8765` 暴露到电脑；标准 `pymobiledevice3 usbmux forward` 方向相反，不能直接替代。`desktop_sender/usb_forward.ps1` 会明确提示这个前置条件，不会把普通正向转发误报为 USB 已连接。拿到目标越狱方案的 reverse-proxy 命令后，先让发送器监听 `127.0.0.1:8765`，再把 tweak server 配成 `127.0.0.1:8765`。
+当前版本只支持 LAN。USB 需要手机端监听服务或越狱侧反向 TCP 隧道，目前两者尚未接入；`desktop_sender/usb_forward.ps1` 只会提示这一限制，不会虚报 USB 已连接。
 
 ## 限制
 

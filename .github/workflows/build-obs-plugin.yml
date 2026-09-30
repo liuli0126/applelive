@@ -1,0 +1,39 @@
+name: Build AppleLive OBS plugin
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "desktop_sender/**"
+      - "obs-plugin/**"
+      - "scripts/build-obs-plugin.ps1"
+      - ".github/workflows/build-obs-plugin.yml"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install -r desktop_sender/requirements.txt pyinstaller
+
+      - name: Verify protocol
+        run: python desktop_sender/protocol_test.py
+
+      - name: Build portable plugin
+        shell: pwsh
+        run: ./scripts/build-obs-plugin.ps1
+
+      - name: Upload OBS plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppleLive-OBS-Windows
+          path: artifacts/AppleLive-OBS-Windows.zip
+          if-no-files-found: error

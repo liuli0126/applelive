@@ -1,8 +1,7 @@
 """AppleLive desktop capture sender.
 
-FFmpeg captures the Windows desktop as low-latency H.264 Annex-B and, when
-requested, a dshow audio device as float32 PCM. The iOS tweak consumes the
-same messages over Wi-Fi or a USB port forward.
+FFmpeg captures the Windows desktop or OBS Virtual Camera as low-latency
+H.264 Annex-B and, when requested, a dshow audio device as float32 PCM.
 """
 
 from __future__ import annotations
@@ -13,11 +12,12 @@ import contextlib
 import json
 import logging
 import os
+from pathlib import Path
 import shutil
-import signal
 import struct
 import subprocess
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Iterable
 
@@ -77,6 +77,44 @@ class AnnexBParser:
             self._buffer.clear()
             return result
         return None
+
+
+def video_command(args: argparse.Namespace) -> list[str]:
+    command = [args.ffmpeg, "-hide_banner", "-loglevel", "warning"]
+    if args.video_device:
+        command += [
+            "-f", "dshow", "-rtbufsize", "256M", "-framerate", str(args.fps),
+            "-i", f"video={args.video_device}",
+        ]
+    else:
+        command += [
+            "-f", "gdigrab", "-framerate", str(args.fps), "-draw_mouse", "1",
+            "-i", "desktop",
+        ]
+    command += [
+        "-vf", f"scale={args.width}:{args.height}",
+        "-an", "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+        "-pix_fmt", "yuv420p", "-g", str(args.fps), "-keyint_min", str(args.fps),
+        "-f", "h264", "pipe:1",
+    ]
+    return command
+
+
+def write_status(path: str | None, state: str, client_count: int = 0,
+                 error: str | None = None) -> None:
+    if not path:
+        return
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    pending = target.with_name(target.name + ".tmp")
+    pending.write_text(json.dumps({
+        "state": state,
+        "clients": client_count,
+        "pid": os.getpid(),
+        "updated_at": int(time.time()),
+        "error": error,
+    }), encoding="utf-8")
+    os.replace(pending, target)
 
 
 @dataclass(eq=False)
@@ -146,7 +184,7 @@ def drain_stderr(process: subprocess.Popen[bytes], label: str) -> None:
     for line in iter(process.stderr.readline, b""):
         text = line.decode("utf-8", errors="replace").strip()
         if text:
-            LOG.debug("ffmpeg[%s] %s", label, text)
+            LOG.warning("ffmpeg[%s] %s", label, text)
 
 
 def capture_video(process: subprocess.Popen[bytes], broadcaster: Broadcaster,
@@ -154,7 +192,9 @@ def capture_video(process: subprocess.Popen[bytes], broadcaster: Broadcaster,
     assert process.stdout is not None
     parser = AnnexBParser()
     seq = 0
-    for chunk in iter(lambda: process.stdout.read(64 * 1024), b""):
+    # BufferedReader.read(n) waits for n bytes, adding seconds of latency at
+    # low bitrates. read1 returns currently available pipe data immediately.
+    for chunk in iter(lambda: process.stdout.read1(64 * 1024), b""):
         for nal in parser.feed(chunk):
             payload_offset = 4 if nal.startswith(b"\x00\x00\x00\x01") else 3
             nal_type = nal[payload_offset] & 0x1F if len(nal) > payload_offset else 0
@@ -239,46 +279,11 @@ async def send_queues(broadcaster: Broadcaster) -> None:
 
 async def main(args: argparse.Namespace) -> None:
     if shutil.which(args.ffmpeg) is None:
-        raise SystemExit(f"找不到 FFmpeg: {args.ffmpeg}")
+        raise RuntimeError(f"FFmpeg not found: {args.ffmpeg}")
 
     loop = asyncio.get_running_loop()
     broadcaster = Broadcaster(loop)
-    video_cmd = [
-        args.ffmpeg, "-hide_banner", "-loglevel", "warning",
-        "-f", "gdigrab", "-framerate", str(args.fps), "-draw_mouse", "1",
-        "-i", "desktop", "-vf", f"scale={args.width}:{args.height}",
-        "-an", "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-        "-pix_fmt", "yuv420p", "-g", str(args.fps), "-keyint_min", str(args.fps),
-        "-f", "h264", "pipe:1",
-    ]
-    video_process = run_ffmpeg(video_cmd)
-    processes = [video_process]
-    threads = [threading.Thread(target=drain_stderr, args=(video_process, "video"), daemon=True)]
-    threads.append(threading.Thread(target=capture_video,
-                                    args=(video_process, broadcaster, args.width, args.height),
-                                    daemon=True))
-
-    if args.audio_device:
-        audio_cmd = [
-            args.ffmpeg, "-hide_banner", "-loglevel", "warning",
-            "-f", "dshow", "-i", f"audio={args.audio_device}",
-            "-ac", str(args.channels), "-ar", str(args.sample_rate),
-            "-f", "f32le", "pipe:1",
-        ]
-        audio_process = run_ffmpeg(audio_cmd)
-        processes.append(audio_process)
-        threads.extend([
-            threading.Thread(target=drain_stderr, args=(audio_process, "audio"), daemon=True),
-            threading.Thread(target=capture_audio,
-                             args=(audio_process, broadcaster, args.sample_rate, args.channels),
-                             daemon=True),
-        ])
-    else:
-        LOG.warning("未指定 --audio-device，iPhone 将保留原始麦克风输入")
-
-    for thread in threads:
-        thread.start()
-
+    processes: list[subprocess.Popen[bytes]] = []
     async def bound_handler(websocket: ServerConnection, path: str | None = None) -> None:
         await client_handler(websocket, broadcaster)
 
@@ -291,16 +296,58 @@ async def main(args: argparse.Namespace) -> None:
         ping_timeout=10,
     ):
         LOG.info("AppleLive server listening on ws://%s:%d", args.host, args.port)
-        pump_task = asyncio.create_task(send_queues(broadcaster))
+        write_status(args.status_file, "starting")
         try:
-            await asyncio.Future()
+            video_process = run_ffmpeg(video_command(args))
+            processes.append(video_process)
+            threads = [
+                threading.Thread(target=drain_stderr, args=(video_process, "video"), daemon=True),
+                threading.Thread(target=capture_video,
+                                 args=(video_process, broadcaster, args.width, args.height),
+                                 daemon=True),
+            ]
+            if args.audio_device:
+                audio_command = [
+                    args.ffmpeg, "-hide_banner", "-loglevel", "warning",
+                    "-f", "dshow", "-i", f"audio={args.audio_device}",
+                    "-ac", str(args.channels), "-ar", str(args.sample_rate),
+                    "-f", "f32le", "pipe:1",
+                ]
+                audio_process = run_ffmpeg(audio_command)
+                processes.append(audio_process)
+                threads.extend([
+                    threading.Thread(target=drain_stderr, args=(audio_process, "audio"), daemon=True),
+                    threading.Thread(target=capture_audio,
+                                     args=(audio_process, broadcaster, args.sample_rate, args.channels),
+                                     daemon=True),
+                ])
+            else:
+                LOG.warning("No audio device selected; iPhone microphone remains active")
+
+            for thread in threads:
+                thread.start()
+            pump_task = asyncio.create_task(send_queues(broadcaster))
+            try:
+                while True:
+                    if args.stop_file and Path(args.stop_file).exists():
+                        LOG.info("Stop requested")
+                        break
+                    for process in processes:
+                        if process.poll() is not None:
+                            raise RuntimeError(f"FFmpeg exited unexpectedly (code {process.returncode})")
+                    write_status(args.status_file, "running", len(broadcaster.clients))
+                    await asyncio.sleep(0.5)
+            finally:
+                pump_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await pump_task
         finally:
-            pump_task.cancel()
             for process in processes:
                 stop_process_tree(process)
             for process in processes:
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     process.wait(timeout=2)
+            write_status(args.status_file, "stopped")
 
 
 def parse_args() -> argparse.Namespace:
@@ -311,16 +358,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--height", type=int, default=1080)
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--ffmpeg", default="ffmpeg")
-    parser.add_argument("--audio-device", help="Windows dshow 音频设备名，例如 CABLE Output")
+    parser.add_argument("--video-device", help="Windows dshow video device, e.g. OBS Virtual Camera")
+    parser.add_argument("--audio-device", help="Windows dshow audio device, e.g. CABLE Output")
     parser.add_argument("--sample-rate", type=int, default=48000)
     parser.add_argument("--channels", type=int, default=2)
+    parser.add_argument("--status-file", help="JSON status file for OBS integration")
+    parser.add_argument("--stop-file", help="Exit when this file appears")
+    parser.add_argument("--log-file", help="Write logs to this file")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
+    arguments = parse_args()
     logging.basicConfig(level=os.environ.get("APPLELIVE_LOG", "INFO"),
-                        format="%(asctime)s %(levelname)s %(message)s")
+                        format="%(asctime)s %(levelname)s %(message)s",
+                        filename=arguments.log_file, encoding="utf-8")
     try:
-        asyncio.run(main(parse_args()))
+        asyncio.run(main(arguments))
     except KeyboardInterrupt:
         pass
+    except Exception as error:
+        LOG.exception("AppleLive sender failed")
+        write_status(arguments.status_file, "error", error=str(error))
+        raise SystemExit(1)

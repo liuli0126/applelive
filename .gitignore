@@ -3,3 +3,9 @@ __pycache__/
 .venv/
 *.deb
 packages/
+artifacts/
+.build/
+obs-plugin/*.exe
+obs-plugin/applelive-*.json
+obs-plugin/applelive-*.flag
+obs-plugin/applelive-*.log
