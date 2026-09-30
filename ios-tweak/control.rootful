@@ -1,6 +1,6 @@
 Package: com.applelive.tweak
 Name: AppleLive Virtual Camera (iOS 13 rootful)
-Version: 0.1.2
+Version: 0.1.3
 Architecture: iphoneos-arm
 Description: Desktop video and audio source for jailbroken iOS 13 camera apps
 Maintainer: AppleLive

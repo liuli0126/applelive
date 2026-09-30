@@ -44,7 +44,7 @@ try {
   & ssh -p $ForwardPort -o "HostKeyAlias=applelive-$Device" `
     -o StrictHostKeyChecking=accept-new -o ExitOnForwardFailure=yes `
     -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 `
-    -N -T -R "127.0.0.1:8765:127.0.0.1:$Port" root@127.0.0.1
+    -N -T -R "127.0.0.1:8765:127.0.0.1:$Port" mobile@127.0.0.1
   if ($LASTEXITCODE -ne 0) {
     throw "USB tunnel failed. Verify OpenSSH is installed and running on the iPhone, then retry."
   }

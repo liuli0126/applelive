@@ -151,7 +151,7 @@ def select_encoder(ffmpeg: str, requested: str) -> str:
 
 
 def write_status(path: str | None, state: str, client_count: int = 0,
-                 error: str | None = None) -> None:
+                 error: str | None = None, usb_clients: int = 0) -> None:
     if not path:
         return
     target = Path(path)
@@ -160,6 +160,7 @@ def write_status(path: str | None, state: str, client_count: int = 0,
     pending.write_text(json.dumps({
         "state": state,
         "clients": client_count,
+        "usb_clients": usb_clients,
         "pid": os.getpid(),
         "updated_at": int(time.time()),
         "error": error,
@@ -419,7 +420,13 @@ async def main(args: argparse.Namespace) -> None:
                     if last_video and time.monotonic() - last_video > 5:
                         raise RuntimeError("Video capture stalled for more than 5 seconds")
                     state = "running" if last_video else "starting"
-                    write_status(args.status_file, state, len(broadcaster.clients))
+                    usb_clients = sum(
+                        client.websocket.remote_address
+                        and client.websocket.remote_address[0] in ("127.0.0.1", "::1")
+                        for client in tuple(broadcaster.clients)
+                    )
+                    write_status(args.status_file, state, len(broadcaster.clients),
+                                 usb_clients=usb_clients)
                     await asyncio.sleep(0.5)
             finally:
                 pump_task.cancel()

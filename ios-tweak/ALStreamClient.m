@@ -10,6 +10,9 @@ const NSUInteger ALAudioHeaderLength = 12;
 @interface ALStreamClient () {
     NSURLSession *_session;
     NSURLSessionWebSocketTask *_task;
+    NSURLSession *_preferredSession;
+    NSURLSessionWebSocketTask *_preferredTask;
+    dispatch_source_t _preferredTimer;
     dispatch_queue_t _queue;
     BOOL _connected;
     BOOL _stopping;
@@ -17,6 +20,7 @@ const NSUInteger ALAudioHeaderLength = 12;
     NSString *_address;
     NSArray<NSString *> *_addresses;
     NSUInteger _nextAddressIndex;
+    NSUInteger _activeAddressIndex;
 }
 @property(nonatomic, readwrite, getter=isConnected) BOOL connected;
 @property(nonatomic, copy, readwrite) NSString *address;
@@ -54,14 +58,28 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
     dispatch_async(_queue, ^{
         self->_stopping = NO;
         self->_reconnectScheduled = NO;
+        [self _stopPreferredProbeLocked];
         self->_addresses = [validAddresses copy];
         self->_nextAddressIndex = 0;
+        if (self->_addresses.count > 1) {
+            self->_preferredTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, self->_queue);
+            dispatch_source_set_timer(self->_preferredTimer,
+                                      dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
+                                      5 * NSEC_PER_SEC, NSEC_PER_SEC);
+            __weak typeof(self) weakSelf = self;
+            dispatch_source_set_event_handler(self->_preferredTimer, ^{
+                [weakSelf _probePreferredLocked];
+            });
+            dispatch_resume(self->_preferredTimer);
+        }
         [self _connectNextLocked];
     });
 }
 
 - (void)_connectNextLocked {
+    [self _cancelPreferredAttemptLocked];
     [self _disconnectLocked];
+    _activeAddressIndex = _nextAddressIndex;
     NSString *urlString = _addresses[_nextAddressIndex];
     _nextAddressIndex = (_nextAddressIndex + 1) % _addresses.count;
     NSURL *url = [NSURL URLWithString:urlString];
@@ -81,8 +99,39 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
     dispatch_async(_queue, ^{
         self->_stopping = YES;
         self->_reconnectScheduled = NO;
+        [self _stopPreferredProbeLocked];
         [self _disconnectLocked];
     });
+}
+
+- (void)_cancelPreferredAttemptLocked {
+    if (_preferredTask) {
+        [_preferredTask cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
+        _preferredTask = nil;
+    }
+    [_preferredSession invalidateAndCancel];
+    _preferredSession = nil;
+}
+
+- (void)_stopPreferredProbeLocked {
+    [self _cancelPreferredAttemptLocked];
+    if (_preferredTimer) {
+        dispatch_source_cancel(_preferredTimer);
+        _preferredTimer = nil;
+    }
+}
+
+- (void)_probePreferredLocked {
+    if (_stopping || !self.connected || _activeAddressIndex == 0 || _preferredTask) return;
+    NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration defaultSessionConfiguration];
+    configuration.timeoutIntervalForRequest = 2.0;
+    NSOperationQueue *delegateQueue = [[NSOperationQueue alloc] init];
+    delegateQueue.maxConcurrentOperationCount = 1;
+    _preferredSession = [NSURLSession sessionWithConfiguration:configuration
+                                                      delegate:self
+                                                 delegateQueue:delegateQueue];
+    _preferredTask = [_preferredSession webSocketTaskWithURL:[NSURL URLWithString:_addresses[0]]];
+    [_preferredTask resume];
 }
 
 - (void)_disconnectLocked {
@@ -180,6 +229,23 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
 - (void)URLSession:(NSURLSession *)session webSocketTask:(NSURLSessionWebSocketTask *)webSocketTask
 didOpenWithProtocol:(NSString *)protocol {
     dispatch_async(_queue, ^{
+        if (webSocketTask == self->_preferredTask) {
+            NSURLSession *oldSession = self->_session;
+            NSURLSessionWebSocketTask *oldTask = self->_task;
+            self->_session = self->_preferredSession;
+            self->_task = self->_preferredTask;
+            self->_preferredSession = nil;
+            self->_preferredTask = nil;
+            self->_activeAddressIndex = 0;
+            self->_nextAddressIndex = 1;
+            self.address = self->_addresses[0];
+            if (self.onDisconnected) self.onDisconnected();
+            [oldTask cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
+            [oldSession invalidateAndCancel];
+            self.connected = YES;
+            [self _receiveNext];
+            return;
+        }
         if (webSocketTask != self->_task) return;
         self.connected = YES;
         [self _receiveNext];
@@ -192,6 +258,10 @@ didOpenWithProtocol:(NSString *)protocol {
 - (void)URLSession:(NSURLSession *)session webSocketTask:(NSURLSessionWebSocketTask *)webSocketTask
 didCloseWithCode:(NSURLSessionWebSocketCloseCode)closeCode reason:(NSData *)reason {
     dispatch_async(_queue, ^{
+        if (webSocketTask == self->_preferredTask) {
+            [self _cancelPreferredAttemptLocked];
+            return;
+        }
         if (webSocketTask != self->_task) return;
         self.connected = NO;
         if (!self->_stopping) [self _scheduleReconnect];
@@ -206,6 +276,10 @@ didCloseWithCode:(NSURLSessionWebSocketCloseCode)closeCode reason:(NSData *)reas
     if (error) {
         os_log_error(OS_LOG_DEFAULT, "[AppleLive] websocket error: %{public}@", error);
         dispatch_async(_queue, ^{
+            if (task == self->_preferredTask) {
+                [self _cancelPreferredAttemptLocked];
+                return;
+            }
             if (task != self->_task || self->_stopping) return;
             self.connected = NO;
             [self _scheduleReconnect];

@@ -6,7 +6,7 @@ GitHub Actions workflow. The iOS 15 rootless package is not compatible.
 AppleLive is a background camera tweak and does not create a Home Screen icon.
 
 1. In Cydia, verify that Substitute is installed and unc0ver reports jailbroken.
-2. Transfer version 0.1.2 of the rootful `.deb` to the iPhone and install it
+2. Transfer version 0.1.3 of the rootful `.deb` to the iPhone and install it
    with Filza. The package includes an enabled video-only configuration for
    USB `127.0.0.1:8765` and LAN `192.168.1.45:8765` addresses, and restarts
    the camera service after installation. USB is tried first, then LAN.
@@ -17,12 +17,11 @@ AppleLive is a background camera tweak and does not create a Home Screen icon.
    when OBS audio monitoring and the VB-CABLE capture device are configured;
    without PC audio packets it leaves the phone microphone in use.
 
-For USB, install OpenSSH from Cydia and run `desktop_sender/usb_forward.ps1`
-on the PC after the OBS sender starts. Keep the PowerShell window open and
-enter the SSH password locally when prompted. Start the tunnel before opening
-the camera/live app; if the app already connected over LAN, restart the app
-and camera service to prefer USB. This phone currently has no SSH server, so
-USB has not yet passed an end-to-end device test.
+For USB, install OpenSSH from Cydia, select USB in the OBS AppleLive script,
+and click Start. A PowerShell window opens for the SSH password and must stay
+open while streaming. If LAN was already connected, the tweak checks for USB
+every five seconds and switches automatically. This phone currently has no
+SSH server, so USB has not yet passed an end-to-end device test.
 
 If the PC address changes, edit the installed file at
 `/var/mobile/Library/Preferences/com.applelive.tweak.plist`. If the camera

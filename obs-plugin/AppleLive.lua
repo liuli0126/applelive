@@ -9,6 +9,7 @@ if script_dir:sub(-1) ~= "\\" and script_dir:sub(-1) ~= "/" then
     script_dir = script_dir .. separator
 end
 local sender_path = script_dir .. "AppleLiveSender.exe"
+local usb_script_path = script_dir .. "usb_forward.ps1"
 local status_path = script_dir .. "applelive-status.json"
 local stop_path = script_dir .. "applelive-stop.flag"
 local log_path = script_dir .. "applelive-sender.log"
@@ -18,11 +19,15 @@ local width = 720
 local height = 1280
 local fps = 30
 local bitrate_kbps = 5000
+local quality = "standard"
+local connection_mode = "lan"
+local computer_audio = false
+local show_advanced = false
 local encoder = "auto"
 local encoder_preset = "veryfast"
 local video_device = "HD Camera"
 local ffmpeg_path = "ffmpeg"
-local audio_device = ""
+local audio_device = "CABLE Output (VB-Audio Virtual Cable)"
 local owns_virtual_camera = false
 local sender_state = "stopped"
 local launch_started_at = 0
@@ -71,9 +76,9 @@ local function quoted(value)
     return '"' .. value .. '"'
 end
 
-local function status_label(state, clients)
+local function status_label(state, clients, usb_clients)
     if state == "running" then
-        return "运行中 | iPhone 连接数 " .. tostring(clients or 0)
+        return "运行中 | 手机 " .. tostring(clients or 0) .. " | USB " .. tostring(usb_clients or 0)
     elseif state == "starting" then
         return "正在启动"
     elseif state == "stopping" then
@@ -101,6 +106,7 @@ local function refresh_status()
     if not data then return end
     local state = obs.obs_data_get_string(data, "state")
     local clients = obs.obs_data_get_int(data, "clients")
+    local usb_clients = obs.obs_data_get_int(data, "usb_clients")
     local updated_at = obs.obs_data_get_int(data, "updated_at")
     obs.obs_data_release(data)
     if not state then return end
@@ -109,7 +115,7 @@ local function refresh_status()
         status_text = "发送器无响应，请查看日志"
     else
         if state == "running" and file_exists(stop_path) then state = "stopping" end
-        status_text = status_label(state, clients)
+        status_text = status_label(state, clients, usb_clients)
     end
     sender_state = state
     if (state == "error" or state == "stopped") and owns_virtual_camera then
@@ -147,12 +153,17 @@ local function start_sender(props, property)
         log(obs.LOG_ERROR, status_text .. "，请将 exe 放在脚本同一目录")
         return true
     end
+    if connection_mode == "usb" and not file_exists(usb_script_path) then
+        status_text = "找不到 USB 连接脚本"
+        log(obs.LOG_ERROR, status_text)
+        return true
+    end
     if video_device == "" then
         status_text = "请填写视频设备名"
         log(obs.LOG_ERROR, status_text)
         return true
     end
-    for _, value in ipairs({ sender_path, ffmpeg_path, video_device, audio_device, status_path, stop_path, log_path }) do
+    for _, value in ipairs({ sender_path, usb_script_path, ffmpeg_path, video_device, audio_device, status_path, stop_path, log_path }) do
         if not safe_argument(value) then
             status_text = "路径或设备名含不支持的符号"
             log(obs.LOG_ERROR, status_text)
@@ -194,7 +205,7 @@ local function start_sender(props, property)
         ' --status-file ' .. quoted(status_path) ..
         ' --stop-file ' .. quoted(stop_path) ..
         ' --log-file ' .. quoted(log_path)
-    if audio_device ~= "" then
+    if computer_audio and audio_device ~= "" then
         command = command .. ' --audio-device ' .. quoted(audio_device)
     end
 
@@ -208,6 +219,11 @@ local function start_sender(props, property)
     else
         status_text = "正在启动"
         log(obs.LOG_INFO, "发送器已启动，监听端口 " .. port)
+        if connection_mode == "usb" then
+            local usb_command = 'cmd /d /c start "AppleLive USB" powershell.exe -NoProfile -NoExit -ExecutionPolicy Bypass -File ' ..
+                quoted(usb_script_path) .. ' -Port ' .. port
+            os.execute(usb_command)
+        end
     end
     return true
 end
@@ -222,6 +238,10 @@ function script_description()
 end
 
 function script_defaults(settings)
+    obs.obs_data_set_default_string(settings, "quality", "standard")
+    obs.obs_data_set_default_string(settings, "connection_mode", "lan")
+    obs.obs_data_set_default_bool(settings, "computer_audio", false)
+    obs.obs_data_set_default_bool(settings, "show_advanced", false)
     obs.obs_data_set_default_int(settings, "port", 8765)
     obs.obs_data_set_default_int(settings, "width", 720)
     obs.obs_data_set_default_int(settings, "height", 1280)
@@ -231,10 +251,14 @@ function script_defaults(settings)
     obs.obs_data_set_default_string(settings, "encoder_preset", "veryfast")
     obs.obs_data_set_default_string(settings, "video_device", "HD Camera")
     obs.obs_data_set_default_string(settings, "ffmpeg_path", "ffmpeg")
-    obs.obs_data_set_default_string(settings, "audio_device", "")
+    obs.obs_data_set_default_string(settings, "audio_device", "CABLE Output (VB-Audio Virtual Cable)")
 end
 
 function script_update(settings)
+    quality = obs.obs_data_get_string(settings, "quality")
+    connection_mode = obs.obs_data_get_string(settings, "connection_mode")
+    computer_audio = obs.obs_data_get_bool(settings, "computer_audio")
+    show_advanced = obs.obs_data_get_bool(settings, "show_advanced")
     port = obs.obs_data_get_int(settings, "port")
     width = obs.obs_data_get_int(settings, "width")
     height = obs.obs_data_get_int(settings, "height")
@@ -245,12 +269,57 @@ function script_update(settings)
     video_device = obs.obs_data_get_string(settings, "video_device")
     ffmpeg_path = obs.obs_data_get_string(settings, "ffmpeg_path")
     audio_device = obs.obs_data_get_string(settings, "audio_device")
+    if quality == "smooth" then
+        width, height, fps, bitrate_kbps = 540, 960, 30, 3000
+    elseif quality == "standard" then
+        width, height, fps, bitrate_kbps = 720, 1280, 30, 5000
+    elseif quality == "high" then
+        width, height, fps, bitrate_kbps = 1080, 1920, 30, 8000
+    end
+end
+
+local advanced_names = {
+    "port", "width", "height", "fps", "bitrate_kbps", "encoder",
+    "encoder_preset", "video_device", "audio_device", "ffmpeg_path"
+}
+
+local function set_advanced_visibility(props, visible)
+    for _, name in ipairs(advanced_names) do
+        obs.obs_property_set_visible(obs.obs_properties_get(props, name), visible)
+    end
+end
+
+local function advanced_modified(props, property, settings)
+    set_advanced_visibility(props, obs.obs_data_get_bool(settings, "show_advanced"))
+    return true
+end
+
+local function quality_modified(props, property, settings)
+    if obs.obs_data_get_string(settings, "quality") == "custom" then
+        obs.obs_data_set_bool(settings, "show_advanced", true)
+        set_advanced_visibility(props, true)
+    end
+    return true
 end
 
 function script_properties()
     refresh_status()
     local props = obs.obs_properties_create()
     obs.obs_properties_add_text(props, "status", "状态: " .. status_text, obs.OBS_TEXT_INFO)
+    local qualities = obs.obs_properties_add_list(props, "quality", "画质", obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
+    obs.obs_property_list_add_string(qualities, "流畅", "smooth")
+    obs.obs_property_list_add_string(qualities, "标准", "standard")
+    obs.obs_property_list_add_string(qualities, "高清", "high")
+    obs.obs_property_list_add_string(qualities, "自定义", "custom")
+    obs.obs_property_set_modified_callback(qualities, quality_modified)
+    local modes = obs.obs_properties_add_list(props, "connection_mode", "连接方式", obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
+    obs.obs_property_list_add_string(modes, "局域网", "lan")
+    obs.obs_property_list_add_string(modes, "USB 数据线", "usb")
+    obs.obs_properties_add_bool(props, "computer_audio", "传输电脑声音")
+    obs.obs_properties_add_button(props, "start", "启动", start_sender)
+    obs.obs_properties_add_button(props, "stop", "停止", stop_sender)
+    local advanced = obs.obs_properties_add_bool(props, "show_advanced", "高级设置")
+    obs.obs_property_set_modified_callback(advanced, advanced_modified)
     obs.obs_properties_add_int(props, "port", "监听端口", 1024, 65535, 1)
     obs.obs_properties_add_int(props, "width", "输出宽度", 320, 3840, 2)
     obs.obs_properties_add_int(props, "height", "输出高度", 240, 2160, 2)
@@ -267,8 +336,7 @@ function script_properties()
     obs.obs_properties_add_text(props, "video_device", "视频设备 (dshow)", obs.OBS_TEXT_DEFAULT)
     obs.obs_properties_add_text(props, "audio_device", "音频设备 (dshow)", obs.OBS_TEXT_DEFAULT)
     obs.obs_properties_add_text(props, "ffmpeg_path", "FFmpeg 路径", obs.OBS_TEXT_DEFAULT)
-    obs.obs_properties_add_button(props, "start", "启动传输", start_sender)
-    obs.obs_properties_add_button(props, "stop", "停止传输", stop_sender)
+    set_advanced_visibility(props, show_advanced)
     return props
 end
 

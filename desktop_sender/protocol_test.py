@@ -108,6 +108,7 @@ def test_status_file_is_atomic_and_readable():
         result = json.loads(status_file.read_text(encoding="utf-8"))
         assert result["state"] == "running"
         assert result["clients"] == 1
+        assert result["usb_clients"] == 0
         assert result["updated_at"] > 0
         assert not (Path(directory) / "status.json.tmp").exists()
 
