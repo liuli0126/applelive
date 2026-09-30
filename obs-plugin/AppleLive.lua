@@ -111,8 +111,8 @@ local function refresh_status()
     obs.obs_data_release(data)
     if not state then return end
     if updated_at > 0 and os.time() - updated_at > 5 then
-        state = "error"
-        status_text = "发送器无响应，请查看日志"
+        state = "stopped"
+        status_text = "未启动"
     else
         if state == "running" and file_exists(stop_path) then state = "stopping" end
         status_text = status_label(state, clients, usb_clients)
