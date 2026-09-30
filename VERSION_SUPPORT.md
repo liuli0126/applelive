@@ -7,6 +7,7 @@ LordVCAM 的版本范围不能直接作为本项目的兼容承诺。它依赖�
 | 设备 | iOS | 预计越狱环境 | 目标状态 |
 |---|---|---|---|
 | iPhone 11 (A13) | 15.6 | Dopamine 2 / rootless / ElleKit | 首先实机完成 LAN、USB、抖音和 TikTok |
+| iPhone 11 (A13) | 13.3 | unc0ver / rootful / Substitute | 单独构建 rootful 包，先实机验证 LAN 和相机注入 |
 
 这个目标完成后，再复制公共协议和解码层，只替换相机注入适配器。
 

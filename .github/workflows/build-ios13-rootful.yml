@@ -1,0 +1,41 @@
+name: Build AppleLive iOS 13 rootful deb
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ios-tweak/**"
+      - ".github/workflows/build-ios13-rootful.yml"
+
+jobs:
+  build-rootful:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install ldid dpkg make perl
+
+      - name: Install Theos and SDKs
+        env:
+          THEOS: ${{ runner.temp }}/theos
+        run: |
+          git clone --depth 1 --recursive https://github.com/theos/theos.git "$THEOS"
+          git clone --depth 1 https://github.com/theos/sdks.git "$RUNNER_TEMP/theos-sdks"
+          mkdir -p "$THEOS/sdks"
+          cp -R "$RUNNER_TEMP/theos-sdks/." "$THEOS/sdks/"
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+
+      - name: Select iOS 13 rootful package metadata
+        run: cp ios-tweak/control.rootful ios-tweak/control
+
+      - name: Build rootful package
+        run: make -C ios-tweak package FINALPACKAGE=1 TARGET=iphone:clang:16.5:13.0
+
+      - name: Upload deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppleLive-iOS13-rootful-deb
+          path: ios-tweak/packages/*_iphoneos-arm.deb
+          if-no-files-found: error

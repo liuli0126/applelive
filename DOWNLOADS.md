@@ -51,7 +51,7 @@ Windows 只能用于桌面发送端。你没有 Mac 时，不需要购买 Mac：
 
 ## 目标设备说明
 
-你提供的 iPhone 11 / iOS 15.6 是第一目标。这个组合通常使用 Dopamine 2 rootless，但请先在手机上确认是否已经安装 Sileo/Zebra 和 ElleKit；不要仅凭型号下载越狱包。
+目前展示的设备是 iPhone 11 / iOS 13.3 / unc0ver + Substitute，应使用独立的 rootful 包；此前按 iOS 15.6 / Dopamine rootless 构建的包不能安装到这台设备。见 `IOS13_ROOTFUL.md`。
 
 LordVCAM 标注的多个系统范围不等于一个 tweak 二进制可以无差别覆盖所有系统。本项目会先完成 iOS 15.6，再为 iOS 17/18 和后续版本增加独立的相机注入适配器。详细策略见 `VERSION_SUPPORT.md`。
 

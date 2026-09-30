@@ -44,6 +44,10 @@ make package FINALPACKAGE=1
 
 有 GitHub 账号时，直接按 [GITHUB_BUILD.md](E:\1\applelive\GITHUB_BUILD.md) 上传项目并运行 Actions，无需 Mac。
 
+## iOS 13.3 / unc0ver
+
+iPhone 11 / iOS 13.3 / unc0ver + Substitute 使用单独的 rootful 包，不能安装上面的 rootless `.deb`。构建与安装步骤见 [IOS13_ROOTFUL.md](IOS13_ROOTFUL.md)。
+
 安装后创建 `/var/mobile/Library/Preferences/com.applelive.tweak.plist`（rootless 设备也可放在 `/var/jb/var/mobile/Library/Preferences/`）：
 
 ```plist
