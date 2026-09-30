@@ -100,14 +100,20 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
 
     os_unfair_lock_lock(&_lock);
     if (nalType == 7) {
-        _sps = [NSData dataWithBytes:payload length:payloadLength];
-        [self resetSessionLocked];
+        NSData *sps = [NSData dataWithBytes:payload length:payloadLength];
+        if (![_sps isEqualToData:sps]) {
+            _sps = sps;
+            [self resetSessionLocked];
+        }
         os_unfair_lock_unlock(&_lock);
         return;
     }
     if (nalType == 8) {
-        _pps = [NSData dataWithBytes:payload length:payloadLength];
-        [self resetSessionLocked];
+        NSData *pps = [NSData dataWithBytes:payload length:payloadLength];
+        if (![_pps isEqualToData:pps]) {
+            _pps = pps;
+            [self resetSessionLocked];
+        }
         os_unfair_lock_unlock(&_lock);
         return;
     }

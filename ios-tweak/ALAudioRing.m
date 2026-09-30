@@ -2,7 +2,7 @@
 #import <os/lock.h>
 #import <string.h>
 
-static const NSUInteger kALRingCapacity = 48000 * 2 * 2;
+static const NSUInteger kALRingCapacity = 48000 * 2 / 5; // 200 ms at 48 kHz stereo
 
 @implementation ALAudioRing {
     float *_buffer;

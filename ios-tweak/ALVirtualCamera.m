@@ -188,6 +188,11 @@ static void ALInstallHooks(void) {
                                uint32_t channels, double rate) {
             [weakSelf.audioRing pushSamples:samples count:count channels:channels sampleRate:rate];
         };
+        _client.onDisconnected = ^{
+            [weakSelf.decoder reset];
+            [weakSelf.frameStore clear];
+            [weakSelf.audioRing clear];
+        };
     }
     return self;
 }
@@ -208,10 +213,12 @@ static void ALInstallHooks(void) {
     }
     self.enabled = [preferences[@"enabled"] boolValue];
     NSString *server = [preferences[@"server"] isKindOfClass:[NSString class]] ? preferences[@"server"] : nil;
+    NSArray *servers = [preferences[@"servers"] isKindOfClass:[NSArray class]] ? preferences[@"servers"] : nil;
     self.audioRing.active = [preferences[@"audioEnabled"] boolValue];
-    if (self.enabled && server.length) {
-        [self.client connectToAddress:server];
-        os_log(OS_LOG_DEFAULT, "[AppleLive] connecting to %{public}@", server);
+    if (self.enabled && (servers.count || server.length)) {
+        if (servers.count) [self.client connectToAddresses:servers];
+        else [self.client connectToAddress:server];
+        os_log(OS_LOG_DEFAULT, "[AppleLive] connecting to configured servers");
     } else {
         os_log(OS_LOG_DEFAULT, "[AppleLive] disabled or server not configured");
     }

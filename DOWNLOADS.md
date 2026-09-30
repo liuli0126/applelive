@@ -8,8 +8,8 @@
 
 - 已越狱的 iPhone，记录型号、iOS 小版本、越狱工具名称和版本。
 - 与越狱类型匹配的注入框架：ElleKit、Substitute 或 libhooker，通常由 Sileo/Zebra 自动安装。
-- Sileo 或 Zebra，用来安装最终的 `.deb`。
-- OpenSSH，方便通过 USB/LAN 部署、读取日志和重启 `mediaserverd`。
+- Cydia、Sileo 或 Zebra，用来安装最终的 `.deb`。
+- 仅 USB 模式需要 OpenSSH。目标 iPhone 当前没有开放 SSH 22 端口，需从 Cydia 安装并启动。
 
 建议：
 
@@ -51,9 +51,9 @@ Windows 只能用于桌面发送端。你没有 Mac 时，不需要购买 Mac：
 
 ## 目标设备说明
 
-目前展示的设备是 iPhone 11 / iOS 13.3 / unc0ver + Substitute，应使用独立的 rootful 包；此前按 iOS 15.6 / Dopamine rootless 构建的包不能安装到这台设备。见 `IOS13_ROOTFUL.md`。
+目前展示的设备是 iPhone 11 / iOS 13.3 / unc0ver + Substitute，应使用独立的 rootful 包；此前按 iOS 15.6 / Dopamine rootless 构建的包不能安装到这台设备。见 `IOS13_ROOTFUL.md`。该包已内置连接地址，不需单独传配置文件。
 
-LordVCAM 标注的多个系统范围不等于一个 tweak 二进制可以无差别覆盖所有系统。本项目会先完成 iOS 15.6，再为 iOS 17/18 和后续版本增加独立的相机注入适配器。详细策略见 `VERSION_SUPPORT.md`。
+LordVCAM 标注的多个系统范围不等于一个 tweak 二进制可以无差别覆盖所有系统。本项目当前优先验证 iOS 13.3；其他版本需要分别编译和测试相机注入点。详细策略见 `VERSION_SUPPORT.md`。
 
 ## 3. Windows 桌面发送端
 
@@ -87,11 +87,11 @@ LAN 模式现在可以直接使用：
 python sender.py --host 0.0.0.0 --port 8765 --audio-device "CABLE Output (VB-Audio Virtual Cable)"
 ```
 
-USB 模式需要把架构切换为“手机端监听 WebSocket，电脑通过 usbmux 正向连接”。这样可以使用 `pymobiledevice3 usbmux forward`，不依赖不确定的反向隧道；当前代码的 LAN 模式是手机主动连接电脑，USB 监听器仍需针对第一目标设备实现和实测。
+USB 模式复用 LAN WebSocket 协议，电脑通过 `pymobiledevice3 usbmux forward` 连手机 OpenSSH，再通过 SSH `-R` 将手机的 `127.0.0.1:8765` 接回电脑发送器。电脑已有 `pymobiledevice3` 和 `ssh.exe`；手机需安装 OpenSSH。运行 `desktop_sender/usb_forward.ps1` 后保持窗口开启。当前手机 SSH 22 端口未开放，USB 尚未完成实机验证。
 
 ## 5. 还需要你提供的信息
 
-下载前请回复以下内容，才能把插件编译目标、注入过滤器、部署命令和 USB 方案固定下来：
+其他设备或直播 App 适配时，请提供以下信息：
 
 1. iPhone 型号、iOS 精确版本。
 2. 越狱工具和版本，rootless/rootful。

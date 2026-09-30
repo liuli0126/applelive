@@ -27,7 +27,20 @@ from websockets.server import ServerConnection
 LOG = logging.getLogger("applelive.sender")
 VIDEO_HEADER = struct.Struct("<4sIIII")
 AUDIO_HEADER = struct.Struct("<4sII")
-MAX_CLIENT_QUEUE = 64
+MAX_CLIENT_QUEUE = 24
+
+
+def video_nal_type(payload: bytes) -> int:
+    if not payload.startswith(b"fram") or len(payload) < VIDEO_HEADER.size + 4:
+        return 0
+    start = VIDEO_HEADER.size
+    if payload[start:start + 4] == b"\x00\x00\x00\x01":
+        offset = start + 4
+    elif payload[start:start + 3] == b"\x00\x00\x01":
+        offset = start + 3
+    else:
+        return 0
+    return payload[offset] & 0x1F if len(payload) > offset else 0
 
 
 class AnnexBParser:
@@ -80,10 +93,11 @@ class AnnexBParser:
 
 
 def video_command(args: argparse.Namespace) -> list[str]:
+    gop_frames = max(args.fps // 2, 1)
     command = [args.ffmpeg, "-hide_banner", "-loglevel", "warning"]
     if args.video_device:
         command += [
-            "-f", "dshow", "-rtbufsize", "256M", "-framerate", str(args.fps),
+            "-f", "dshow", "-rtbufsize", "16M", "-framerate", str(args.fps),
             "-i", f"video={args.video_device}",
         ]
     else:
@@ -92,12 +106,48 @@ def video_command(args: argparse.Namespace) -> list[str]:
             "-i", "desktop",
         ]
     command += [
-        "-vf", f"scale={args.width}:{args.height}",
-        "-an", "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-        "-pix_fmt", "yuv420p", "-g", str(args.fps), "-keyint_min", str(args.fps),
+        "-vf", (f"scale={args.width}:{args.height}:force_original_aspect_ratio=decrease:"
+                f"force_divisible_by=2,pad={args.width}:{args.height}:(ow-iw)/2:(oh-ih)/2"),
+        "-an",
+    ]
+    if args.encoder == "nvenc":
+        command += [
+            "-c:v", "h264_nvenc", "-preset", "p4", "-tune", "ull",
+            "-rc", "vbr", "-zerolatency", "1", "-delay", "0",
+            "-forced-idr", "1",
+        ]
+    else:
+        command += [
+            "-c:v", "libx264", "-preset", args.encoder_preset,
+            "-tune", "zerolatency", "-sc_threshold", "0",
+            "-keyint_min", str(gop_frames),
+            "-x264-params", "repeat-headers=1",
+        ]
+    command += [
+        "-pix_fmt", "yuv420p",
+        "-b:v", f"{args.bitrate_kbps}k", "-maxrate", f"{args.bitrate_kbps}k",
+        "-bufsize", f"{max(args.bitrate_kbps // 2, 500)}k",
+        "-g", str(gop_frames), "-bf", "0",
         "-f", "h264", "pipe:1",
     ]
     return command
+
+
+def select_encoder(ffmpeg: str, requested: str) -> str:
+    if requested == "x264":
+        return requested
+    probe = [ffmpeg, "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+             "-i", "color=s=256x256:r=1", "-frames:v", "1", "-c:v", "h264_nvenc",
+             "-f", "null", "-"]
+    try:
+        available = subprocess.run(probe, capture_output=True, timeout=6, check=False).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        available = False
+    if available:
+        return "nvenc"
+    if requested == "nvenc":
+        raise RuntimeError("NVIDIA NVENC is unavailable; select x264 or auto")
+    return "x264"
 
 
 def write_status(path: str | None, state: str, client_count: int = 0,
@@ -123,6 +173,7 @@ class Client:
     queue: asyncio.Queue[bytes] = field(
         default_factory=lambda: asyncio.Queue(MAX_CLIENT_QUEUE)
     )
+    waiting_for_keyframe: bool = True
 
 
 class Broadcaster:
@@ -131,6 +182,9 @@ class Broadcaster:
         self.clients: set[Client] = set()
         self._lock = threading.Lock()
         self.sequence = 0
+        self._sps: bytes | None = None
+        self._pps: bytes | None = None
+        self.last_video_frame_at = 0.0
 
     async def add(self, websocket: ServerConnection) -> Client:
         client = Client(websocket)
@@ -152,16 +206,31 @@ class Broadcaster:
 
     def publish(self, payload: bytes) -> None:
         """Schedule a non-blocking enqueue on the asyncio thread."""
+        nal_type = video_nal_type(payload)
+        if nal_type in (1, 5):
+            self.last_video_frame_at = time.monotonic()
+
         def enqueue() -> None:
+            if nal_type == 7:
+                self._sps = payload
+            elif nal_type == 8:
+                self._pps = payload
             with self._lock:
                 clients = tuple(self.clients)
             for client in clients:
                 if client.queue.full():
-                    # Dropping the oldest packet keeps the stream live and bounded.
-                    with contextlib.suppress(asyncio.QueueEmpty):
+                    # A partial inter-frame GOP is unusable after packet loss.
+                    while not client.queue.empty():
                         client.queue.get_nowait()
-                with contextlib.suppress(asyncio.QueueFull):
-                    client.queue.put_nowait(payload)
+                    client.waiting_for_keyframe = True
+                if nal_type:
+                    if client.waiting_for_keyframe:
+                        if nal_type != 5 or not self._sps or not self._pps:
+                            continue
+                        client.queue.put_nowait(self._sps)
+                        client.queue.put_nowait(self._pps)
+                        client.waiting_for_keyframe = False
+                client.queue.put_nowait(payload)
 
         self.loop.call_soon_threadsafe(enqueue)
 
@@ -198,6 +267,8 @@ def capture_video(process: subprocess.Popen[bytes], broadcaster: Broadcaster,
         for nal in parser.feed(chunk):
             payload_offset = 4 if nal.startswith(b"\x00\x00\x00\x01") else 3
             nal_type = nal[payload_offset] & 0x1F if len(nal) > payload_offset else 0
+            if nal_type in (6, 9, 12):
+                continue
             flags = 1 if nal_type == 5 else 0
             payload = VIDEO_HEADER.pack(b"fram", seq, flags, width, height) + nal
             broadcaster.publish(payload)
@@ -211,13 +282,16 @@ def capture_audio(process: subprocess.Popen[bytes], broadcaster: Broadcaster,
                   sample_rate: int, channels: int) -> None:
     assert process.stdout is not None
     bytes_per_sample = 4 * channels
-    read_size = 4800 * bytes_per_sample  # 100 ms at 48 kHz; avoids starving video NALs
-    for chunk in iter(lambda: process.stdout.read(read_size), b""):
+    read_size = max(sample_rate // 50, 1) * bytes_per_sample  # About 20 ms.
+    remainder = b""
+    for chunk in iter(lambda: process.stdout.read1(read_size), b""):
         if not chunk:
             break
+        chunk = remainder + chunk
         usable = len(chunk) - (len(chunk) % bytes_per_sample)
         if usable:
             broadcaster.publish(AUDIO_HEADER.pack(b"audi", sample_rate, channels) + chunk[:usable])
+        remainder = chunk[usable:]
 
 
 def stop_process_tree(process: subprocess.Popen[bytes]) -> None:
@@ -280,6 +354,8 @@ async def send_queues(broadcaster: Broadcaster) -> None:
 async def main(args: argparse.Namespace) -> None:
     if shutil.which(args.ffmpeg) is None:
         raise RuntimeError(f"FFmpeg not found: {args.ffmpeg}")
+    args.encoder = select_encoder(args.ffmpeg, args.encoder)
+    LOG.info("using %s H.264 encoder", args.encoder)
 
     loop = asyncio.get_running_loop()
     broadcaster = Broadcaster(loop)
@@ -294,6 +370,7 @@ async def main(args: argparse.Namespace) -> None:
         max_size=8 * 1024 * 1024,
         ping_interval=5,
         ping_timeout=10,
+        compression=None,
     ):
         LOG.info("AppleLive server listening on ws://%s:%d", args.host, args.port)
         write_status(args.status_file, "starting")
@@ -328,6 +405,7 @@ async def main(args: argparse.Namespace) -> None:
                 thread.start()
             pump_task = asyncio.create_task(send_queues(broadcaster))
             try:
+                capture_started_at = time.monotonic()
                 while True:
                     if args.stop_file and Path(args.stop_file).exists():
                         LOG.info("Stop requested")
@@ -335,7 +413,13 @@ async def main(args: argparse.Namespace) -> None:
                     for process in processes:
                         if process.poll() is not None:
                             raise RuntimeError(f"FFmpeg exited unexpectedly (code {process.returncode})")
-                    write_status(args.status_file, "running", len(broadcaster.clients))
+                    last_video = broadcaster.last_video_frame_at
+                    if not last_video and time.monotonic() - capture_started_at > 8:
+                        raise RuntimeError("No video frames received from FFmpeg; check the selected video device and OBS Virtual Camera")
+                    if last_video and time.monotonic() - last_video > 5:
+                        raise RuntimeError("Video capture stalled for more than 5 seconds")
+                    state = "running" if last_video else "starting"
+                    write_status(args.status_file, state, len(broadcaster.clients))
                     await asyncio.sleep(0.5)
             finally:
                 pump_task.cancel()
@@ -357,6 +441,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--width", type=int, default=1920)
     parser.add_argument("--height", type=int, default=1080)
     parser.add_argument("--fps", type=int, default=30)
+    parser.add_argument("--bitrate-kbps", type=int, default=5000)
+    parser.add_argument("--encoder", choices=("auto", "nvenc", "x264"), default="auto")
+    parser.add_argument("--encoder-preset", choices=("ultrafast", "superfast", "veryfast", "faster", "fast"), default="veryfast")
     parser.add_argument("--ffmpeg", default="ffmpeg")
     parser.add_argument("--video-device", help="Windows dshow video device, e.g. OBS Virtual Camera")
     parser.add_argument("--audio-device", help="Windows dshow audio device, e.g. CABLE Output")
@@ -365,7 +452,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--status-file", help="JSON status file for OBS integration")
     parser.add_argument("--stop-file", help="Exit when this file appears")
     parser.add_argument("--log-file", help="Write logs to this file")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.width % 2 or args.height % 2 or args.width < 320 or args.height < 240:
+        parser.error("width and height must be even and at least 320x240")
+    if not 1 <= args.fps <= 60 or not 500 <= args.bitrate_kbps <= 30000:
+        parser.error("fps must be 1-60 and bitrate must be 500-30000 kbps")
+    return args
 
 
 if __name__ == "__main__":

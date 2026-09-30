@@ -4,9 +4,12 @@
 <dict>
     <key>enabled</key>
     <true/>
-    <key>server</key>
-    <string>192.168.1.45:8765</string>
+    <key>servers</key>
+    <array>
+        <string>127.0.0.1:8765</string>
+        <string>192.168.1.45:8765</string>
+    </array>
     <key>audioEnabled</key>
-    <false/>
+    <true/>
 </dict>
 </plist>

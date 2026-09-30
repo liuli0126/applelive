@@ -1,13 +1,15 @@
 # AppleLive OBS 控制插件 (Windows)
 
-这是通过 OBS **工具 → 脚本**加载的 Lua 插件，不是放入 `obs-plugins` 目录的 DLL。它控制同目录下的 `AppleLiveSender.exe`。OBS 的画布就是预览，发送源是 OBS Virtual Camera 的节目画面；场景切换、文字、摄像头和媒体源都会进入 iPhone 画面。
+这是通过 OBS **工具 → 脚本**加载的 Lua 插件，不是放入 `obs-plugins` 目录的 DLL。它控制同目录下的 `AppleLiveSender.exe`。OBS 的画布就是预览，发送源是 OBS 虚拟摄像头的节目画面；场景切换、文字、摄像头和媒体源都会进入 iPhone 画面。
 
 ## 准备
 
-1. 安装 [OBS Studio 30+](https://obsproject.com/download) 和 [FFmpeg Windows 构建](https://www.gyan.dev/ffmpeg/builds/)。把 `ffmpeg.exe` 加入 PATH，或在脚本面板填写完整路径。
-2. 解压 `AppleLive-OBS-Windows.zip`，将 `AppleLive.lua` 和 `AppleLiveSender.exe` 保持在同一个可写目录，例如用户的文档目录。
+1. 使用现有 OBS 和 FFmpeg。把 `ffmpeg.exe` 加入 PATH，或在脚本面板填写完整路径。
+2. 解压 `AppleLive-OBS-Windows.zip`，将 `AppleLive.lua`、`AppleLiveSender.exe` 和 `usb_forward.ps1` 保持在同一个可写目录，例如用户的文档目录。
 3. 在 OBS 中打开 **工具 → 脚本**，点击 `+`，选择 `AppleLive.lua`。
-4. 在脚本面板设置输出宽度、高度、帧率和音频设备，点击 **启动传输**。脚本会自动启动 OBS 虚拟摄像头。iPhone 连接后，重新打开脚本面板可看到连接数。点击 **停止传输**可关闭发送器。
+4. 在脚本面板设置视频设备、输出宽度、高度、帧率、码率和音频设备，点击 **启动传输**。识别到 OBS 虚拟摄像头时，脚本会自动启动它。iPhone 连接后，重新打开脚本面板可看到连接数。点击 **停止传输**可关闭发送器。
+
+这台定制 OBS 的虚拟摄像头在 Windows 中注册为 `HD Camera`，默认值已对应它，源格式为 1080×1920/30 fps。其他 OBS 安装通常使用 `OBS Virtual Camera`；可用 `ffmpeg -list_devices true -f dshow -i dummy` 核对精确名称。默认输出为 720×1280/30 fps、5 Mbps，自动优先 NVIDIA NVENC，硬件不可用时使用 CPU `veryfast`。约每半秒发送关键帧。网络稳定且编码器跟得上时，可将码率调到 8 Mbps 或分辨率调到 1080×1920；若 OBS 出现渲染丢帧，应先降低场景负载或帧率。
 
 当前构建的可执行文件在本项目 `obs-plugin/AppleLiveSender.exe`；重新构建用：
 
@@ -35,6 +37,6 @@ ffmpeg -list_devices true -f dshow -i dummy
 
 ## iPhone 连接
 
-当前 OBS 插件使用 LAN。iPhone 越狱插件配置中的 `server` 填电脑的局域网 IPv4 地址和端口，例如 `192.168.1.20:8765`。Windows 防火墙需要允许 AppleLiveSender 的入站连接。OBS 脚本面板的“状态”显示发送器状态和 iPhone 连接数；更详细的错误在同目录的 `applelive-sender.log`。
+LAN 模式下，iPhone 越狱插件配置中的 `server` 填电脑的局域网 IPv4 地址和端口，例如 `192.168.1.20:8765`。Windows 防火墙需要允许 AppleLiveSender 的入站连接。OBS 脚本面板的“状态”显示发送器状态和 iPhone 连接数；更详细的错误在同目录的 `applelive-sender.log`。
 
-电脑端安装包现可进行 LAN 链路测试；iPhone 摄像头替换、抖音和 TikTok 的实际效果仍需在目标越狱设备上验证。USB 所需的 iPhone 端监听器和电脑端 usbmux 客户端尚未实现，当前版本不能以 USB 连接使用。
+USB 模式需先在 iPhone 的 Cydia 安装并启动 OpenSSH，再在电脑上运行压缩包内的 `usb_forward.ps1`，保持窗口开启。iOS 13 一体包优先连接 USB 回环地址，USB 不可用时回退到 LAN。当前手机的 22 端口未开放，因此 USB 链路还不能完成实机验证；抖音和 TikTok 的相机替换也仍需实测。

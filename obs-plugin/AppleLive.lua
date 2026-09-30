@@ -14,9 +14,13 @@ local stop_path = script_dir .. "applelive-stop.flag"
 local log_path = script_dir .. "applelive-sender.log"
 
 local port = 8765
-local width = 1280
-local height = 720
+local width = 720
+local height = 1280
 local fps = 30
+local bitrate_kbps = 5000
+local encoder = "auto"
+local encoder_preset = "veryfast"
+local video_device = "HD Camera"
 local ffmpeg_path = "ffmpeg"
 local audio_device = ""
 local owns_virtual_camera = false
@@ -143,7 +147,12 @@ local function start_sender(props, property)
         log(obs.LOG_ERROR, status_text .. "，请将 exe 放在脚本同一目录")
         return true
     end
-    for _, value in ipairs({ sender_path, ffmpeg_path, audio_device, status_path, stop_path, log_path }) do
+    if video_device == "" then
+        status_text = "请填写视频设备名"
+        log(obs.LOG_ERROR, status_text)
+        return true
+    end
+    for _, value in ipairs({ sender_path, ffmpeg_path, video_device, audio_device, status_path, stop_path, log_path }) do
         if not safe_argument(value) then
             status_text = "路径或设备名含不支持的符号"
             log(obs.LOG_ERROR, status_text)
@@ -159,23 +168,28 @@ local function start_sender(props, property)
 
     os.remove(stop_path)
     os.remove(status_path)
-    if not obs.obs_frontend_virtualcam_active() then
-        obs.obs_frontend_start_virtualcam()
-        owns_virtual_camera = true
-    end
-    if not obs.obs_frontend_virtualcam_active() then
-        owns_virtual_camera = false
-        status_text = "OBS 虚拟摄像头启动失败"
-        log(obs.LOG_ERROR, status_text)
-        return true
+    if video_device == "OBS Virtual Camera" or video_device == "HD Camera" then
+        if not obs.obs_frontend_virtualcam_active() then
+            obs.obs_frontend_start_virtualcam()
+            owns_virtual_camera = true
+        end
+        if not obs.obs_frontend_virtualcam_active() then
+            owns_virtual_camera = false
+            status_text = "OBS 虚拟摄像头启动失败"
+            log(obs.LOG_ERROR, status_text)
+            return true
+        end
     end
 
     sender_state = "starting"
     launch_started_at = os.time()
     local command = 'cmd /d /c start "" /min ' .. quoted(sender_path) ..
         ' --host "0.0.0.0" --port ' .. port ..
-        ' --video-device "OBS Virtual Camera"' ..
+        ' --video-device ' .. quoted(video_device) ..
         ' --width ' .. width .. ' --height ' .. height .. ' --fps ' .. fps ..
+        ' --bitrate-kbps ' .. bitrate_kbps ..
+        ' --encoder ' .. quoted(encoder) ..
+        ' --encoder-preset ' .. quoted(encoder_preset) ..
         ' --ffmpeg ' .. quoted(ffmpeg_path) ..
         ' --status-file ' .. quoted(status_path) ..
         ' --stop-file ' .. quoted(stop_path) ..
@@ -209,9 +223,13 @@ end
 
 function script_defaults(settings)
     obs.obs_data_set_default_int(settings, "port", 8765)
-    obs.obs_data_set_default_int(settings, "width", 1280)
-    obs.obs_data_set_default_int(settings, "height", 720)
+    obs.obs_data_set_default_int(settings, "width", 720)
+    obs.obs_data_set_default_int(settings, "height", 1280)
     obs.obs_data_set_default_int(settings, "fps", 30)
+    obs.obs_data_set_default_int(settings, "bitrate_kbps", 5000)
+    obs.obs_data_set_default_string(settings, "encoder", "auto")
+    obs.obs_data_set_default_string(settings, "encoder_preset", "veryfast")
+    obs.obs_data_set_default_string(settings, "video_device", "HD Camera")
     obs.obs_data_set_default_string(settings, "ffmpeg_path", "ffmpeg")
     obs.obs_data_set_default_string(settings, "audio_device", "")
 end
@@ -221,6 +239,10 @@ function script_update(settings)
     width = obs.obs_data_get_int(settings, "width")
     height = obs.obs_data_get_int(settings, "height")
     fps = obs.obs_data_get_int(settings, "fps")
+    bitrate_kbps = obs.obs_data_get_int(settings, "bitrate_kbps")
+    encoder = obs.obs_data_get_string(settings, "encoder")
+    encoder_preset = obs.obs_data_get_string(settings, "encoder_preset")
+    video_device = obs.obs_data_get_string(settings, "video_device")
     ffmpeg_path = obs.obs_data_get_string(settings, "ffmpeg_path")
     audio_device = obs.obs_data_get_string(settings, "audio_device")
 end
@@ -233,6 +255,16 @@ function script_properties()
     obs.obs_properties_add_int(props, "width", "输出宽度", 320, 3840, 2)
     obs.obs_properties_add_int(props, "height", "输出高度", 240, 2160, 2)
     obs.obs_properties_add_int(props, "fps", "帧率", 1, 60, 1)
+    obs.obs_properties_add_int(props, "bitrate_kbps", "视频码率 (kbps)", 500, 30000, 100)
+    local encoders = obs.obs_properties_add_list(props, "encoder", "H.264 编码器", obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
+    obs.obs_property_list_add_string(encoders, "自动", "auto")
+    obs.obs_property_list_add_string(encoders, "NVIDIA NVENC", "nvenc")
+    obs.obs_property_list_add_string(encoders, "CPU x264", "x264")
+    local presets = obs.obs_properties_add_list(props, "encoder_preset", "CPU 编码速度", obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
+    for _, preset in ipairs({ "ultrafast", "superfast", "veryfast", "faster", "fast" }) do
+        obs.obs_property_list_add_string(presets, preset, preset)
+    end
+    obs.obs_properties_add_text(props, "video_device", "视频设备 (dshow)", obs.OBS_TEXT_DEFAULT)
     obs.obs_properties_add_text(props, "audio_device", "音频设备 (dshow)", obs.OBS_TEXT_DEFAULT)
     obs.obs_properties_add_text(props, "ffmpeg_path", "FFmpeg 路径", obs.OBS_TEXT_DEFAULT)
     obs.obs_properties_add_button(props, "start", "启动传输", start_sender)

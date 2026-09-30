@@ -12,6 +12,9 @@ $build = Join-Path $projectRoot ".build\obs-plugin"
   --specpath $build $sender
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
 
+Copy-Item -LiteralPath (Join-Path $projectRoot "desktop_sender\usb_forward.ps1") `
+  -Destination (Join-Path $output "usb_forward.ps1") -Force
+
 Write-Host "OBS plugin files: $output"
 Write-Host "Load AppleLive.lua from OBS Tools > Scripts. Keep AppleLiveSender.exe next to it."
 
@@ -21,6 +24,7 @@ $archive = Join-Path $artifactDirectory "AppleLive-OBS-Windows.zip"
 Compress-Archive -LiteralPath @(
   (Join-Path $output "AppleLive.lua"),
   (Join-Path $output "AppleLiveSender.exe"),
+  (Join-Path $output "usb_forward.ps1"),
   (Join-Path $output "README.md")
 ) -DestinationPath $archive -Force
 Write-Host "Portable OBS plugin: $archive"

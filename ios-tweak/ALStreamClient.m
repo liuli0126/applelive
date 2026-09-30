@@ -15,6 +15,8 @@ const NSUInteger ALAudioHeaderLength = 12;
     BOOL _stopping;
     BOOL _reconnectScheduled;
     NSString *_address;
+    NSArray<NSString *> *_addresses;
+    NSUInteger _nextAddressIndex;
 }
 @property(nonatomic, readwrite, getter=isConnected) BOOL connected;
 @property(nonatomic, copy, readwrite) NSString *address;
@@ -34,31 +36,45 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
 }
 
 - (void)connectToAddress:(NSString *)address {
-    if (!address.length) return;
-    dispatch_async(_queue, ^{
-        self->_stopping = NO;
-        self->_reconnectScheduled = NO;
-        [self _disconnectLocked];
+    [self connectToAddresses:address.length ? @[address] : @[]];
+}
+
+- (void)connectToAddresses:(NSArray<NSString *> *)addresses {
+    NSMutableArray<NSString *> *validAddresses = [NSMutableArray array];
+    for (id address in addresses) {
+        if (![address isKindOfClass:[NSString class]] || ![address length]) continue;
         NSString *urlString = address;
         if (![urlString hasPrefix:@"ws://"] && ![urlString hasPrefix:@"wss://"]) {
             urlString = [NSString stringWithFormat:@"ws://%@", urlString];
         }
         NSURL *url = [NSURL URLWithString:urlString];
-        if (!url || !url.host) {
-            os_log_error(OS_LOG_DEFAULT, "[AppleLive] invalid server address: %{public}@", address);
-            return;
-        }
-        self.address = urlString;
-        NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration defaultSessionConfiguration];
-        configuration.timeoutIntervalForRequest = 10.0;
-        NSOperationQueue *delegateQueue = [[NSOperationQueue alloc] init];
-        delegateQueue.maxConcurrentOperationCount = 1;
-        self->_session = [NSURLSession sessionWithConfiguration:configuration
-                                                       delegate:self
-                                                  delegateQueue:delegateQueue];
-        self->_task = [self->_session webSocketTaskWithURL:url];
-        [self->_task resume];
+        if (url.host.length) [validAddresses addObject:urlString];
+    }
+    if (!validAddresses.count) return;
+    dispatch_async(_queue, ^{
+        self->_stopping = NO;
+        self->_reconnectScheduled = NO;
+        self->_addresses = [validAddresses copy];
+        self->_nextAddressIndex = 0;
+        [self _connectNextLocked];
     });
+}
+
+- (void)_connectNextLocked {
+    [self _disconnectLocked];
+    NSString *urlString = _addresses[_nextAddressIndex];
+    _nextAddressIndex = (_nextAddressIndex + 1) % _addresses.count;
+    NSURL *url = [NSURL URLWithString:urlString];
+    self.address = urlString;
+    NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration defaultSessionConfiguration];
+    configuration.timeoutIntervalForRequest = 3.0;
+    NSOperationQueue *delegateQueue = [[NSOperationQueue alloc] init];
+    delegateQueue.maxConcurrentOperationCount = 1;
+    self->_session = [NSURLSession sessionWithConfiguration:configuration
+                                                   delegate:self
+                                              delegateQueue:delegateQueue];
+    self->_task = [self->_session webSocketTaskWithURL:url];
+    [self->_task resume];
 }
 
 - (void)disconnect {
@@ -105,14 +121,14 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
 
 - (void)_scheduleReconnect {
     if (_stopping || _reconnectScheduled) return;
-    NSString *address = self.address;
-    if (!address.length) return;
+    if (!_addresses.count) return;
+    if (self.onDisconnected) self.onDisconnected();
     _reconnectScheduled = YES;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), _queue, ^{
+    NSTimeInterval delay = _nextAddressIndex == 0 ? 2.0 : 0.2;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), _queue, ^{
+        self->_reconnectScheduled = NO;
         if (!self->_stopping && !self.connected) {
-            [self connectToAddress:address];
-        } else {
-            self->_reconnectScheduled = NO;
+            [self _connectNextLocked];
         }
     });
 }

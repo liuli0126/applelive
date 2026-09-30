@@ -48,7 +48,7 @@ make package FINALPACKAGE=1
 
 iPhone 11 / iOS 13.3 / unc0ver + Substitute 使用单独的 rootful 包，不能安装上面的 rootless `.deb`。构建与安装步骤见 [IOS13_ROOTFUL.md](IOS13_ROOTFUL.md)。
 
-安装后创建 `/var/mobile/Library/Preferences/com.applelive.tweak.plist`（rootless 设备也可放在 `/var/jb/var/mobile/Library/Preferences/`）：
+通用包安装后可在 `/var/mobile/Library/Preferences/com.applelive.tweak.plist` 配置（rootless 设备也可放在 `/var/jb/var/mobile/Library/Preferences/`）。iOS 13 rootful 一体包已内置默认地址，无需单独传配置文件：
 
 ```plist
 {
@@ -72,7 +72,7 @@ python sender.py --host 0.0.0.0 --port 8765 --audio-device "CABLE Output"
 
 ## USB 状态
 
-当前版本只支持 LAN。USB 需要手机端监听服务或越狱侧反向 TCP 隧道，目前两者尚未接入；`desktop_sender/usb_forward.ps1` 只会提示这一限制，不会虚报 USB 已连接。
+USB 通过 `pymobiledevice3` 正向转发至 iPhone OpenSSH，再由 SSH 建立反向隧道，让手机从 `127.0.0.1:8765` 连接电脑发送器。目标手机目前没有开放 SSH 22 端口，需先在 Cydia 安装 OpenSSH；`desktop_sender/usb_forward.ps1` 已在无 SSH 情况下验证会明确报错。iOS 13 rootful 包优先尝试 USB，再回退到 LAN。USB 画面、声音及直播 App 注入效果仍需手机实测。
 
 ## 限制
 
