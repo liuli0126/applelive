@@ -1,6 +1,6 @@
 {
     Filter = {
         Bundles = ("com.apple.camera", "com.ss.iphone.ugc.Aweme", "com.zhiliaoapp.musically");
-        Executables = ("mediaserverd", "SpringBoard");
+        Executables = ("mediaserverd");
     };
 }

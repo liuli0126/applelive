@@ -17,6 +17,6 @@ AppleLive_LIBRARIES = substrate
 AppleLive_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)
 AppleLive_CCFLAGS = $(AppleLive_CFLAGS)
 
-INSTALL_TARGET_PROCESSES = mediaserverd SpringBoard
+INSTALL_TARGET_PROCESSES = mediaserverd
 
 include $(THEOS_MAKE_PATH)/tweak.mk

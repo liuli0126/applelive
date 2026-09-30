@@ -27,8 +27,14 @@ jobs:
           cp -R "$RUNNER_TEMP/theos-sdks/." "$THEOS/sdks/"
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
 
-      - name: Select iOS 13 rootful package metadata
-        run: cp ios-tweak/control.rootful ios-tweak/control
+      - name: Prepare iOS 13 rootful package
+        run: |
+          cp ios-tweak/control.rootful ios-tweak/control
+          mkdir -p ios-tweak/layout/var/mobile/Library/Preferences ios-tweak/layout/DEBIAN
+          cp ios-tweak/ios13-default.plist ios-tweak/layout/var/mobile/Library/Preferences/com.applelive.tweak.plist
+          cp ios-tweak/postinst.rootful ios-tweak/layout/DEBIAN/postinst
+          chmod 644 ios-tweak/layout/var/mobile/Library/Preferences/com.applelive.tweak.plist
+          chmod 755 ios-tweak/layout/DEBIAN/postinst
 
       - name: Build rootful package
         run: make -C ios-tweak package FINALPACKAGE=1 TARGET=iphone:clang:16.5:13.0

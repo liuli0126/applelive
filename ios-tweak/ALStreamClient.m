@@ -13,6 +13,7 @@ const NSUInteger ALAudioHeaderLength = 12;
     dispatch_queue_t _queue;
     BOOL _connected;
     BOOL _stopping;
+    BOOL _reconnectScheduled;
     NSString *_address;
 }
 @property(nonatomic, readwrite, getter=isConnected) BOOL connected;
@@ -36,6 +37,7 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
     if (!address.length) return;
     dispatch_async(_queue, ^{
         self->_stopping = NO;
+        self->_reconnectScheduled = NO;
         [self _disconnectLocked];
         NSString *urlString = address;
         if (![urlString hasPrefix:@"ws://"] && ![urlString hasPrefix:@"wss://"]) {
@@ -62,6 +64,7 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
 - (void)disconnect {
     dispatch_async(_queue, ^{
         self->_stopping = YES;
+        self->_reconnectScheduled = NO;
         [self _disconnectLocked];
     });
 }
@@ -84,6 +87,7 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
         __strong typeof(weakSelf) self = weakSelf;
         if (!self) return;
         dispatch_async(self->_queue, ^{
+            if (task != self->_task) return;
             if (error) {
                 self.connected = NO;
                 if (!self->_stopping) [self _scheduleReconnect];
@@ -100,10 +104,16 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
 }
 
 - (void)_scheduleReconnect {
+    if (_stopping || _reconnectScheduled) return;
     NSString *address = self.address;
     if (!address.length) return;
+    _reconnectScheduled = YES;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), _queue, ^{
-        if (!self->_stopping && !self.connected) [self connectToAddress:address];
+        if (!self->_stopping && !self.connected) {
+            [self connectToAddress:address];
+        } else {
+            self->_reconnectScheduled = NO;
+        }
     });
 }
 
@@ -154,6 +164,7 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
 - (void)URLSession:(NSURLSession *)session webSocketTask:(NSURLSessionWebSocketTask *)webSocketTask
 didOpenWithProtocol:(NSString *)protocol {
     dispatch_async(_queue, ^{
+        if (webSocketTask != self->_task) return;
         self.connected = YES;
         [self _receiveNext];
     });
@@ -165,6 +176,7 @@ didOpenWithProtocol:(NSString *)protocol {
 - (void)URLSession:(NSURLSession *)session webSocketTask:(NSURLSessionWebSocketTask *)webSocketTask
 didCloseWithCode:(NSURLSessionWebSocketCloseCode)closeCode reason:(NSData *)reason {
     dispatch_async(_queue, ^{
+        if (webSocketTask != self->_task) return;
         self.connected = NO;
         if (!self->_stopping) [self _scheduleReconnect];
     });
@@ -175,9 +187,15 @@ didCloseWithCode:(NSURLSessionWebSocketCloseCode)closeCode reason:(NSData *)reas
 }
 
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
-    if (error) os_log_error(OS_LOG_DEFAULT, "[AppleLive] websocket error: %{public}@", error);
+    if (error) {
+        os_log_error(OS_LOG_DEFAULT, "[AppleLive] websocket error: %{public}@", error);
+        dispatch_async(_queue, ^{
+            if (task != self->_task || self->_stopping) return;
+            self.connected = NO;
+            [self _scheduleReconnect];
+        });
+    }
     (void)session;
-    (void)task;
 }
 
 @end
