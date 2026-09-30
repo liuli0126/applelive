@@ -1,0 +1,6 @@
+{
+    Filter = {
+        Bundles = ("com.apple.UIKit", "com.apple.mediaserverd", "com.apple.springboard");
+        Executables = ("mediaserverd", "SpringBoard");
+    };
+}

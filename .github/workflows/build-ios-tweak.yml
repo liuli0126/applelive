@@ -1,0 +1,37 @@
+name: Build AppleLive rootless deb
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ios-tweak/**"
+      - ".github/workflows/build-ios-tweak.yml"
+
+jobs:
+  build-rootless:
+    # The runner provides Xcode and the iPhoneOS toolchain without a local Mac.
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install ldid dpkg make perl
+
+      - name: Install Theos and SDKs
+        env:
+          THEOS: ${{ runner.temp }}/theos
+        run: |
+          git clone --depth 1 --recursive https://github.com/theos/theos.git "$THEOS"
+          git clone --depth 1 https://github.com/theos/sdks.git "$THEOS/sdks"
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+
+      - name: Build rootless package
+        run: make -C ios-tweak package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+
+      - name: Upload deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppleLive-rootless-deb
+          path: ios-tweak/packages/*.deb
+          if-no-files-found: error
