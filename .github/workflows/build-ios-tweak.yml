@@ -23,7 +23,9 @@ jobs:
           THEOS: ${{ runner.temp }}/theos
         run: |
           git clone --depth 1 --recursive https://github.com/theos/theos.git "$THEOS"
-          git clone --depth 1 https://github.com/theos/sdks.git "$THEOS/sdks"
+          git clone --depth 1 https://github.com/theos/sdks.git "$RUNNER_TEMP/theos-sdks"
+          mkdir -p "$THEOS/sdks"
+          cp -R "$RUNNER_TEMP/theos-sdks/." "$THEOS/sdks/"
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
 
       - name: Build rootless package
