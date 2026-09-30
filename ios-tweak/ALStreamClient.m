@@ -115,7 +115,11 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
         if (pong) {
             NSString *value = [[NSString alloc] initWithData:pong encoding:NSUTF8StringEncoding];
             [_task sendMessage:[[NSURLSessionWebSocketMessage alloc] initWithString:value]
-             completionHandler:nil];
+             completionHandler:^(NSError *error) {
+                if (error) {
+                    os_log_error(OS_LOG_DEFAULT, "[AppleLive] pong send failed: %{public}@", error);
+                }
+            }];
         }
     }
 }
