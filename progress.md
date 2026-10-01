@@ -6,6 +6,9 @@
 - Adding a filename address profile, app-local connection notifications, signed-byte-preserving downloads and an OBS QR download dialog. OBS Windows CI will include the matching dylib from a reusable workflow in the same run. QR dependency is installed only in CI, not on the user's machine.
 - Retain original iOS13.3 phone and existing Vacm dylib on the iOS15.6 phone. Independent injection needs our deb filter disabled before verification. USB still requires the existing SSH setup; audio and broader OS compatibility remain unverified.
 - Reviewed standalone controls and removed their Darwin-notification dependency as well: app-local rotation/mirror/audio control delivery and app-owned defaults. Standalone initialization no longer imports legacy global enable flags.
+- Latest sourcebcbb96c passed all CI builds: standalone36827733454, OBS36827733643, rootless36827733461, rootful36827733500. Same-run standalone artifact434720bytes SHA2565ad87f29784a8fbfd22170b30f0387bf163df95a34a3cbe8c503f063e3b6fe92 verified locally and uploaded as AppleLive-192.168.1.45-8765.dylib into the existing injector Documents. Phone copy hash matches.
+- Disabled only our own /var/jb/usr/lib/TweakInject/AppleLive.plist by renaming it .disabled-injector-test, restarted Aweme/mediaserverd and opened wiki.qaq.TrollFools. OBS connections dropped from2 to1 as expected. User asked to import the file normally and report the target preview; no claim of standalone success yet.
+- Git API commit publication hit one transient error; retry with stderr inspection succeeded. Large OBS artifact download via gh stalled; using a fresh signed download URL and stripping API authorization on the cross-host redirect. An extraction attempted before the first download finished failed harmlessly; no installed files changed yet.
 
 ## 2026-10-01 iOS15.6 Dopamine LAN test
 

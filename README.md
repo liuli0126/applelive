@@ -9,6 +9,7 @@
 - `desktop_sender/`：Windows 发送端和局域网/USB 端口转发脚本。
 - `obs-plugin/`：OBS 浏览器停靠面板、Lua 控制桥接与 Windows 发送器，安装见 [OBS 插件说明](obs-plugin/README.md)。
 - `ios-tweak/`：Theos + CydiaSubstrate/ElleKit tweak 源码。
+- `ios-injector/`：单文件 App 注入库，不链接外部注入框架，使用说明见 [注入器交付](ios-injector/README.md)。
 - `findings.md`：协议和越狱注入点记录。
 
 ## 运行链路
@@ -28,6 +29,8 @@ iOS tweak -> VideoToolbox -> latest CVPixelBuffer
 ```
 
 ## 构建 iOS tweak
+
+批量手机优先使用 OBS 导出的 `.dylib`：在「安装手机插件」中扫码或下载，通过手机已有注入器导入目标 App。文件带上电脑地址，首次打开时自动保存到该 App。局域网使用不需要 SSH，也无需安装我们的 deb。独立注入的实际兼容范围见 [注入器交付](ios-injector/README.md)，不能根据最低构建版本推断所有新 iOS 均支持。
 
 在 macOS/Linux 安装 Theos 和 iPhoneOS SDK 后：
 
