@@ -324,7 +324,13 @@
     }];
     save.enabled = ALParseComputerAddress(alert.textFields.firstObject.text, NULL, NULL);
     [alert addAction:save];
-    NSArray *windows = self.window.windowScene ? self.window.windowScene.windows : UIApplication.sharedApplication.windows;
+    NSArray *windows = self.window.windowScene.windows;
+    if (!windows) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        windows = UIApplication.sharedApplication.windows; // Legacy apps without scenes on iOS 13.
+#pragma clang diagnostic pop
+    }
     for (UIWindow *window in windows) if (window.isKeyWindow && window != self.window) self.previousKeyWindow = window;
     [self.window makeKeyWindow];
     [self.window.rootViewController presentViewController:alert animated:YES completion:nil];
