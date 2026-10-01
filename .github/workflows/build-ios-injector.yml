@@ -100,9 +100,10 @@ jobs:
           mkdir -p relink/objects/arm64 relink/objects/arm64e
           make -C ios-injector all FINALPACKAGE=1 ARCHS=arm64 TARGET=iphone:clang:16.5:14.0
           cp ios-injector/.theos/obj/AppleLive.dylib "$RUNNER_TEMP/AppleLive-arm64.dylib"
-          find ios-injector/.theos/obj -path '*/arm64/*' -name '*.o' -exec cp '{}' relink/objects/arm64/ \;
+          find -L ios-injector/.theos/obj -name '*.o' -exec cp '{}' relink/objects/arm64/ \;
+          make -C ios-injector clean
           make -C ios-injector all FINALPACKAGE=1 ARCHS=arm64e TARGET=iphone:clang:16.5:15.0
-          find ios-injector/.theos/obj -path '*/arm64e/*' -name '*.o' -exec cp '{}' relink/objects/arm64e/ \;
+          find -L ios-injector/.theos/obj -name '*.o' -exec cp '{}' relink/objects/arm64e/ \;
           xcrun lipo -create "$RUNNER_TEMP/AppleLive-arm64.dylib" ios-injector/.theos/obj/AppleLive.dylib -output injector-artifact/AppleLive.dylib
           ldid -S injector-artifact/AppleLive.dylib
           cp .build/ios-ffmpeg/universal/FFmpeg-*.txt injector-artifact/

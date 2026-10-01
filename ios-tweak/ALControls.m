@@ -31,6 +31,7 @@ NSDictionary *ALDefaultControls(NSString *bundleIdentifier) {
              @"rotation": @0, @"cameraPortrait": @([bundleIdentifier isEqualToString:@"com.apple.camera"])};
 }
 
+#ifndef APPLELIVE_STANDALONE
 static uint64_t ALEncodeControls(NSDictionary *controls) {
     return kALControlMagic |
         ([controls[@"enabled"] boolValue] ? 1 : 0) |
@@ -47,6 +48,7 @@ static NSDictionary *ALDecodeControls(uint64_t state) {
              @"mirror": @((state & 4) != 0), @"fill": @((state & 8) != 0),
              @"rotation": @((state >> 4) & 3), @"cameraPortrait": @((state & 64) != 0)};
 }
+#endif
 
 NSDictionary *ALLoadAppControls(void) {
     NSMutableDictionary *controls = [ALDefaultControls(NSBundle.mainBundle.bundleIdentifier) mutableCopy];

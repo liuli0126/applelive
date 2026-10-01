@@ -59,6 +59,7 @@ jobs:
           choco install ffmpeg -y --no-progress
           $env:Path = "C:\ProgramData\chocolatey\bin;$env:Path"
           python desktop_sender/stream_server_test.py
+          python desktop_sender/tee_test.py
           ./scripts/build-obs-plugin.ps1
 
       - name: Upload OBS plugin

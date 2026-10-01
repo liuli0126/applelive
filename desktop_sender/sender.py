@@ -145,8 +145,9 @@ def video_command(args: argparse.Namespace) -> list[str]:
         "-g", str(gop_frames), "-bf", "0",
     ]
     if rtmp_url:
+        command += ["-flags:v", "+global_header"]
         command += ["-f", "tee", "-use_fifo", "1", "-fifo_options", "attempt_recovery=1:recover_any_error=1:recovery_wait_time=1",
-                    f"[select=v:f=h264]pipe:1|[onfail=ignore:f=flv:flush_packets=1:flvflags=no_duration_filesize]{rtmp_url}"]
+                    f"[select=v:bsfs/v=h264_mp4toannexb,dump_extra=freq=keyframe:f=h264]pipe:1|[onfail=ignore:f=flv:flush_packets=1:flvflags=no_duration_filesize]{rtmp_url}"]
     else:
         command += ["-f", "h264", "pipe:1"]
     return command
