@@ -80,3 +80,10 @@
 - Fixed sandboxed connection persistence via mediaserverd NSUserDefaults and iOS15 deprecation for legacy keyboard focus fallback. Dock protocol/control/transport tests pass. Final real-device PC-only USB/LAN switch verification is running; audio, TikTok, and latency remain unverified.
 
 - Final device transport test passed: switched solely through the PC control API from LAN to USB and back to LAN; the phone followed each change. USB listener refused the PC LAN address; LAN server rejected USB tunnel handshake with HTTP403. Evidence: artifacts/dock-transport-verification.json. Current user-selected settings are LAN and high (1080x1920/30fps/8Mbps), audio off; preserved. OBS scene JSON confirms settings persistence. Local ZIP bytes match current Lua, README and web assets.
+
+- Windows CI run 36810659851 passed protocol, HTTP dock, and transport handshake tests and produced the OBS ZIP. iOS0.1.9 device log confirmed 1080x1920 decoding/rendering on LAN. Log also exposed a stale frame in the app fallback after a transport change; preparing 0.1.10 with 750ms frame expiry, cleared media timestamps, and 5-second stalled-stream reconnect. This avoids a frozen app buffer replacing current system camera frames.
+
+- Final stability repairs shipped: iOS0.1.10 rootful/rootless CI both passed (36811369644 / 36811369526). Installed rootful package directly, 55,400 bytes, SHA256 ab81a5b3a7137aa35eac43d69f6558d85341ca5b4bcbed811023389a7063c849.
+- Reproduced Windows status-file sharing failure with a real reader handle; status writes now retry and skip transient failures rather than terminating video. Stopped status is published after the WebSocket listener closes.
+- Dock helper previously could exit on a single transient bridge-file read gap. It now caches the recent heartbeat and watches the actual OBS process handle. LuaJIT native PID call verified; running helper launched with OBS PID23600.
+- Final Windows CI36811840389 passed and rebuilt the distributable. Local ZIP is updated; LAN high-quality transmission restarted with two receivers and audio off. User needs only stop/select/start on PC; phone no longer presents a competing transport selector.
