@@ -13,6 +13,13 @@
   <p id="error" role="alert" hidden></p>
   <button id="toggle" type="button" disabled>正在准备…</button>
   <p id="settings_hint" class="hint center">设置自动保存</p>
+  <button id="phone_plugin" type="button" class="secondary" disabled>安装手机插件</button>
+  <dialog id="plugin_dialog" aria-labelledby="plugin_title">
+    <div class="dialog_head"><h2 id="plugin_title">手机插件</h2><button id="close_plugin" type="button" aria-label="关闭" title="关闭">&#215;</button></div>
+    <label for="plugin_host" id="plugin_host_label">电脑地址</label><select id="plugin_host"></select>
+    <div class="qr_area"><img id="plugin_qr" alt="手机插件下载二维码" width="240" height="240" hidden><p id="plugin_message" role="status"></p></div>
+    <a id="download_plugin" class="download_button" download>下载 .dylib</a>
+  </dialog>
   <details><summary>连接和声音帮助</summary><p>连接方式只在电脑选择，手机自动跟随。切换时先停止传输，选择方式，再开始。</p><p>局域网：手机与电脑连接同一路由器，在手机悬浮窗填写上方电脑地址。</p><p>USB：手机需要 OpenSSH。首次连接按提示完成配对；已配对设备会自动连接。</p><p>声音：在 OBS 中将要传输的声音「监听并输出」至 CABLE Input，再打开手机悬浮窗的「电脑声音」。</p><p>高级参数位于 OBS「工具 → 脚本 → AppleLive」。</p></details>
   <footer>手机内点蓝色悬浮按钮，可调整画面方向和比例。</footer>
 </main><script src="app.js"></script></body></html>

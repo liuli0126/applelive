@@ -8,6 +8,12 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $sender = Join-Path $projectRoot "desktop_sender\sender.py"
 $output = Join-Path $projectRoot "obs-plugin"
 $build = Join-Path $projectRoot ".build\obs-plugin"
+$phonePlugin = Join-Path $output "phone-plugin\AppleLive.dylib"
+if (-not (Test-Path -LiteralPath $phonePlugin)) {
+  throw "Missing phone-plugin/AppleLive.dylib. Download the injector build artifact first."
+}
+& $Python (Join-Path $projectRoot "scripts\verify-injector-dylib.py") $phonePlugin
+if ($LASTEXITCODE -ne 0) { throw "Phone library verification failed" }
 
 if (-not $SkipSender) {
   & $Python -m PyInstaller --noconfirm --clean --onefile --noconsole `
@@ -37,6 +43,7 @@ Compress-Archive -LiteralPath @(
   (Join-Path $output "AppleLiveSender.exe"),
   (Join-Path $output "AppleLiveDock.exe"),
   (Join-Path $output "dock"),
+  (Join-Path $output "phone-plugin"),
   (Join-Path $output "usb_forward.ps1"),
   (Join-Path $output "README.md")
 ) -DestinationPath $archive -Force

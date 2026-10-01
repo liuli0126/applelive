@@ -25,6 +25,9 @@ from typing import Iterable
 
 import websockets
 from websockets.asyncio.server import ServerConnection, serve
+from websockets.datastructures import Headers
+from websockets.http11 import Response
+from phone_plugin import download_name, plugin_directory, plugin_path
 
 LOG = logging.getLogger("applelive.sender")
 VIDEO_HEADER = struct.Struct("<4sIIII")
@@ -372,8 +375,24 @@ async def send_queues(broadcaster: Broadcaster) -> None:
         await asyncio.sleep(0.25)
 
 
-def connection_filter(mode: str):
-    def check(connection, _request):
+def connection_filter(mode: str, directory: Path | None = None):
+    def check(connection, request):
+        if request.path == "/phone-plugin":
+            if mode == "usb":
+                return connection.respond(HTTPStatus.FORBIDDEN, "Select LAN on the computer to download the phone plugin.\n")
+            try:
+                host, port = connection.local_address[:2]
+                name = download_name(host, port)
+                body = plugin_path(directory or plugin_directory()).read_bytes()
+            except ValueError:
+                return connection.respond(HTTPStatus.FORBIDDEN, "Use the computer's LAN IPv4 address.\n")
+            except OSError:
+                return connection.respond(HTTPStatus.NOT_FOUND, "Phone plugin is missing from the OBS package.\n")
+            return Response(200, "OK", Headers({
+                "Content-Type": "application/octet-stream", "Content-Length": str(len(body)),
+                "Content-Disposition": f'attachment; filename="{name}"',
+                "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+            }), body)
         peer = connection.remote_address
         try:
             loopback = bool(peer) and ipaddress.ip_address(peer[0]).is_loopback

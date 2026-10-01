@@ -10,6 +10,9 @@ import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from io import BytesIO
+from urllib.parse import parse_qs, urlsplit
+from phone_plugin import download_name, download_url, plugin_path
 
 
 def read_json(path: Path) -> dict:
@@ -80,18 +83,23 @@ class DockServer(ThreadingHTTPServer):
         pending = read_json(self.directory / "applelive-command.json")
         if pending.get("action") == "stop" and sender.get("state") in {"starting", "running"}:
             sender["state"] = "stopping"
+        port = bridge.get("settings", {}).get("port", 8765)
         return {"ready": ready, "sender": sender, "bridge": bridge,
-                "addresses": self.addresses, "token": self.token, "pending": bool(pending)}
+                "addresses": self.addresses, "token": self.token, "pending": bool(pending),
+                "phone_plugin": {"available": plugin_path(self.directory).is_file(), "port": port,
+                    "lan_ready": sender.get("connection_mode") == "lan" and sender.get("state") == "running"}}
 
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
 
-    def reply(self, status: int, body: bytes, content_type="application/json; charset=utf-8"):
+    def reply(self, status: int, body: bytes, content_type="application/json; charset=utf-8", filename=None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        if filename:
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'")
@@ -110,6 +118,32 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/status":
             self.json_reply(200, self.server.status())
+            return
+        url = urlsplit(self.path)
+        if url.path in {"/api/phone-plugin", "/api/phone-qr"}:
+            host = parse_qs(url.query).get("host", [""])[0]
+            if host not in self.server.addresses:
+                self.json_reply(400, {"error": "请选择本机局域网地址"})
+                return
+            status = self.server.status()
+            try:
+                name = download_name(host, int(status["phone_plugin"]["port"]))
+                body = plugin_path(self.server.directory).read_bytes()
+            except (ValueError, TypeError):
+                self.json_reply(400, {"error": "电脑地址或端口无效"})
+                return
+            except OSError:
+                self.json_reply(404, {"error": "手机插件文件缺失，请更新完整 OBS 插件包"})
+                return
+            if url.path == "/api/phone-plugin":
+                self.reply(200, body, "application/octet-stream", name)
+            elif not status["phone_plugin"]["lan_ready"]:
+                self.json_reply(409, {"error": "请先在电脑选择局域网并开始传输"})
+            else:
+                import qrcode
+                output = BytesIO()
+                qrcode.make(download_url(host, int(status["phone_plugin"]["port"]))).save(output, format="PNG")
+                self.reply(200, output.getvalue(), "image/png")
             return
         files = {"/": ("index.html", "text/html; charset=utf-8"),
                  "/app.js": ("app.js", "text/javascript; charset=utf-8"),

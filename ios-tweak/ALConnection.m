@@ -1,8 +1,15 @@
 #import "ALConnection.h"
 #import <arpa/inet.h>
 #import <notify.h>
+#ifdef APPLELIVE_STANDALONE
+#import <dlfcn.h>
+#endif
 
+#ifdef APPLELIVE_STANDALONE
+static const char *kNotification = "com.applelive.injector.connection.v1";
+#else
 static const char *kNotification = "com.applelive.connection.v1";
+#endif
 static const uint64_t kMagic = UINT64_C(0xa120000000000000);
 static const uint64_t kLegacyMagic = UINT64_C(0xa11c000000000000);
 
@@ -42,9 +49,41 @@ static NSDictionary *ALDecodeConnection(uint64_t value) {
              @"paused": @(magic == kMagic && ((value >> 48) & 1))};
 }
 
-NSDictionary *ALConnectionSettings(void) {
-    NSDictionary *saved = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"AppleLive.Connection.v1"];
 #ifdef APPLELIVE_STANDALONE
+static NSDictionary *ALBundledConnection(void) {
+    static NSDictionary *profile;
+    static dispatch_once_t once;
+    static const char imageAnchor = 0;
+    dispatch_once(&once, ^{
+        Dl_info image;
+        if (!dladdr(&imageAnchor, &image) || !image.dli_fname) return;
+        NSString *name = [@(image.dli_fname) lastPathComponent];
+        NSRegularExpression *pattern = [NSRegularExpression regularExpressionWithPattern:
+            @"^AppleLive-([0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+)-([0-9]+)(?: *\\([0-9]+\\))?\\.dylib$"
+            options:0 error:NULL];
+        NSTextCheckingResult *match = [pattern firstMatchInString:name options:0 range:NSMakeRange(0, name.length)];
+        if (!match) return;
+        NSString *address = [NSString stringWithFormat:@"%@:%@",
+            [name substringWithRange:[match rangeAtIndex:1]], [name substringWithRange:[match rangeAtIndex:2]]];
+        NSString *host; NSNumber *port;
+        if (ALParseComputerAddress(address, &host, &port))
+            profile = @{@"mode": @"auto", @"host": host, @"port": port, @"paused": @NO};
+    });
+    return profile;
+}
+#endif
+
+NSDictionary *ALConnectionSettings(void) {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    NSDictionary *saved = [defaults dictionaryForKey:@"AppleLive.Connection.v1"];
+#ifdef APPLELIVE_STANDALONE
+    NSDictionary *profile = ALBundledConnection();
+    NSString *identity = profile ? [NSString stringWithFormat:@"%@:%@", profile[@"host"], profile[@"port"]] : nil;
+    if (identity && (!saved || ![identity isEqualToString:[defaults stringForKey:@"AppleLive.InjectorProfile.v1"]])) {
+        [defaults setObject:identity forKey:@"AppleLive.InjectorProfile.v1"];
+        [defaults setObject:profile forKey:@"AppleLive.Connection.v1"];
+        return profile;
+    }
     if (!saved) {
 #endif
     uint64_t state = 0;
@@ -85,15 +124,28 @@ BOOL ALPublishConnection(NSDictionary *settings) {
     NSInteger port = [settings[@"port"] integerValue];
     if (![host isKindOfClass:NSString.class] ||
         inet_pton(AF_INET, host.UTF8String, &ip) != 1 || port < 1 || port > 65535) return NO;
+#ifdef APPLELIVE_STANDALONE
+    // App injection owns its settings even if Darwin notification access is restricted.
+    ALPersistConnection(settings);
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"AppleLive.InjectorConnection" object:settings];
+    return YES;
+#else
     int token = ALConnectionToken();
     uint64_t state = kMagic | ((uint64_t)[settings[@"paused"] boolValue] << 48) |
                      ((uint64_t)port << 32) | ntohl(ip.s_addr);
     if (token < 0 || notify_set_state(token, state) != NOTIFY_STATUS_OK) return NO;
     [NSUserDefaults.standardUserDefaults setObject:settings forKey:@"AppleLive.Connection.v1"];
     return notify_post(kNotification) == NOTIFY_STATUS_OK;
+#endif
 }
 
 void ALObserveConnection(void (^handler)(NSDictionary *settings)) {
+#ifdef APPLELIVE_STANDALONE
+    [NSNotificationCenter.defaultCenter addObserverForName:@"AppleLive.InjectorConnection" object:nil
+        queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *notification) {
+            handler(notification.object);
+        }];
+#else
     int token = -1;
     notify_register_dispatch(kNotification, &token, dispatch_get_main_queue(), ^(int registered) {
         uint64_t value = 0;
@@ -101,6 +153,7 @@ void ALObserveConnection(void (^handler)(NSDictionary *settings)) {
         NSDictionary *settings = ALDecodeConnection(value);
         if (settings) handler(settings);
     });
+#endif
 }
 
 void ALPersistConnection(NSDictionary *settings) {

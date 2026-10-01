@@ -6,11 +6,18 @@ on:
     paths:
       - "desktop_sender/**"
       - "obs-plugin/**"
+      - "ios-injector/**"
+      - "ios-tweak/**"
+      - "scripts/verify-injector-dylib.py"
+      - ".github/workflows/build-ios-injector.yml"
       - "scripts/build-obs-plugin.ps1"
       - ".github/workflows/build-obs-plugin.yml"
 
 jobs:
+  build-phone-plugin:
+    uses: ./.github/workflows/build-ios-injector.yml
   build-windows:
+    needs: build-phone-plugin
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -29,6 +36,13 @@ jobs:
           python desktop_sender/protocol_test.py
           python desktop_sender/dock_test.py
           python desktop_sender/transport_test.py
+          python desktop_sender/phone_plugin_test.py
+
+      - name: Download phone library
+        uses: actions/download-artifact@v4
+        with:
+          name: AppleLive-Injector-iOS15
+          path: obs-plugin/phone-plugin
 
       - name: Build portable plugin
         shell: pwsh

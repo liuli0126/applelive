@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-10-01 standalone dylib distribution
+
+- Standalone commit61828ac compiled successfully (injector36824607865). No Substrate/ElleKit linkage; distinct Objective-C class names and app-local stream status. Actual app injection remains untested.
+- Adding a filename address profile, app-local connection notifications, signed-byte-preserving downloads and an OBS QR download dialog. OBS Windows CI will include the matching dylib from a reusable workflow in the same run. QR dependency is installed only in CI, not on the user's machine.
+- Retain original iOS13.3 phone and existing Vacm dylib on the iOS15.6 phone. Independent injection needs our deb filter disabled before verification. USB still requires the existing SSH setup; audio and broader OS compatibility remain unverified.
+
 ## 2026-10-01 iOS15.6 Dopamine LAN test
 
 - User clarified the desired product delivery is a dylib imported by their existing virtual-camera injector, because setting up many phones through SSH/Sileo is cumbersome. This steers the main delivery toward standalone app injection; the Dopamine package remains a separate testing route.

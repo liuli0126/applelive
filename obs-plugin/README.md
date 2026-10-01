@@ -5,7 +5,7 @@ AppleLive 把 OBS 节目画面发送到越狱 iPhone。控制面板可固定在 
 ## 首次安装
 
 1. 使用现有 OBS 和 FFmpeg。将 FFmpeg 加入 PATH，或在高级设置填写完整路径。
-2. 完整解压 ZIP 到 OBS 安装目录下的 `data/obs-plugins/AppleLive` 文件夹，保留 AppleLive.lua、AppleLiveSender.exe、AppleLiveDock.exe、usb_forward.ps1 和 dock 文件夹。该目录需要可写；支持中文路径。
+2. 完整解压 ZIP 到 OBS 安装目录下的 `data/obs-plugins/AppleLive` 文件夹，保留 AppleLive.lua、AppleLiveSender.exe、AppleLiveDock.exe、usb_forward.ps1、dock 和 phone-plugin 文件夹。该目录需要可写；支持中文路径。
 3. 在 OBS「工具 → 脚本」点击 +，加载 AppleLive.lua。只加载一份，旧版重复项可移除。
 4. 打开「停靠窗口 → 自定义浏览器停靠窗口」，名称填 AppleLive，URL 填 `http://127.0.0.1:18765/`，点击应用。
 5. 拖动 AppleLive 标题栏固定在 OBS 侧边。选择连接方式和画质，点击「开始传输」。
@@ -15,6 +15,17 @@ AppleLive 把 OBS 节目画面发送到越狱 iPhone。控制面板可固定在 
 插件文件安装在 OBS 文件夹内；当前面板使用 OBS 的浏览器停靠功能，尚不是 Qt 原生 DLL。脚本加载记录和窗口布局由 OBS 保存，复制到另一台电脑后仍需完成上述首次加载步骤。
 
 ## 连接方式只在电脑选择
+
+### 注入器单文件安装（iOS 15 起的测试构建）
+
+1. 电脑选择「同一局域网」并开始传输，点击「安装手机插件」。
+2. 手机与电脑在同一路由器下，用相机扫码，在 Safari 下载 `.dylib`。也可在电脑下载后传给手机。
+3. 打开已有的虚拟相机注入器，选择抖音或 TikTok，导入下载的文件，完全退出并重新打开目标 App。
+4. 下载名包含电脑地址，保持文件名即可自动连接；电脑地址变化时可在悬浮窗修改，或重新下载并更新注入。
+
+同一电脑的文件可用于多台具备合适注入环境的手机。独立库不依赖 ElleKit/Substrate，不需要我们的 deb 或单独配置 plist；不能与我们的 deb 同时加载到同一 App。注入器导入的文件名若被改写，需在悬浮窗填写电脑地址。这个导入方式仍要在实际注入器和目标 App 中验证。
+
+当前独立 dylib 包含 arm64 和现代 arm64e，最低构建版本 iOS 15.0。最低版本只表示链接条件，不代表 iOS 15 至所有新版本均兼容；还取决于系统是否有可用注入环境，以及目标 App 的采集方式。iOS 13 使用已验证的 rootful deb。独立注入的 USB、音频、TikTok 和其他系统版本尚待实测。
 
 手机安装 0.1.9 或更新版本后自动跟随电脑，手机浮窗显示实际连接方式，不再提供第二套连接选择。
 
@@ -46,6 +57,7 @@ OBS 虚拟摄像头只有视频。电脑声音需要：
 
 ```powershell
 python -m pip install -r desktop_sender/requirements.txt pyinstaller
+# 将同次源码编译的 AppleLive.dylib 放到 obs-plugin/phone-plugin/
 .\scripts\build-obs-plugin.ps1
 ```
 

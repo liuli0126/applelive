@@ -1,6 +1,30 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let state, token, busy = false, initialized = false, pendingId = null, busyUntil = 0;
+let pluginKey = '';
+function refreshPlugin() {
+  const plugin = state?.phone_plugin, hosts = state?.addresses || [];
+  $('phone_plugin').disabled = !plugin?.available || !hosts.length;
+  if (!$('plugin_dialog').open) return;
+  const selected = $('plugin_host').value;
+  const key = JSON.stringify([hosts, plugin?.port, plugin?.available, plugin?.lan_ready]);
+  if (pluginKey === key) return;
+  pluginKey = key;
+  $('plugin_host').replaceChildren(...hosts.map(host => new Option(host, host)));
+  if (hosts.includes(selected)) $('plugin_host').value = selected;
+  $('plugin_host').hidden = $('plugin_host_label').hidden = hosts.length < 2;
+  updatePluginDownload();
+}
+function updatePluginDownload() {
+  const plugin = state?.phone_plugin, host = $('plugin_host').value;
+  const available = plugin?.available && !!host;
+  $('download_plugin').hidden = !available;
+  $('download_plugin').href = '/api/phone-plugin?host=' + encodeURIComponent(host);
+  $('plugin_qr').hidden = true;
+  if (!available) { $('plugin_message').textContent = '手机插件或电脑地址暂不可用'; return; }
+  $('plugin_message').textContent = plugin.lan_ready ? '正在生成二维码…' : '扫码下载需要电脑开启局域网传输';
+  if (plugin.lan_ready) $('plugin_qr').src = '/api/phone-qr?host=' + encodeURIComponent(host) + '&port=' + plugin.port;
+}
 function showError(message) { $('error').hidden = !message; $('error').textContent = message || ''; }
 function settings() { return { quality: $('quality').value, connection_mode: $('connection_mode').value, computer_audio: $('computer_audio').checked }; }
 async function command(action, values = {}) {
@@ -19,6 +43,7 @@ async function refresh() {
     const response = await fetch('/api/status');
     if (!response.ok) throw new Error('控制服务暂不可用');
     state = await response.json(); token = state.token;
+    refreshPlugin();
     if (busy && Date.now() > busyUntil) { busy = false; pendingId = null; initialized = false; showError('操作未完成，请重试。'); }
     const s = state.sender, b = state.bridge, active = ['starting','running','stopping'].includes(s.state);
     if (pendingId && b.last_command === pendingId) { pendingId = null; busy = false; initialized = false; if (b.command_error) showError(b.command_error); }
@@ -38,7 +63,7 @@ async function refresh() {
     $('toggle').textContent = s.state === 'stopping' ? '正在停止…' : s.state === 'starting' ? '正在启动…' : active ? '停止传输' : '开始传输';
     $('toggle').className = active ? 'stop' : '';
     $('settings_hint').textContent = active ? '需要调整画质时，先停止传输' : busy || state.pending ? '正在保存…' : '设置自动保存';
-    $('mode_hint').textContent = mode === 'usb' ? '仅通过 USB 数据线传输，手机自动跟随。' : '仅通过局域网传输，手机自动跟随。首次使用请在手机填写下方地址。';
+    $('mode_hint').textContent = mode === 'usb' ? '仅通过 USB 数据线传输，手机自动跟随。' : '局域网 · 手机自动连接';
     $('address_box').hidden = mode === 'usb';
     $('addresses').textContent = state.addresses.map(a => a + ':' + (b.settings?.port || 8765)).join(' / ') || '请连接路由器后重新加载脚本';
     if (s.state === 'error' && !busy) showError(s.error || '发送器启动失败，请查看插件目录中的日志');
@@ -47,4 +72,9 @@ async function refresh() {
 $('settings').addEventListener('submit', event => event.preventDefault());
 $('fields').addEventListener('change', () => command('settings', settings()));
 $('toggle').addEventListener('click', () => command(state?.sender.state === 'running' ? 'stop' : 'start'));
+$('phone_plugin').addEventListener('click', () => { pluginKey = ''; $('plugin_dialog').showModal(); refreshPlugin(); });
+$('close_plugin').addEventListener('click', () => $('plugin_dialog').close());
+$('plugin_host').addEventListener('change', updatePluginDownload);
+$('plugin_qr').addEventListener('load', () => { $('plugin_qr').hidden = false; $('plugin_message').textContent = '手机扫码下载'; });
+$('plugin_qr').addEventListener('error', () => { $('plugin_qr').hidden = true; $('plugin_message').textContent = '二维码暂不可用，可下载文件'; });
 refresh(); setInterval(refresh, 1000);

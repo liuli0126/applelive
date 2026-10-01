@@ -1,5 +1,10 @@
 # Findings
 
+## Single-file connection profile and OBS download (2026-10-01)
+- Preserve the signed Mach-O bytes and encode IPv4/port in the exported filename. Standalone initialization locates its own image with dladdr using a data anchor; accepts Safari numeric duplicate suffixes and validates the address with the existing parser. A changed exported profile updates app-owned defaults; the same profile retains manual settings.
+- Standalone connection controls now notify inside the target app instead of depending on mediaserverd. LAN HTTP downloads share the sender's port but remain separate from video handshakes; USB mode rejects the download endpoint. The dock's control API remains loopback-only with its existing Origin/token checks.
+- QR generation uses qrcode/Pillow in the CI-built executable. Local protocol, ten dock tests, three transport handshakes and two phone-download tests passed. Positive QR rendering is deferred to CI because qrcode is not installed locally.
+
 ## Injector delivery target (2026-10-01)
 - User explicitly wants a single dylib imported through the existing injector for deployment across many phones. Actual app: wiki.qaq.TrollFools / version9.999 / build42, display name "虚拟相机注入器"; bundle at /var/containers/Bundle/Application/FF09809E-E662-441D-9BA7-FA1FF24A5FE8/TrollFools.app. It includes CydiaSubstrate.framework.zip and document types for Mach-O/ZIP/deb; UIFileSharingEnabled is true.
 - The existing phone's Douyin contains Vacm_afasds_v10(1).dylib. Do not overwrite or eject that plugin without a concrete need and user authorization. Running two camera replacement plugins can affect the verification result.

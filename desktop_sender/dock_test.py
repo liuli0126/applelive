@@ -1,5 +1,6 @@
 """Exercise the HTTP control boundary without starting OBS or capture."""
 import http.client
+import importlib.util
 import json
 from pathlib import Path
 import tempfile
@@ -8,6 +9,7 @@ import time
 import unittest
 
 from dock_server import DockServer, atomic_json
+from phone_plugin import plugin_path
 
 
 class DockTests(unittest.TestCase):
@@ -68,6 +70,56 @@ class DockTests(unittest.TestCase):
     def test_stale_sender_is_stopped(self):
         atomic_json(self.path / "applelive-status.json", {"state": "running", "updated_at": time.time() - 30})
         self.assertEqual(self.server.status()["sender"]["state"], "stopped")
+
+    def test_plugin_download_requires_local_address_and_preserves_bytes(self):
+        self.server.addresses = ["192.168.1.45"]
+        path = plugin_path(self.path)
+        path.parent.mkdir()
+        body = b"\xca\xfe\xba\xbebinary-signature-fixture"
+        path.write_bytes(body)
+        for host, expected in [("attacker.test", 400), ("127.0.0.1", 400), ("192.168.1.45", 200)]:
+            connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=2)
+            connection.request("GET", "/api/phone-plugin?host=" + host)
+            response = connection.getresponse()
+            self.assertEqual(response.status, expected)
+            if expected == 200:
+                self.assertIn("AppleLive-192.168.1.45-8765.dylib", response.getheader("Content-Disposition"))
+                self.assertEqual(response.read(), body)
+            else:
+                response.read()
+            connection.close()
+
+    def test_qr_is_unavailable_until_lan_sender_is_running(self):
+        self.server.addresses = ["192.168.1.45"]
+        path = plugin_path(self.path)
+        path.parent.mkdir()
+        path.write_bytes(b"library")
+        for mode in ("usb", "lan"):
+            atomic_json(self.path / "applelive-status.json", {
+                "state": "stopped" if mode == "lan" else "running",
+                "connection_mode": mode, "updated_at": time.time()})
+            connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=2)
+            connection.request("GET", "/api/phone-qr?host=192.168.1.45")
+            response = connection.getresponse()
+            self.assertEqual(response.status, 409)
+            response.read()
+            connection.close()
+
+    @unittest.skipUnless(importlib.util.find_spec("qrcode"), "QR rendering dependency is installed by CI")
+    def test_running_lan_renders_png_qr(self):
+        self.server.addresses = ["192.168.1.45"]
+        path = plugin_path(self.path)
+        path.parent.mkdir()
+        path.write_bytes(b"library")
+        atomic_json(self.path / "applelive-status.json", {
+            "state": "running", "connection_mode": "lan", "updated_at": time.time()})
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=2)
+        connection.request("GET", "/api/phone-qr?host=192.168.1.45")
+        response = connection.getresponse()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.getheader("Content-Type"), "image/png")
+        self.assertTrue(response.read().startswith(b"\x89PNG\r\n\x1a\n"))
+        connection.close()
 
     def test_obs_launch_remains_busy_until_sender_writes_status(self):
         atomic_json(self.path / "applelive-bridge.json", {"updated_at": time.time(), "sender_state": "starting"})
