@@ -1,5 +1,12 @@
 # Progress
 
+## 2026-10-01 iOS15.6 Dopamine LAN test
+
+- User introduced an iOS15.6 test device, confirmed Dopamine jailbreak is active and that this phone connects via LAN at192.168.1.28. USB enumeration correctly shows no devices; do not infer this is the original iOS13.3 phone, whose existing receiver remains at192.168.1.53.
+- Both SSH22 and2222 on192.168.1.28 actively refuse connections. Asked user to install/enable OpenSSH Server in Sileo; no authentication attempts were made.
+- Inspected rootless0.1.11 artifact: only dylib/filter, no legacy preferences or postinst. Existing initialization treated missing enabled/audioEnabled values as false, preventing fresh installs from connecting. Preparing0.1.12 with defaults when keys are absent (preserving explicit opt-outs), rootless postinst, minimum firmware15.0, and signature validation for the copyNextSampleBuffer hook.
+- User mentioned TrollStore virtual-camera injectors, but confirmed this actual test phone has completed Dopamine jailbreak. The separate injector tool's identity was not provided; use the confirmed jailbreak environment for this test.
+
 ## 2026-10-01 USB recovery, phone buttons and video stalls
 
 - Final user feedback: phone Disconnect/Connect works and picture is smooth. Sustained LAN/high output measurement after warmup:602frames over20.0227seconds,30.016fps (PC-side measurement, not end-to-end latency). Current modeLAN, high1080x1920/30fps/8Mbps, audio off, two phone receiver processes.

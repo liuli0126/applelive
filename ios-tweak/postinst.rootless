@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# Dopamine's bootstrap tools are under /var/jb. No preferences file or
+# device-specific computer address is needed for a fresh installation.
+PATH=/var/jb/usr/bin:/var/jb/bin:/usr/bin:/bin:/usr/sbin:/sbin
+export PATH
+if [ "$1" = "configure" ] && command -v killall >/dev/null 2>&1; then
+    killall mediaserverd >/dev/null 2>&1 || true
+fi
+exit 0

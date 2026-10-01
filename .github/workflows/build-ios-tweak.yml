@@ -28,6 +28,12 @@ jobs:
           cp -R "$RUNNER_TEMP/theos-sdks/." "$THEOS/sdks/"
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
 
+      - name: Prepare rootless installation
+        run: |
+          mkdir -p ios-tweak/layout/DEBIAN
+          cp ios-tweak/postinst.rootless ios-tweak/layout/DEBIAN/postinst
+          chmod 755 ios-tweak/layout/DEBIAN/postinst
+
       - name: Build rootless package
         run: make -C ios-tweak package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
 

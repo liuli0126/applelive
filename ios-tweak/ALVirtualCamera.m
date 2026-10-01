@@ -122,7 +122,10 @@ static void ALInstallHooks(void) {
     gALHooksInstalled = YES;
 
     Class bwNodeOutput = NSClassFromString(@"BWNodeOutput");
-    if (bwNodeOutput && class_getInstanceMethod(bwNodeOutput, @selector(copyNextSampleBuffer))) {
+    Method copyMethod = bwNodeOutput ? class_getInstanceMethod(bwNodeOutput, @selector(copyNextSampleBuffer)) : NULL;
+    char copyReturnType[128] = {0};
+    if (copyMethod) method_getReturnType(copyMethod, copyReturnType, sizeof(copyReturnType));
+    if (copyMethod && method_getNumberOfArguments(copyMethod) == 2 && copyReturnType[0] == '^') {
         MSHookMessageEx(bwNodeOutput, @selector(copyNextSampleBuffer),
                         (IMP)ALHookBWCopyNext, (IMP *)&gOriginalBWCopyNext);
     }
@@ -270,8 +273,10 @@ static void ALInstallHooks(void) {
         preferences = [NSDictionary dictionaryWithContentsOfFile:path];
         if (preferences) break;
     }
-    self.enabled = [preferences[@"enabled"] boolValue];
-    self.audioRing.active = [preferences[@"audioEnabled"] boolValue];
+    // Fresh rootless installs have no legacy configuration file. The panel's
+    // controls own the user-facing switches; preserve explicit legacy opt-outs.
+    self.enabled = preferences[@"enabled"] ? [preferences[@"enabled"] boolValue] : YES;
+    self.audioRing.active = preferences[@"audioEnabled"] ? [preferences[@"audioEnabled"] boolValue] : YES;
     ALObserveConnection(^(NSDictionary *settings) { [weakSelf applyConnection:settings]; });
     NSDictionary *connection = ALConnectionSettings();
     [self applyConnection:connection];
