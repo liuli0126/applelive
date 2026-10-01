@@ -3,17 +3,21 @@
 #import <os/log.h>
 #import <time.h>
 
+#ifndef APPLELIVE_STANDALONE
 static const char *kALControlNotification = "com.applelive.controls.v1";
+#endif
 static const char *kALStatusNotification = "com.applelive.status.v1";
 static NSString *const kALSavedControls = @"AppleLive.Controls.v1";
 static const uint64_t kALControlMagic = UINT64_C(0x414c000100000000);
 
+#ifndef APPLELIVE_STANDALONE
 static int ALControlToken(void) {
     static int token = -1;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ notify_register_check(kALControlNotification, &token); });
     return token;
 }
+#endif
 
 static int ALStatusToken(void) {
     static int token = -1;
@@ -54,6 +58,10 @@ NSDictionary *ALLoadAppControls(void) {
 }
 
 BOOL ALPublishControls(NSDictionary *controls) {
+#ifdef APPLELIVE_STANDALONE
+    [NSNotificationCenter.defaultCenter postNotificationName:@"AppleLive.InjectorControls" object:controls];
+    return YES;
+#else
     int token = ALControlToken();
     if (token < 0) return NO;
     uint32_t result = notify_set_state(token, ALEncodeControls(controls));
@@ -62,6 +70,7 @@ BOOL ALPublishControls(NSDictionary *controls) {
         os_log_error(OS_LOG_DEFAULT, "[AppleLive] controls publish failed: %u", result);
     }
     return result == NOTIFY_STATUS_OK;
+#endif
 }
 
 BOOL ALSaveAndPublishControls(NSDictionary *controls) {
@@ -70,13 +79,23 @@ BOOL ALSaveAndPublishControls(NSDictionary *controls) {
 }
 
 NSDictionary *ALCurrentControls(void) {
+#ifdef APPLELIVE_STANDALONE
+    return ALLoadAppControls();
+#else
     uint64_t state = 0;
     int token = ALControlToken();
     if (token < 0 || notify_get_state(token, &state) != NOTIFY_STATUS_OK) return nil;
     return ALDecodeControls(state);
+#endif
 }
 
 void ALObserveControls(void (^handler)(NSDictionary *controls)) {
+#ifdef APPLELIVE_STANDALONE
+    [NSNotificationCenter.defaultCenter addObserverForName:@"AppleLive.InjectorControls" object:nil
+        queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *notification) {
+            handler(notification.object);
+        }];
+#else
     int token = -1;
     uint32_t result = notify_register_dispatch(kALControlNotification, &token,
         dispatch_get_main_queue(), ^(int registeredToken) {
@@ -89,6 +108,7 @@ void ALObserveControls(void (^handler)(NSDictionary *controls)) {
     if (result != NOTIFY_STATUS_OK) {
         os_log_error(OS_LOG_DEFAULT, "[AppleLive] controls listener failed: %u", result);
     }
+#endif
 }
 
 void ALPublishStreamStatus(BOOL connected, BOOL usb, BOOL video, BOOL audio) {

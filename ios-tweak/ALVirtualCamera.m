@@ -280,6 +280,10 @@ static void ALInstallHooks(void) {
     });
     ALInstallHooks();
 
+#ifdef APPLELIVE_STANDALONE
+    self.enabled = YES;
+    self.audioRing.active = YES;
+#else
     NSDictionary *preferences = nil;
     NSArray<NSString *> *paths = @[
         @"/var/mobile/Library/Preferences/com.applelive.tweak.plist",
@@ -293,6 +297,7 @@ static void ALInstallHooks(void) {
     // controls own the user-facing switches; preserve explicit legacy opt-outs.
     self.enabled = preferences[@"enabled"] ? [preferences[@"enabled"] boolValue] : YES;
     self.audioRing.active = preferences[@"audioEnabled"] ? [preferences[@"audioEnabled"] boolValue] : YES;
+#endif
     ALObserveConnection(^(NSDictionary *settings) { [weakSelf applyConnection:settings]; });
     NSDictionary *connection = ALConnectionSettings();
     [self applyConnection:connection];

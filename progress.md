@@ -5,6 +5,7 @@
 - Standalone commit61828ac compiled successfully (injector36824607865). No Substrate/ElleKit linkage; distinct Objective-C class names and app-local stream status. Actual app injection remains untested.
 - Adding a filename address profile, app-local connection notifications, signed-byte-preserving downloads and an OBS QR download dialog. OBS Windows CI will include the matching dylib from a reusable workflow in the same run. QR dependency is installed only in CI, not on the user's machine.
 - Retain original iOS13.3 phone and existing Vacm dylib on the iOS15.6 phone. Independent injection needs our deb filter disabled before verification. USB still requires the existing SSH setup; audio and broader OS compatibility remain unverified.
+- Reviewed standalone controls and removed their Darwin-notification dependency as well: app-local rotation/mirror/audio control delivery and app-owned defaults. Standalone initialization no longer imports legacy global enable flags.
 
 ## 2026-10-01 iOS15.6 Dopamine LAN test
 

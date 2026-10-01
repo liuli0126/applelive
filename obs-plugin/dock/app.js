@@ -75,6 +75,6 @@ $('toggle').addEventListener('click', () => command(state?.sender.state === 'run
 $('phone_plugin').addEventListener('click', () => { pluginKey = ''; $('plugin_dialog').showModal(); refreshPlugin(); });
 $('close_plugin').addEventListener('click', () => $('plugin_dialog').close());
 $('plugin_host').addEventListener('change', updatePluginDownload);
-$('plugin_qr').addEventListener('load', () => { $('plugin_qr').hidden = false; $('plugin_message').textContent = '手机扫码下载'; });
+$('plugin_qr').addEventListener('load', () => { if (state?.phone_plugin?.lan_ready && $('plugin_dialog').open) { $('plugin_qr').hidden = false; $('plugin_message').textContent = '手机扫码下载'; } });
 $('plugin_qr').addEventListener('error', () => { $('plugin_qr').hidden = true; $('plugin_message').textContent = '二维码暂不可用，可下载文件'; });
 refresh(); setInterval(refresh, 1000);
