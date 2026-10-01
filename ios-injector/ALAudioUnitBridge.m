@@ -1,7 +1,6 @@
 #import "ALAudioUnitBridge.h"
 #import "ALSampleAudio.h"
 #import <AudioToolbox/AudioToolbox.h>
-#import <QuartzCore/QuartzCore.h>
 #import <os/lock.h>
 #include <stdatomic.h>
 #include "fishhook.h"
@@ -15,7 +14,6 @@ static ALUnitSlot *gALUnits;
 static os_unfair_lock gALUnitLock = OS_UNFAIR_LOCK_INIT;
 static ALAudioRing *gALUnitRing;
 static atomic_bool gALUnitActive, gALUnitMuted;
-static atomic_llong gALDelegateUntil;
 static OSStatus (*gALUnitRender)(AudioUnit, AudioUnitRenderActionFlags *, const AudioTimeStamp *, UInt32, UInt32, AudioBufferList *);
 static OSStatus (*gALUnitInitialize)(AudioUnit);
 static OSStatus (*gALUnitSetProperty)(AudioUnit, AudioUnitPropertyID, AudioUnitScope, AudioUnitElement, const void *, UInt32);
@@ -58,8 +56,7 @@ static OSStatus ALUnitDispose(AudioComponentInstance unit) {
 static OSStatus ALUnitRender(AudioUnit unit, AudioUnitRenderActionFlags *flags, const AudioTimeStamp *time,
                            UInt32 bus, UInt32 frames, AudioBufferList *buffers) {
     OSStatus status = gALUnitRender(unit, flags, time, bus, frames, buffers);
-    if (status != noErr || bus != 1 || !buffers || !atomic_load(&gALUnitActive) ||
-        (int64_t)(CACurrentMediaTime() * 1e9) < atomic_load(&gALDelegateUntil)) return status;
+    if (status != noErr || bus != 1 || !buffers || !atomic_load(&gALUnitActive)) return status;
     os_unfair_lock_lock(&gALUnitLock);
     for (int i = 0; i < 16; i++) if (gALUnits[i].unit == unit) {
         ALUnitSlot *slot = &gALUnits[i];
@@ -77,7 +74,6 @@ void ALConfigureAudioUnitBridge(ALAudioRing *ring, BOOL active, BOOL muted) {
     if (!gALUnitRing) gALUnitRing = ring;
     atomic_store(&gALUnitMuted, muted); atomic_store(&gALUnitActive, active);
 }
-void ALMarkAudioDelegate(void) { atomic_store(&gALDelegateUntil, (int64_t)(CACurrentMediaTime() * 1e9) + 250000000); }
 void ALInstallAudioUnitBridge(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{

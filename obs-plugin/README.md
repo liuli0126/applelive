@@ -5,7 +5,7 @@ AppleLive 把 OBS 节目画面发送到越狱 iPhone。控制面板可固定在 
 ## 首次安装
 
 1. 使用现有 OBS 和 FFmpeg。将 FFmpeg 加入 PATH，或在高级设置填写完整路径。
-2. 完整解压 ZIP 到 OBS 安装目录下的 `data/obs-plugins/AppleLive` 文件夹，保留 AppleLive.lua、AppleLiveSender.exe、AppleLiveDock.exe、usb_forward.ps1、dock 和 phone-plugin 文件夹。该目录需要可写；支持中文路径。
+2. 完整解压 ZIP 到 OBS 安装目录下的 `data/obs-plugins/AppleLive` 文件夹，保留 AppleLive.lua、AppleLiveSender.exe、AppleLiveDock.exe、usb_forward.ps1、dock、phone-plugin 和 server 文件夹。该目录需要可写；支持中文路径。
 3. 在 OBS「工具 → 脚本」点击 +，加载 AppleLive.lua。只加载一份，旧版重复项可移除。
 4. 打开「停靠窗口 → 自定义浏览器停靠窗口」，名称填 AppleLive，URL 填 `http://127.0.0.1:18765/`，点击应用。
 5. 拖动 AppleLive 标题栏固定在 OBS 侧边。选择连接方式和画质，点击「开始传输」。
@@ -59,7 +59,7 @@ OBS 虚拟摄像头只有视频。电脑声音需要：
 1. 安装 VB-CABLE。
 2. OBS「设置 → 音频 → 高级 → 监听设备」选择 CABLE Input。
 3. 混音器「高级音频属性」中，将需要发送的源设为「监听并输出」。
-4. 在电脑面板打开「传输电脑声音」，手机悬浮窗打开「电脑声音」。
+4. 在电脑面板打开「传输电脑声音」，新单文件插件的手机悬浮窗打开「内录」（旧 deb 的按钮叫「电脑声音」）。
 
 默认关闭电脑声音，使用手机麦克风。声音端到端仍需真实直播 App 验证。
 

@@ -79,16 +79,24 @@ python -m pip install -r requirements.txt
 python sender.py --host 0.0.0.0 --port 8765 --audio-device "CABLE Output"
 ```
 
-`--audio-device` 是 FFmpeg dshow 设备名。系统声音通常需要 VB-CABLE、Voicemeeter 或声卡 Stereo Mix；不传该参数时，视频仍传输，但 tweak 保留手机原始麦克风。
+`--audio-device` 是 FFmpeg dshow 设备名。系统声音通常需要 VB-CABLE、Voicemeeter 或声卡 Stereo Mix。独立插件开启「内录」时会替换手机麦克风；不传电脑音频时输出静音。关闭「内录」恢复手机麦克风。
+
+## 标准拉流与本地素材
+
+OBS 局域网模式自动启动随包的 MediaMTX 1.18.1，并将同一次 H.264 编码同时用于旧 WebSocket 通道和标准 RTMP 发布。用户提供的 `E:/服务器` 也是这个服务器。手机悬浮窗的「检测」接受 `rtmp://电脑IP:1935/live/applelive`，也支持 SRS 地址；RTSP 为 `rtsp://电脑IP:8554/live/applelive`。
+
+独立 `.dylib` 静态包含 FFmpeg，提供相册/文件图片与视频、网络拉流、暂停/拖动/循环、内录/静音、镜像/旋转、完整/铺满、独立预览与恢复相机。源码测试和编译检查通过，真实直播 App 的采集、内录及不同系统版本须分别验证。
 
 ## USB 状态
 
-USB 通过 `pymobiledevice3` 正向转发至 iPhone OpenSSH，再由 SSH 建立反向隧道，让手机从 `127.0.0.1:8765` 连接电脑发送器。测试手机已完成 OpenSSH 和密钥配对，USB 视频替换与 LAN 接收均已实测。0.1.9 起连接方式只在 OBS 停靠面板选择：USB 模式只监听回环，LAN 模式在握手时拒绝回环连接；手机自动跟随，浮窗显示实际通道。声音、TikTok 与其他 iOS 版本仍需独立实测。
+新独立插件通过 usbmux 连接目标 App 的回环端口 8766，接收 H.264 和 PCM，不需要手机 OpenSSH 或逐台配对 SSH 密钥。Windows 仍需 Apple USB 驱动、手机信任电脑，并打开已注入的 App。协议分包、握手和清理测试通过，尚需真机 USB 验证。
+
+旧 deb 保留 `pymobiledevice3` 转发到手机 OpenSSH 和 SSH 反向隧道方案，旧 iOS 13.3 测试手机的 USB 视频替换与 LAN 接收已实测。连接方式在 OBS 停靠面板选择，手机显示实际通道。
 
 ## 限制
 
-- 本版只实现 H.264 Annex-B；不接收 H.265。
+- 电脑直连协议使用 H.264 Annex-B；独立插件的 FFmpeg 媒体引擎还可解码 H.265 文件和网络流。
 - `BWNodeOutput` 是 Apple 私有类，不同 iOS 版本可能改名或改变方法签名；未找到该类时会自动保留原始相机帧。
 - `AppleLive.plist` 的 UIKit bundle 过滤器用于让 delegate 回退 hook 有机会进入直播 App，但具体 Substrate 版本对 bundle 过滤的匹配方式需要在目标设备验证。
-- 音频替换走 `AVCaptureAudioDataOutput` delegate 回退入口；不同直播 App 可能使用私有音频管线，需要按目标 App 增加对应 hook。
+- 独立插件提供 `AVCaptureAudioDataOutput` 和 RemoteIO/VoiceProcessingIO 输入替换；使用其他音频采集管线的 App 仍需要适配。
 - 这是越狱系统级注入，建议先在备用设备、测试直播 App 和局域网环境验证，不要直接在主力设备上升级系统后盲装。

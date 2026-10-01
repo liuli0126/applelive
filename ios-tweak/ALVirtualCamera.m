@@ -62,6 +62,7 @@ static void ALHookMessage(Class cls, SEL selector, IMP replacement, IMP *origina
 @property(nonatomic, copy) NSArray<NSString *> *connectionAddresses;
 #ifdef APPLELIVE_STANDALONE
 @property(nonatomic) ALMediaPlayer *mediaPlayer;
+@property(nonatomic) ALAudioRing *unitAudioRing;
 @property(atomic, copy) NSString *sourceKind;
 @property(nonatomic) NSURL *sourceURL;
 @property(atomic) NSInteger sourceRotation;
@@ -69,6 +70,8 @@ static void ALHookMessage(Class cls, SEL selector, IMP replacement, IMP *origina
 @property(atomic) BOOL directUSB;
 #endif
 - (BOOL)renderVideoIntoSample:(CMSampleBufferRef)sample;
+- (void)pushAudioSamples:(const float *)samples count:(NSUInteger)count channels:(NSUInteger)channels sampleRate:(double)rate;
+- (void)clearAudioSamples;
 #ifdef APPLELIVE_STANDALONE
 - (void)configureAudioBridge;
 #endif
@@ -250,6 +253,20 @@ static void ALInstallHooks(void) {
     return instance;
 }
 
+- (void)pushAudioSamples:(const float *)samples count:(NSUInteger)count channels:(NSUInteger)channels sampleRate:(double)rate {
+    [self.audioRing pushSamples:samples count:count channels:channels sampleRate:rate];
+#ifdef APPLELIVE_STANDALONE
+    // Capture delegates and AudioUnit input may run together; each needs its own read cursor.
+    [self.unitAudioRing pushSamples:samples count:count channels:channels sampleRate:rate];
+#endif
+}
+- (void)clearAudioSamples {
+    [self.audioRing clear];
+#ifdef APPLELIVE_STANDALONE
+    [self.unitAudioRing clear];
+#endif
+}
+
 - (instancetype)init {
     self = [super init];
     if (self) {
@@ -259,6 +276,7 @@ static void ALInstallHooks(void) {
         _decoder = [[ALVideoDecoder alloc] init];
 #ifdef APPLELIVE_STANDALONE
         _sourceKind = @"computer";
+        _unitAudioRing = [ALAudioRing new];
         _mediaPlayer = [ALMediaPlayer new];
         _usbReceiver = [ALUSBReceiver new];
 #endif
@@ -280,7 +298,7 @@ static void ALInstallHooks(void) {
         };
         _client.onAudioPCM = ^(const float *samples, NSUInteger count,
                                uint32_t channels, double rate) {
-            [weakSelf.audioRing pushSamples:samples count:count channels:channels sampleRate:rate];
+            [weakSelf pushAudioSamples:samples count:count channels:channels sampleRate:rate];
             weakSelf.lastAudioTime = CFAbsoluteTimeGetCurrent();
         };
         _client.onDisconnected = ^{
@@ -291,7 +309,7 @@ static void ALInstallHooks(void) {
             weakSelf.lastAudioTime = 0;
             [weakSelf.decoder reset];
             [weakSelf.frameStore clear];
-            [weakSelf.audioRing clear];
+            [weakSelf clearAudioSamples];
         };
 #ifdef APPLELIVE_STANDALONE
         _mediaPlayer.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) {
@@ -302,18 +320,18 @@ static void ALInstallHooks(void) {
         };
         _mediaPlayer.onAudio = ^(const float *samples, NSUInteger frames) {
             if ([weakSelf.sourceKind isEqualToString:@"computer"]) return;
-            [weakSelf.audioRing pushSamples:samples count:frames channels:2 sampleRate:48000];
+            [weakSelf pushAudioSamples:samples count:frames channels:2 sampleRate:48000];
             weakSelf.lastAudioTime = CFAbsoluteTimeGetCurrent();
         };
         _mediaPlayer.onReset = ^{
             if ([weakSelf.sourceKind isEqualToString:@"computer"]) return;
-            [weakSelf.audioRing clear];
+            [weakSelf clearAudioSamples];
             if ([weakSelf.sourceKind isEqualToString:@"network"]) [weakSelf.frameStore clear];
         };
         _usbReceiver.onConnected = ^{
             weakSelf.directUSB = YES;
             [weakSelf.client disconnect];
-            [weakSelf.decoder reset]; [weakSelf.frameStore clear]; [weakSelf.audioRing clear];
+            [weakSelf.decoder reset]; [weakSelf.frameStore clear]; [weakSelf clearAudioSamples];
         };
         _usbReceiver.onBinary = ^(NSData *data) {
             if (weakSelf.directUSB && !weakSelf.connectionPaused && [weakSelf.sourceKind isEqualToString:@"computer"])
@@ -322,7 +340,7 @@ static void ALInstallHooks(void) {
         _usbReceiver.onDisconnected = ^{
             weakSelf.directUSB = NO;
             if (![weakSelf.sourceKind isEqualToString:@"computer"]) return;
-            [weakSelf.decoder reset]; [weakSelf.frameStore clear]; [weakSelf.audioRing clear];
+            [weakSelf.decoder reset]; [weakSelf.frameStore clear]; [weakSelf clearAudioSamples];
             [weakSelf applyConnection:ALConnectionSettings()];
         };
 #endif
@@ -354,6 +372,7 @@ static void ALInstallHooks(void) {
 #ifdef APPLELIVE_STANDALONE
     self.enabled = YES;
     self.audioRing.active = YES;
+    self.unitAudioRing.active = YES;
 #else
     NSDictionary *preferences = nil;
     NSArray<NSString *> *paths = @[
@@ -520,7 +539,6 @@ static void ALInstallHooks(void) {
 
 - (CMSampleBufferRef)replacementForAudioSample:(CMSampleBufferRef)original {
 #ifdef APPLELIVE_STANDALONE
-    ALMarkAudioDelegate();
     NSDictionary *settings = self.controls;
     if (!self.enabled || self.connectionPaused || ![settings[@"enabled"] boolValue] ||
         ![settings[@"audio"] boolValue] || !original ||
@@ -604,7 +622,7 @@ static void ALInstallHooks(void) {
     [self.client disconnect];
     [self.decoder reset];
     [self.frameStore clear];
-    [self.audioRing clear];
+    [self clearAudioSamples];
     self.lastVideoTime = self.lastAudioTime = 0;
     self.frameStore.holdsFrame = [kind isEqualToString:@"local"];
     if ([kind isEqualToString:@"computer"]) [self applyConnection:ALConnectionSettings()];
@@ -629,13 +647,13 @@ static void ALInstallHooks(void) {
 }
 - (NSDictionary *)mediaStatus { return self.mediaPlayer.status; }
 - (void)configureAudioBridge {
-    ALConfigureAudioUnitBridge(self.audioRing,
+    ALConfigureAudioUnitBridge(self.unitAudioRing,
         self.enabled && !self.connectionPaused && ![self.sourceKind isEqualToString:@"none"] &&
         [self.controls[@"enabled"] boolValue] && [self.controls[@"audio"] boolValue], [self.controls[@"muted"] boolValue]);
 }
 - (void)setMediaPaused:(BOOL)paused {
     self.mediaPlayer.paused = paused;
-    [self.audioRing clear];
+    [self clearAudioSamples];
 }
 - (void)setMediaLoop:(BOOL)loop { self.mediaPlayer.loop = loop; }
 - (void)seekMedia:(NSTimeInterval)seconds { [self.mediaPlayer seek:seconds]; }
