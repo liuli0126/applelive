@@ -3,7 +3,6 @@
 #import <notify.h>
 
 static const char *kNotification = "com.applelive.connection.v1";
-static NSString *const kFile = @"/var/mobile/Library/Preferences/com.applelive.connection.plist";
 static const uint64_t kMagic = UINT64_C(0xa11c000000000000);
 
 static int ALConnectionToken(void) {
@@ -48,9 +47,7 @@ NSDictionary *ALConnectionSettings(void) {
         NSDictionary *settings = ALDecodeConnection(state);
         if (settings) return settings;
     }
-    NSDictionary *saved = [NSDictionary dictionaryWithContentsOfFile:kFile];
-    if (saved) return saved;
-    saved = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"AppleLive.Connection.v1"];
+    NSDictionary *saved = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"AppleLive.Connection.v1"];
     if (saved) return saved;
     // Import the existing computer address on upgrade; no device-specific default.
     for (NSString *path in @[@"/var/mobile/Library/Preferences/com.applelive.tweak.plist",
@@ -93,7 +90,9 @@ void ALObserveConnection(void (^handler)(NSDictionary *settings)) {
 }
 
 void ALPersistConnection(NSDictionary *settings) {
-    [settings writeToFile:kFile atomically:YES];
+    // mediaserverd is sandboxed: its preferences daemon can persist this,
+    // whereas direct writes to a new shared Preferences file are denied.
+    [NSUserDefaults.standardUserDefaults setObject:settings forKey:@"AppleLive.Connection.v1"];
 }
 
 NSArray<NSString *> *ALConnectionAddresses(NSDictionary *settings) {

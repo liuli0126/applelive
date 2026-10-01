@@ -312,9 +312,10 @@
         self.connection = [ALConnectionSettings() mutableCopy];
         [self syncConnection]; [self restoreKeyWindow];
     }]];
+    __weak UIAlertController *weakAlert = alert;
     UIAlertAction *save = [UIAlertAction actionWithTitle:@"保存并连接" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         NSString *host; NSNumber *port;
-        if (ALParseComputerAddress(alert.textFields.firstObject.text, &host, &port)) {
+        if (ALParseComputerAddress(weakAlert.textFields.firstObject.text, &host, &port)) {
             self.connection[@"host"] = host;
             self.connection[@"port"] = port;
             if (!ALPublishConnection(self.connection)) self.statusLabel.text = @"连接设置保存失败";
