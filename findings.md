@@ -1,5 +1,11 @@
 # Findings
 
+## Injector delivery target (2026-10-01)
+- User explicitly wants a single dylib imported through the existing injector for deployment across many phones. Actual app: wiki.qaq.TrollFools / version9.999 / build42, display name "虚拟相机注入器"; bundle at /var/containers/Bundle/Application/FF09809E-E662-441D-9BA7-FA1FF24A5FE8/TrollFools.app. It includes CydiaSubstrate.framework.zip and document types for Mach-O/ZIP/deb; UIFileSharingEnabled is true.
+- The existing phone's Douyin contains Vacm_afasds_v10(1).dylib. Do not overwrite or eject that plugin without a concrete need and user authorization. Running two camera replacement plugins can affect the verification result.
+- Public Lessica/TrollFools main supports preprocess of .dylib/.framework/.bundle and archives, and an inject CLI using a bundle ID and --path. The installed9.999 fork is not assumed to have the same CLI until confirmed. Reference: https://github.com/Lessica/TrollFools/blob/main/TrollFools/CLI/CmdInject.swift .
+- Standalone delivery must avoid @rpath/CydiaSubstrate hard dependencies and mediaserverd-only status. A successful Dopamine package test is not proof of standalone app injection compatibility.
+
 ## Verified iOS15.6 environment and setup limitation (2026-10-01)
 - Actual device: iPhone12,1 / iOS15.6 /19G71, /var/jb -> Dopamine preboot procursus, dpkg iphoneos-arm64. Initially no ElleKit; installed official ElleKit1.2 (331444bytes, SHA256e21dc91bdc1be193dc915daecfff45256239b4fe583a36861e662ab1f43906dc) and AppleLive0.1.12. The rootless framework compatibility symlink now resolves to /var/jb/usr/lib/libellekit.dylib.
 - Rootless SSH users' home directories are under /var/jb/var/, so keys placed in /var/mobile or /var/root do not authenticate. Dedicated key/pin applelive-ssh-f6d0b440ebedafe9 works for both mobile and root using the correct account homes.

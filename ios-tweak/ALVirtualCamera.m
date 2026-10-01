@@ -10,7 +10,9 @@
 #import <CoreMedia/CoreMedia.h>
 #import <CoreImage/CoreImage.h>
 #import <objc/runtime.h>
+#ifndef APPLELIVE_STANDALONE
 #import <substrate.h>
+#endif
 #import <os/log.h>
 #import <math.h>
 
@@ -21,6 +23,20 @@ static CMSampleBufferRef (*gOriginalBWCopyNext)(id, SEL) = NULL;
 static void (*gOriginalBWEmitSample)(id, SEL, CMSampleBufferRef) = NULL;
 static void (*gOriginalVideoSetDelegate)(id, SEL, id, dispatch_queue_t) = NULL;
 static void (*gOriginalAudioSetDelegate)(id, SEL, id, dispatch_queue_t) = NULL;
+
+static void ALHookMessage(Class cls, SEL selector, IMP replacement, IMP *original) {
+#ifdef APPLELIVE_STANDALONE
+    Method method = class_getInstanceMethod(cls, selector);
+    if (!method) return;
+    *original = class_getMethodImplementation(cls, selector);
+    // Add an inherited method to this class before replacing its implementation.
+    if (!class_addMethod(cls, selector, replacement, method_getTypeEncoding(method))) {
+        class_replaceMethod(cls, selector, replacement, method_getTypeEncoding(method));
+    }
+#else
+    MSHookMessageEx(cls, selector, replacement, original);
+#endif
+}
 
 @interface ALVirtualCamera ()
 @property(nonatomic, readwrite) ALFrameStore *frameStore;
@@ -126,7 +142,7 @@ static void ALInstallHooks(void) {
     char copyReturnType[128] = {0};
     if (copyMethod) method_getReturnType(copyMethod, copyReturnType, sizeof(copyReturnType));
     if (copyMethod && method_getNumberOfArguments(copyMethod) == 2 && copyReturnType[0] == '^') {
-        MSHookMessageEx(bwNodeOutput, @selector(copyNextSampleBuffer),
+        ALHookMessage(bwNodeOutput, @selector(copyNextSampleBuffer),
                         (IMP)ALHookBWCopyNext, (IMP *)&gOriginalBWCopyNext);
     }
     // iOS 13 pushes frames through emitSampleBuffer: instead of exposing a
@@ -140,7 +156,7 @@ static void ALInstallHooks(void) {
         method_getReturnType(emitMethod, returnType, sizeof(returnType));
         method_getArgumentType(emitMethod, 2, argumentType, sizeof(argumentType));
         if (returnType[0] == 'v' && argumentType[0] == '^') {
-            MSHookMessageEx(bwNodeOutput, emitSelector, (IMP)ALHookBWEmitSample,
+            ALHookMessage(bwNodeOutput, emitSelector, (IMP)ALHookBWEmitSample,
                            (IMP *)&gOriginalBWEmitSample);
         }
     }
@@ -150,12 +166,12 @@ static void ALInstallHooks(void) {
 
     Class videoOutput = [AVCaptureVideoDataOutput class];
     if (videoOutput) {
-        MSHookMessageEx(videoOutput, @selector(setSampleBufferDelegate:queue:),
+        ALHookMessage(videoOutput, @selector(setSampleBufferDelegate:queue:),
                         (IMP)ALHookVideoSetDelegate, (IMP *)&gOriginalVideoSetDelegate);
     }
     Class audioOutput = [AVCaptureAudioDataOutput class];
     if (audioOutput) {
-        MSHookMessageEx(audioOutput, @selector(setSampleBufferDelegate:queue:),
+        ALHookMessage(audioOutput, @selector(setSampleBufferDelegate:queue:),
                         (IMP)ALHookAudioSetDelegate, (IMP *)&gOriginalAudioSetDelegate);
     }
     os_log(OS_LOG_DEFAULT, "[AppleLive] camera hooks installed");
@@ -304,6 +320,14 @@ static void ALInstallHooks(void) {
     if (self.enabled && !self.connectionPaused && addresses.count) [self.client connectToAddresses:addresses];
     else [self.client disconnect];
     os_log(OS_LOG_DEFAULT, "[AppleLive] connection mode=%{public}@ addresses=%{public}@", settings[@"mode"], addresses);
+}
+
+- (NSDictionary *)streamStatus {
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+    return @{@"connected": @(self.client.isConnected),
+             @"usb": @([self.client.address containsString:@"127.0.0.1:"]),
+             @"video": @(now - self.lastVideoTime < 2),
+             @"audio": @(now - self.lastAudioTime < 2)};
 }
 
 - (CMSampleBufferRef)replacementForVideoSample:(CMSampleBufferRef)original {

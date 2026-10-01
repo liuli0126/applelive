@@ -1,8 +1,19 @@
 #import "ALFloatingPanel.h"
 #import "ALControls.h"
 #import "ALConnection.h"
+#ifdef APPLELIVE_STANDALONE
+#import "ALVirtualCamera.h"
+#endif
 #import <UIKit/UIKit.h>
 #import <os/log.h>
+
+static NSDictionary *ALPanelStreamStatus(void) {
+#ifdef APPLELIVE_STANDALONE
+    return [[ALVirtualCamera sharedInstance] streamStatus];
+#else
+    return ALReadStreamStatus();
+#endif
+}
 
 @interface ALPassThroughWindow : UIWindow
 @end
@@ -50,8 +61,10 @@
 @implementation ALFloatingPanel
 
 + (void)installForCurrentApplication {
+#ifndef APPLELIVE_STANDALONE
     NSString *bundle = NSBundle.mainBundle.bundleIdentifier;
     if (![@[@"com.apple.camera", @"com.ss.iphone.ugc.Aweme", @"com.zhiliaoapp.musically"] containsObject:bundle]) return;
+#endif
     dispatch_async(dispatch_get_main_queue(), ^{
         static ALFloatingPanel *controller;
         if (controller) return;
@@ -286,7 +299,7 @@
 
 - (void)toggleConnection {
     self.connection = [ALConnectionSettings() mutableCopy];
-    BOOL connected = [ALReadStreamStatus()[@"connected"] boolValue];
+    BOOL connected = [ALPanelStreamStatus()[@"connected"] boolValue];
     BOOL paused = [self.connection[@"paused"] boolValue];
     // When offline, Connect also forces a fresh attempt at the saved addresses.
     self.connection[@"paused"] = @(!paused && connected);
@@ -384,7 +397,7 @@
     }
     self.window.hidden = NO;
     if (!self.published) self.published = ALPublishControls(self.controls);
-    NSDictionary *status = ALReadStreamStatus();
+    NSDictionary *status = ALPanelStreamStatus();
     NSString *connection = [status[@"usb"] boolValue] ? @"USB" : @"局域网";
     BOOL connected = [status[@"connected"] boolValue];
     BOOL paused = [self.connection[@"paused"] boolValue];

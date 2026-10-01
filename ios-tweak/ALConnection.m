@@ -43,13 +43,19 @@ static NSDictionary *ALDecodeConnection(uint64_t value) {
 }
 
 NSDictionary *ALConnectionSettings(void) {
+    NSDictionary *saved = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"AppleLive.Connection.v1"];
+#ifdef APPLELIVE_STANDALONE
+    if (!saved) {
+#endif
     uint64_t state = 0;
     int token = ALConnectionToken();
     if (token >= 0 && notify_get_state(token, &state) == NOTIFY_STATUS_OK) {
         NSDictionary *settings = ALDecodeConnection(state);
         if (settings) return settings;
     }
-    NSDictionary *saved = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"AppleLive.Connection.v1"];
+#ifdef APPLELIVE_STANDALONE
+    }
+#endif
     if (saved) {
         NSMutableDictionary *settings = [saved mutableCopy];
         settings[@"mode"] = @"auto"; // Migrate old manually selected phone modes.

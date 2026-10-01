@@ -12,6 +12,7 @@
 
 + (instancetype)sharedInstance;
 - (void)start;
+- (NSDictionary *)streamStatus;
 - (CMSampleBufferRef)replacementForVideoSample:(CMSampleBufferRef)original;
 - (CMSampleBufferRef)replacementForAudioSample:(CMSampleBufferRef)original;
 

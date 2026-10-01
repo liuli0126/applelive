@@ -1,0 +1,52 @@
+name: Build AppleLive injector dylib
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ios-injector/**"
+      - "ios-tweak/**"
+      - "scripts/verify-injector-dylib.py"
+      - ".github/workflows/build-ios-injector.yml"
+
+jobs:
+  build-injector:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install ldid make perl
+
+      - name: Install Theos and SDKs
+        env:
+          THEOS: ${{ runner.temp }}/theos
+        run: |
+          git clone --depth 1 --recursive https://github.com/theos/theos.git "$THEOS"
+          git clone --depth 1 https://github.com/theos/sdks.git "$RUNNER_TEMP/theos-sdks"
+          mkdir -p "$THEOS/sdks"
+          cp -R "$RUNNER_TEMP/theos-sdks/." "$THEOS/sdks/"
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+
+      - name: Build injector dylib
+        run: |
+          make -C ios-injector all FINALPACKAGE=1
+          mkdir -p injector-artifact
+          cp ios-injector/.theos/obj/AppleLive.dylib injector-artifact/AppleLive.dylib
+          ldid -S injector-artifact/AppleLive.dylib
+
+      - name: Verify standalone binary
+        run: |
+          python3 scripts/verify-injector-dylib.py injector-artifact/AppleLive.dylib
+          if xcrun nm -u injector-artifact/AppleLive.dylib | grep -E 'MSHook|ellekit|libhooker'; then
+            exit 1
+          fi
+          shasum -a 256 injector-artifact/AppleLive.dylib > injector-artifact/SHA256.txt
+
+      - name: Upload dylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppleLive-Injector-iOS15
+          path: injector-artifact/*
+          if-no-files-found: error

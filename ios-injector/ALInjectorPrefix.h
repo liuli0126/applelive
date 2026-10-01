@@ -1,0 +1,9 @@
+#define ALVirtualCamera ALInjectedVirtualCamera
+#define ALDelegateProxy ALInjectedDelegateProxy
+#define ALFloatingPanel ALInjectedFloatingPanel
+#define ALPassThroughWindow ALInjectedPassThroughWindow
+#define ALPanelViewController ALInjectedPanelViewController
+#define ALFrameStore ALInjectedFrameStore
+#define ALAudioRing ALInjectedAudioRing
+#define ALStreamClient ALInjectedStreamClient
+#define ALVideoDecoder ALInjectedVideoDecoder
