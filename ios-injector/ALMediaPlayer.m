@@ -102,6 +102,7 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     BOOL local = url.isFileURL;
     if (!input || !packet || !frame) goto cleanup;
     input->interrupt_callback = (AVIOInterruptCB){ALInterruptMedia, &interrupt};
+    if (!local) { input->flags |= AVFMT_FLAG_NOBUFFER; input->max_delay = 100000; }
     AVDictionary *options = NULL;
     if (!local) {
         av_dict_set(&options, "rw_timeout", "5000000", 0);
@@ -133,7 +134,7 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     interrupt.deadline = 0;
     while (atomic_load(&_generation) == generation) {
         @autoreleasepool {
-            if (local && self.paused && self.requestedSeek < 0) {
+            if (local && self.paused && self.requestedSeek < 0 && discardBefore < 0) {
                 self.status = @{@"state": @"paused", @"position": @(position), @"duration": @(duration), @"audio": @(audio != NULL)};
                 usleep(20000); originPTS = NAN; continue;
             }

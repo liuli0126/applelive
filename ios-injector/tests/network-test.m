@@ -23,8 +23,17 @@ static void publishFixture(const char *filename) {
     if (result < 0 || avformat_write_header(output, NULL) < 0) goto done;
     output->flags |= AVFMT_FLAG_FLUSH_PACKETS;
     int64_t started = av_gettime_relative();
-    while (!atomic_load(&gStopPublisher) && av_read_frame(input, packet) >= 0) {
+    int64_t loopOffset = 0;
+    while (!atomic_load(&gStopPublisher)) {
+        if (av_read_frame(input, packet) < 0) {
+            if (av_seek_frame(input, -1, 0, AVSEEK_FLAG_BACKWARD) < 0) break;
+            loopOffset += input->duration > 0 ? input->duration : 2 * AV_TIME_BASE;
+            continue;
+        }
         AVStream *source = input->streams[packet->stream_index];
+        int64_t offset = av_rescale_q(loopOffset, AV_TIME_BASE_Q, source->time_base);
+        if (packet->pts != AV_NOPTS_VALUE) packet->pts += offset;
+        if (packet->dts != AV_NOPTS_VALUE) packet->dts += offset;
         int64_t due = started + av_rescale_q(packet->dts, source->time_base, AV_TIME_BASE_Q);
         while (due > av_gettime_relative() && !atomic_load(&gStopPublisher)) usleep(2000);
         av_packet_rescale_ts(packet, source->time_base, output->streams[packet->stream_index]->time_base);
