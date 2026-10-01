@@ -13,6 +13,16 @@ if ($Port -lt 1024 -or $Port -gt 65535 -or $ForwardPort -lt 1024 -or $ForwardPor
 }
 if ($Device -and $Device -notmatch '^[A-Za-z0-9-]+$') { throw "Invalid device UDID." }
 
+# Standalone USB is owned by the packaged sender; SSH is only for paired legacy debs.
+$legacyKeyDirectory = Join-Path $env:USERPROFILE '.ssh'
+if ($Device) {
+  $hasLegacyKey = Test-Path -LiteralPath (Join-Path $legacyKeyDirectory "applelive-$Device") -PathType Leaf
+} else {
+  $hasLegacyKey = [bool](Get-ChildItem -LiteralPath $legacyKeyDirectory -Filter 'applelive-*' -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^applelive-[A-Za-z0-9-]+$' } | Select-Object -First 1)
+}
+if (-not $hasLegacyKey) { exit 0 }
+
 # One supervisor per USB route. A failed forwarding process or SSH connection
 # is retried automatically; repeated OBS Start clicks do not spawn duplicates.
 if (-not $SingleAttempt) {

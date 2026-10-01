@@ -1,5 +1,15 @@
 # Progress
 
+## 2026-10-01 final MediaMTX and internal-audio delivery
+
+- cd13b4b passed injector, full OBS, legacy rootful and rootless CI. Fixed C++ runtime linkage in the relink kit and Windows wrapper-process cleanup in the stream tests; integration tests use separate paths. No phone apps or installed debs were modified.
+- Internal audio now feeds independent capture-delegate and AudioUnit rings. Removed the delegate-priority bypass that could leave original microphone data in the other input path. PCM layouts and underflow silence pass host tests; live-app microphone replacement still needs device confirmation.
+- Delivered artifacts/AppleLive-192.168.1.45-8765.dylib, AppleLive-Phone.zip and AppleLive-OBS-Windows.zip. Phone SHA256: 80e35457dc3b455d7c008f0feb2d227f5269a7732f56d7cc0e20dc5f5ff43c4d. HTTP download and both bundles contain identical phone bytes. Licenses, source and relink materials accompany the bundles.
+- The OBS bundle combines the tested 6fde1ff PC binaries with cd13b4b phone materials and current README/USB helper; PC Python/Lua/web source is identical in these builds. Updated only the installed AppleLive directory, with a backup at artifacts/obs-plugin-backup-media-20261001-183905. Retained LAN, high, 1080x1920/30fps/8Mbps and the user's currently enabled computer audio.
+- Real OBS output probes confirm H.264/1080x1920 and AAC/48kHz/stereo through MediaMTX; RTSP decode and legacy WebSocket video/PCM reception pass. Playwright validates stream-address copy, QR, phone download and layout at 280/560px. These are PC checks, not phone latency or app compatibility measurements.
+- Standalone USB remains independent of SSH. The legacy helper exits before launching Python/SSH when no matching private key exists; the no-key SingleAttempt branch was executed successfully. Packaging now checks required Python modules before freezing.
+- Final phone guide is artifacts/ios-injector-cd13b4b/README-手机操作.txt. iOS15.6 app injection, live-app internal audio, preview/photo, physical USB, TikTok and additional iOS versions remain pending user device tests. The original iOS13.3 phone was left unchanged.
+
 ## 2026-10-01 match tested reference feature scope
 
 - User supplied Vacm_afasds_v10(2).dylib and confirmed it is tested and works well; explicitly requests matching its full functionality. Static comparison saved in artifacts/DYLIB_COMPARISON.md. Reference is4884752bytes, arm64/iOS14.0,22 system dependencies, built-in FFmpeg libavformat60.16.100 and Objective-C runtime hooks. Our current434720-byte dylib is arm64+modernarm64e/iOS15.0 and OBS WebSocket only.
