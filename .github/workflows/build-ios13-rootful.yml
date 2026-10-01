@@ -5,27 +5,50 @@ on:
   push:
     paths:
       - "ios-tweak/**"
+      - "scripts/verify-ios13-abi.py"
       - ".github/workflows/build-ios13-rootful.yml"
 
 jobs:
   build-rootful:
-    runs-on: macos-14
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install build tools
-        run: brew install ldid dpkg make perl
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential dpkg-dev perl xz-utils libtinfo5 libncurses5 libxml2
 
       - name: Install Theos and SDKs
         env:
           THEOS: ${{ runner.temp }}/theos
         run: |
           git clone --depth 1 --recursive https://github.com/theos/theos.git "$THEOS"
-          git clone --depth 1 https://github.com/theos/sdks.git "$RUNNER_TEMP/theos-sdks"
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/theos/sdks.git "$RUNNER_TEMP/theos-sdks"
+          git -C "$RUNNER_TEMP/theos-sdks" sparse-checkout set iPhoneOS13.7.sdk
           mkdir -p "$THEOS/sdks"
-          cp -R "$RUNNER_TEMP/theos-sdks/." "$THEOS/sdks/"
+          cp -R "$RUNNER_TEMP/theos-sdks/iPhoneOS13.7.sdk" "$THEOS/sdks/"
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+
+      # iOS 12/13 system processes on A12+ require the original arm64e ABI.
+      # Current Xcode/clang produces the iOS 14 ABI even with a 13.0 target.
+      - name: Install legacy arm64e compiler
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/sbingner/llvm-project/releases/download/v10.0.0-2/linux-ios-arm64e-clang-toolchain.tar.lzma \
+            --output "$RUNNER_TEMP/legacy-toolchain.tar.lzma"
+          mkdir -p "$RUNNER_TEMP/legacy-toolchain"
+          tar --lzma -xf "$RUNNER_TEMP/legacy-toolchain.tar.lzma" -C "$RUNNER_TEMP/legacy-toolchain"
+          legacy_clang=$(find -L "$RUNNER_TEMP/legacy-toolchain" -path '*/bin/clang' -type f -print -quit)
+          test -n "$legacy_clang"
+          legacy_root=$(dirname "$(dirname "$legacy_clang")")
+          mkdir -p "$THEOS/toolchain/linux"
+          ln -s "$legacy_root" "$THEOS/toolchain/linux/iphone"
+          echo "$legacy_root/bin" >> "$GITHUB_PATH"
+          echo "LD_LIBRARY_PATH=$legacy_root/lib" >> "$GITHUB_ENV"
+          LD_LIBRARY_PATH="$legacy_root/lib" "$legacy_clang" --version
 
       - name: Prepare iOS 13 rootful package
         run: |
@@ -37,7 +60,12 @@ jobs:
           chmod 755 ios-tweak/layout/DEBIAN/postinst
 
       - name: Build rootful package
-        run: make -C ios-tweak package FINALPACKAGE=1 TARGET=iphone:clang:16.5:13.0
+        run: make -C ios-tweak package FINALPACKAGE=1 TARGET=iphone:clang:13.7:13.0
+
+      - name: Verify iOS 13 arm64e ABI
+        run: |
+          dpkg-deb -x ios-tweak/packages/*_iphoneos-arm.deb "$RUNNER_TEMP/ios13-package"
+          python3 scripts/verify-ios13-abi.py "$RUNNER_TEMP/ios13-package/Library/MobileSubstrate/DynamicLibraries/AppleLive.dylib"
 
       - name: Upload deb
         uses: actions/upload-artifact@v4

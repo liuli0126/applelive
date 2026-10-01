@@ -14,7 +14,7 @@
 | 5. 打包与验证 | complete | Theos Makefile、安装说明、Python AST/协议/WebSocket/FFmpeg 冒烟检查；iOS deb 需在 macOS/Linux + Theos 上构建 |
 | 6. OBS 控制插件 | complete | OBS Lua 脚本控制虚拟摄像头、发送器和连接状态；Windows 可执行文件 |
 | 7. OBS 验证 | in_progress | dshow 视频传输、启停清理、Lua 语法、本地与 GitHub Actions Windows ZIP 构建通过；真实 OBS 面板和 iPhone 直播 App 待设备实测 |
-| 8. iOS 13.3 rootful 适配 | in_progress | 独立 rootful deb 的 GitHub Actions 构建成功；已核对 iphoneos-arm 架构、Substitute 依赖和 rootful 安装路径，等待设备验证 |
+| 8. iOS 13.3 rootful 适配 | in_progress | 0.1.3 已确认安装；OpenSSH 和 USB WebSocket 握手通过；系统相机仍显示原画面，已发现新旧 arm64e ABI 不兼容，正在构建 0.1.4 旧 ABI 修正版 |
 
 ## Constraints
 - 当前工作区为空，无法复用现成工程。

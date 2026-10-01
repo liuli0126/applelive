@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-10-01 USB connection and iOS 13 ABI repair
+
+- OpenSSH 8.4-2 is running. With the user's explicit default-password instruction, logged in as mobile and verified `com.applelive.tweak` 0.1.3, installed library/filter, and USB/LAN configuration.
+- Created a dedicated Ed25519 key outside the repository at `%USERPROFILE%/.ssh/applelive-<UDID>` and appended its public key to the phone's mobile authorized_keys. Existing keys were preserved. USB scripts now use that key when available; PowerShell syntax check passed.
+- Left usbmux forwarding on local 2222 (PID 32844) and SSH reverse forwarding to phone 127.0.0.1:8765 (PID 41268) running. Verified an HTTP 101 WebSocket upgrade through the phone's loopback listener. This diagnostic connection is not proof of tweak camera reception. Sender still reports zero persistent clients.
+- User reports stock Camera still shows its own camera. Confirmed the installed arm64e slice uses subtype 0x80000002, but iOS 13 Camera and mediaserverd use legacy subtype 2. Theos arm64e deployment documentation confirms modern clang cannot target the legacy ABI merely by lowering the deployment version. Douyin 39.9.0 uses arm64; its app fallback needs separate testing.
+- Preparing rootful 0.1.4 with legacy clang 10 and iPhoneOS13.7 SDK in GitHub Actions, plus a package ABI verification gate. No compiler downloads to the user's PC.
+- Phone locked during diagnostic relaunch, so a request to unlock and keep Camera open is pending. `uiopen com.apple.camera` is the correct command; this device's uiopen does not accept `--bundleid`. Some phone command line utilities (log/netstat/lsof) are absent; use the paired USB syslog service and SSH channels instead.
+
+## 2026-10-01 phone installation and connection setup
+
+- Copied `AppleLive-0.1.3.deb` to AFC `/`, corresponding to Filza `/var/mobile/Media/`, and verified the read-back SHA-256 matches the local iOS 13 rootful package. User reported installation complete; installed files and tweak injection have not yet been independently verified.
+- USB still detects the same iPhone 11 / iOS 13.3. A fresh usbmux connection to phone TCP port 22 was refused, so the OpenSSH service required by the current USB tunnel is not yet available.
+- Used the running OBS local WebSocket interface to start its virtual camera. OBS log confirms Program output started. Started the existing AppleLiveSender executable with HD Camera, NVENC, 720x1280/30 fps and 5 Mbps. Status is running on port 8765, with zero phone/USB connections. PC audio is not enabled.
+- Sender is intentionally left running for the user's phone connection test; stop through the OBS AppleLive panel. Existing Windows firewall profiles are disabled; no firewall settings were changed. Awaiting phone OpenSSH setup and an actual camera/live-app image test.
+
 ## 2026-09-30 low-latency pass
 
 - Simplified the OBS panel to quality, connection mode, audio toggle, and start/stop; technical settings are hidden until Advanced is enabled. USB mode launches the tunnel window.

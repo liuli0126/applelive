@@ -31,6 +31,12 @@ if ($Port -lt 1024 -or $Port -gt 65535 -or $ForwardPort -lt 1024 -or $ForwardPor
   throw "Ports must be between 1024 and 65535."
 }
 
+$identityPath = Join-Path $env:USERPROFILE ".ssh\applelive-$Device"
+$identityArgs = @()
+if (Test-Path -LiteralPath $identityPath -PathType Leaf) {
+  $identityArgs = @("-i", $identityPath, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes")
+}
+
 $forwarder = Start-Process -FilePath $python -ArgumentList @(
   "-m", "pymobiledevice3", "usbmux", "forward", "$ForwardPort", "22", "--serial", $Device
 ) -PassThru -WindowStyle Hidden
@@ -40,8 +46,12 @@ try {
   if ($forwarder.HasExited) { throw "USB port forwarding could not start. Check the cable and device trust." }
   Write-Host "USB connected: $Device"
   Write-Host "Opening an SSH reverse tunnel to iPhone port 8765. Keep this window open."
-  Write-Host "The iPhone needs OpenSSH from Cydia. Its password is entered only in the SSH prompt."
-  & ssh -p $ForwardPort -o "HostKeyAlias=applelive-$Device" `
+  if ($identityArgs.Count) {
+    Write-Host "Using this PC's paired iPhone key."
+  } else {
+    Write-Host "The iPhone needs OpenSSH from Cydia. Its password is entered only in the SSH prompt."
+  }
+  & ssh @identityArgs -p $ForwardPort -o "HostKeyAlias=applelive-$Device" `
     -o StrictHostKeyChecking=accept-new -o ExitOnForwardFailure=yes `
     -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 `
     -N -T -R "127.0.0.1:8765:127.0.0.1:$Port" mobile@127.0.0.1

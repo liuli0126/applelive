@@ -39,4 +39,4 @@ ffmpeg -list_devices true -f dshow -i dummy
 
 LAN 模式下，iPhone 越狱插件配置中的 `server` 填电脑的局域网 IPv4 地址和端口，例如 `192.168.1.20:8765`。Windows 防火墙需要允许 AppleLiveSender 的入站连接。OBS 脚本面板的“状态”显示发送器状态和 iPhone 连接数；更详细的错误在同目录的 `applelive-sender.log`。
 
-USB 模式需先在 iPhone 的 Cydia 安装并启动 OpenSSH。OBS 面板选择 **USB 数据线** 后点击 **启动**，会自动打开连接窗口；在该窗口输入 SSH 密码，并在使用时保持窗口开启。iOS 13 一体包优先连接 USB，USB 不可用时回退到 LAN；已经连上 LAN 时也会自动探测并切换到 USB。当前手机的 22 端口未开放，因此 USB 链路还不能完成实机验证；抖音和 TikTok 的相机替换也仍需实测。
+USB 模式需先在 iPhone 的 Cydia 安装并启动 OpenSSH。OBS 面板选择 **USB 数据线** 后点击 **启动**，会自动打开连接窗口；在该窗口输入 SSH 密码，并在使用时保持窗口开启。完成专用密钥配对后，脚本自动使用 `%USERPROFILE%\.ssh\applelive-<UDID>`，无需重复输入密码。iOS 13 一体包优先连接 USB，USB 不可用时回退到 LAN；已经连上 LAN 时也会自动探测并切换到 USB。测试手机的 OpenSSH 和 USB WebSocket 握手已验证，相机画面替换和手机声音仍需实测。iPhone 11 / iOS 13 应使用旧 arm64e ABI 构建的包，0.1.3 的系统相机注入不兼容。
