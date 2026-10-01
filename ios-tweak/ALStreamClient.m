@@ -13,6 +13,8 @@ const NSUInteger ALAudioHeaderLength = 12;
     NSURLSession *_preferredSession;
     NSURLSessionWebSocketTask *_preferredTask;
     dispatch_source_t _preferredTimer;
+    dispatch_source_t _healthTimer;
+    CFAbsoluteTime _lastMessageTime;
     dispatch_queue_t _queue;
     BOOL _connected;
     BOOL _stopping;
@@ -64,6 +66,12 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
         self->_addresses = [validAddresses copy];
         self->_nextAddressIndex = 0;
         if (self.onDisconnected) self.onDisconnected();
+        self->_healthTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, self->_queue);
+        dispatch_source_set_timer(self->_healthTimer, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC),
+                                  NSEC_PER_SEC, NSEC_PER_SEC / 10);
+        __weak typeof(self) healthSelf = self;
+        dispatch_source_set_event_handler(self->_healthTimer, ^{ [healthSelf _checkHealthLocked]; });
+        dispatch_resume(self->_healthTimer);
         if (self->_addresses.count > 1) {
             self->_preferredTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, self->_queue);
             dispatch_source_set_timer(self->_preferredTimer,
@@ -123,6 +131,17 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
         dispatch_source_cancel(_preferredTimer);
         _preferredTimer = nil;
     }
+    if (_healthTimer) {
+        dispatch_source_cancel(_healthTimer);
+        _healthTimer = nil;
+    }
+}
+
+- (void)_checkHealthLocked {
+    if (_stopping || !self.connected || CFAbsoluteTimeGetCurrent() - _lastMessageTime < 5) return;
+    os_log(OS_LOG_DEFAULT, "[AppleLive] no stream data for 5 seconds; reconnecting");
+    [self _disconnectLocked];
+    [self _scheduleReconnect];
 }
 
 - (void)_probePreferredLocked {
@@ -163,6 +182,7 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
                 return;
             }
             if (message.type == NSURLSessionWebSocketMessageTypeData) {
+                self->_lastMessageTime = CFAbsoluteTimeGetCurrent();
                 [self _handleBinary:message.data];
             } else if (message.string.length) {
                 [self _handleText:message.string];
@@ -249,11 +269,13 @@ didOpenWithProtocol:(NSString *)protocol {
             [oldTask cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
             [oldSession invalidateAndCancel];
             self.connected = YES;
+            self->_lastMessageTime = CFAbsoluteTimeGetCurrent();
             [self _receiveNext];
             return;
         }
         if (webSocketTask != self->_task) return;
         self.connected = YES;
+        self->_lastMessageTime = CFAbsoluteTimeGetCurrent();
         [self _receiveNext];
     });
     (void)session;

@@ -235,6 +235,8 @@ static void ALInstallHooks(void) {
             weakSelf.lastAudioTime = CFAbsoluteTimeGetCurrent();
         };
         _client.onDisconnected = ^{
+            weakSelf.lastVideoTime = 0;
+            weakSelf.lastAudioTime = 0;
             [weakSelf.decoder reset];
             [weakSelf.frameStore clear];
             [weakSelf.audioRing clear];

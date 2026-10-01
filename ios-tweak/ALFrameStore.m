@@ -4,6 +4,7 @@
 @implementation ALFrameStore {
     CVPixelBufferRef _pixelBuffer;
     uint32_t _sequence;
+    CFAbsoluteTime _receivedAt;
     os_unfair_lock _lock;
 }
 
@@ -26,13 +27,15 @@
     CVPixelBufferRef old = _pixelBuffer;
     _pixelBuffer = pixelBuffer;
     _sequence = sequence;
+    _receivedAt = CFAbsoluteTimeGetCurrent();
     os_unfair_lock_unlock(&_lock);
     if (old) CVPixelBufferRelease(old);
 }
 
 - (CVPixelBufferRef)copyLatestPixelBuffer {
     os_unfair_lock_lock(&_lock);
-    CVPixelBufferRef result = _pixelBuffer;
+    CFAbsoluteTime age = CFAbsoluteTimeGetCurrent() - _receivedAt;
+    CVPixelBufferRef result = age >= 0 && age < 0.75 ? _pixelBuffer : NULL;
     if (result) CVPixelBufferRetain(result);
     os_unfair_lock_unlock(&_lock);
     return result;
@@ -49,6 +52,7 @@
     os_unfair_lock_lock(&_lock);
     CVPixelBufferRef old = _pixelBuffer;
     _pixelBuffer = NULL;
+    _receivedAt = 0;
     os_unfair_lock_unlock(&_lock);
     if (old) CVPixelBufferRelease(old);
 }
