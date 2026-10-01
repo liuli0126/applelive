@@ -1,6 +1,64 @@
 obs = obslua
 
 local separator = package.config:sub(1, 1)
+-- OBS supplies UTF-8 paths; Lua's CRT file functions use the Windows code page.
+-- Use OBS file helpers and CreateProcessW so Chinese installation paths work.
+local ffi, obs_native, kernel
+if separator == "\\" then
+    local ok, library = pcall(require, "ffi")
+    if ok then
+        ffi = library
+        if not pcall(ffi.typeof, "AL_STARTUPINFOW") then
+            ffi.cdef[[
+                typedef struct {
+                    unsigned long cb; unsigned short *reserved, *desktop, *title;
+                    unsigned long x, y, xsize, ysize, xchars, ychars, fill, flags;
+                    unsigned short show, reserved_size; unsigned char *reserved_data;
+                    void *input, *output, *error;
+                } AL_STARTUPINFOW;
+                typedef struct { void *process, *thread; unsigned long pid, tid; } AL_PROCESS_INFORMATION;
+                int __stdcall MultiByteToWideChar(unsigned int, unsigned long, const char *, int, unsigned short *, int);
+                int __stdcall CreateProcessW(const unsigned short *, unsigned short *, void *, void *, int,
+                    unsigned long, void *, const unsigned short *, AL_STARTUPINFOW *, AL_PROCESS_INFORMATION *);
+                int __stdcall CloseHandle(void *);
+                unsigned long __stdcall GetCurrentProcessId(void);
+                char *os_quick_read_utf8_file(const char *);
+                bool os_quick_write_utf8_file(const char *, const char *, size_t, bool);
+                bool os_file_exists(const char *);
+                int os_unlink(const char *);
+                int os_rename(const char *, const char *);
+                void bfree(void *);
+            ]]
+        end
+        obs_native = ffi.load("obs")
+        kernel = ffi.load("kernel32")
+    end
+end
+
+local function execute_hidden(command)
+    if not kernel then return os.execute(command) end
+    local length = kernel.MultiByteToWideChar(65001, 0, command, #command, nil, 0)
+    if length == 0 then return false end
+    local wide = ffi.new("unsigned short[?]", length + 1)
+    if kernel.MultiByteToWideChar(65001, 0, command, #command, wide, length) == 0 then return false end
+    local startup, process = ffi.new("AL_STARTUPINFOW"), ffi.new("AL_PROCESS_INFORMATION")
+    startup.cb = ffi.sizeof(startup)
+    if kernel.CreateProcessW(nil, wide, nil, nil, 0, 0x08000000, nil, nil, startup, process) == 0 then return false end
+    kernel.CloseHandle(process.thread)
+    kernel.CloseHandle(process.process)
+    return true
+end
+
+local function remove_file(path)
+    if obs_native then return obs_native.os_unlink(path) == 0 end
+    return os.remove(path)
+end
+
+local function rename_file(from, to)
+    if obs_native then return obs_native.os_rename(from, to) == 0 end
+    return os.rename(from, to)
+end
+
 local script_dir = script_path()
 if script_dir:lower():match("%.lua$") then
     script_dir = script_dir:match("^(.*)[/\\]") or ""
@@ -35,6 +93,7 @@ local video_device = "HD Camera"
 local ffmpeg_path = "ffmpeg"
 local audio_device = "CABLE Output (VB-Audio Virtual Cable)"
 local owns_virtual_camera = false
+local pending_camera_start = nil
 local sender_state = "stopped"
 local launch_started_at = 0
 local status_text = "未启动"
@@ -45,6 +104,13 @@ local function log(level, message)
 end
 
 local function read_file(path)
+    if obs_native then
+        local buffer = obs_native.os_quick_read_utf8_file(path)
+        if buffer == nil then return nil end
+        local content = ffi.string(buffer)
+        obs_native.bfree(buffer)
+        return content
+    end
     local file = io.open(path, "rb")
     if not file then return nil end
     local content = file:read("*a")
@@ -53,6 +119,7 @@ local function read_file(path)
 end
 
 local function file_exists(path)
+    if obs_native then return obs_native.os_file_exists(path) end
     local file = io.open(path, "rb")
     if not file then return false end
     file:close()
@@ -60,6 +127,11 @@ local function file_exists(path)
 end
 
 local function write_file(path, content)
+    if obs_native then
+        if obs_native.os_quick_write_utf8_file(path, content, #content, false) then return true end
+        log(obs.LOG_ERROR, "无法写入 " .. path)
+        return false
+    end
     local file, err = io.open(path, "wb")
     if not file then
         log(obs.LOG_ERROR, "无法写入 " .. path .. ": " .. tostring(err))
@@ -137,6 +209,10 @@ local function refresh_status()
 end
 
 local function request_stop()
+    if pending_camera_start then
+        obs.timer_remove(pending_camera_start)
+        pending_camera_start = nil
+    end
     if sender_state == "stopped" or sender_state == "error" then return true end
     if not write_file(stop_path, "stop\n") then return false end
     if owns_virtual_camera and obs.obs_frontend_virtualcam_active() then
@@ -183,24 +259,41 @@ local function start_sender(props, property)
         return true
     end
 
-    os.remove(stop_path)
-    os.remove(status_path)
+    remove_file(stop_path)
+    remove_file(status_path)
     if video_device == "OBS Virtual Camera" or video_device == "HD Camera" then
         if not obs.obs_frontend_virtualcam_active() then
             obs.obs_frontend_start_virtualcam()
             owns_virtual_camera = true
-        end
-        if not obs.obs_frontend_virtualcam_active() then
-            owns_virtual_camera = false
-            status_text = "OBS 虚拟摄像头启动失败"
-            log(obs.LOG_ERROR, status_text)
+            -- OBS queues virtual camera startup on the UI thread. Wait without
+            -- blocking that thread; an immediate active() check reports failure.
+            sender_state = "starting"
+            status_text = "正在启动 OBS 虚拟摄像头"
+            launch_started_at = os.time()
+            pending_camera_start = function()
+                if obs.obs_frontend_virtualcam_active() then
+                    obs.timer_remove(pending_camera_start)
+                    pending_camera_start = nil
+                    sender_state = "stopped"
+                    start_sender(nil, nil)
+                elseif os.time() - launch_started_at > 8 then
+                    obs.timer_remove(pending_camera_start)
+                    pending_camera_start = nil
+                    sender_state = "error"
+                    status_text = "OBS 虚拟摄像头启动超时"
+                    log(obs.LOG_ERROR, status_text)
+                    obs.obs_frontend_stop_virtualcam()
+                    owns_virtual_camera = false
+                end
+            end
+            obs.timer_add(pending_camera_start, 100)
             return true
         end
     end
 
     sender_state = "starting"
     launch_started_at = os.time()
-    local command = 'cmd /d /c start "" /min ' .. quoted(sender_path) ..
+    local command = quoted(sender_path) ..
         ' --host "0.0.0.0" --port ' .. port ..
         ' --connection-mode ' .. quoted(connection_mode) ..
         ' --video-device ' .. quoted(video_device) ..
@@ -216,7 +309,7 @@ local function start_sender(props, property)
         command = command .. ' --audio-device ' .. quoted(audio_device)
     end
 
-    local result = os.execute(command)
+    local result = execute_hidden(command)
     if result ~= true and result ~= 0 then
         sender_state = "error"
         status_text = "发送器启动命令失败"
@@ -229,7 +322,7 @@ local function start_sender(props, property)
         if connection_mode == "usb" then
             local usb_command = 'cmd /d /c start "AppleLive USB" /min powershell.exe -NoProfile -ExecutionPolicy Bypass -File ' ..
                 quoted(usb_script_path) .. ' -Port ' .. port
-            os.execute(usb_command)
+            execute_hidden(usb_command)
         end
     end
     return true
@@ -243,15 +336,8 @@ end
 local function launch_dock()
     if file_exists(dock_path) and safe_argument(dock_path) and safe_argument(script_dir) then
         local directory = script_dir:gsub("[/\\]+$", "")
-        local process_id = 0
-        local ok, ffi = pcall(require, "ffi")
-        if ok then
-            pcall(function()
-                ffi.cdef("unsigned long __stdcall GetCurrentProcessId(void);")
-                process_id = tonumber(ffi.load("kernel32").GetCurrentProcessId())
-            end)
-        end
-        os.execute('cmd /d /c start "" /min ' .. quoted(dock_path) .. ' --directory ' .. quoted(directory) .. ' --obs-pid ' .. process_id)
+        local process_id = kernel and tonumber(kernel.GetCurrentProcessId()) or 0
+        execute_hidden(quoted(dock_path) .. ' --directory ' .. quoted(directory) .. ' --obs-pid ' .. process_id)
     else
         log(obs.LOG_WARNING, "停靠面板组件缺失，请完整解压插件包")
     end
@@ -293,7 +379,7 @@ local function dock_tick()
             last_command = id
             obs.obs_data_release(data)
         end
-        os.remove(command_path)
+        remove_file(command_path)
     end
     local state = obs.obs_data_create()
     local config = obs.obs_data_create()
@@ -313,8 +399,8 @@ local function dock_tick()
     obs.obs_data_set_string(state, "status_text", status_text)
     local temp = bridge_path .. ".tmp"
     if write_file(temp, obs.obs_data_get_json(state)) then
-        os.remove(bridge_path)
-        os.rename(temp, bridge_path)
+        remove_file(bridge_path)
+        rename_file(temp, bridge_path)
     end
     obs.obs_data_release(config)
     obs.obs_data_release(state)
@@ -432,7 +518,7 @@ end
 function script_load(settings)
     settings_ref = settings
     obs.obs_data_addref(settings_ref)
-    os.remove(command_path)
+    remove_file(command_path)
     dock_tick()
     launch_dock()
     obs.timer_add(refresh_status, 1000)
@@ -445,7 +531,7 @@ end
 
 function script_unload()
     obs.timer_remove(dock_tick)
-    os.remove(bridge_path)
+    remove_file(bridge_path)
     if settings_ref then obs.obs_data_release(settings_ref); settings_ref = nil end
     obs.timer_remove(refresh_status)
     refresh_status()

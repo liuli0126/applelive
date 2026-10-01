@@ -5,12 +5,14 @@ AppleLive 把 OBS 节目画面发送到越狱 iPhone。控制面板可固定在 
 ## 首次安装
 
 1. 使用现有 OBS 和 FFmpeg。将 FFmpeg 加入 PATH，或在高级设置填写完整路径。
-2. 完整解压 ZIP 到可写目录，保留 AppleLive.lua、AppleLiveSender.exe、AppleLiveDock.exe、usb_forward.ps1 和 dock 文件夹。
+2. 完整解压 ZIP 到 OBS 安装目录下的 `data/obs-plugins/AppleLive` 文件夹，保留 AppleLive.lua、AppleLiveSender.exe、AppleLiveDock.exe、usb_forward.ps1 和 dock 文件夹。该目录需要可写；支持中文路径。
 3. 在 OBS「工具 → 脚本」点击 +，加载 AppleLive.lua。只加载一份，旧版重复项可移除。
 4. 打开「停靠窗口 → 自定义浏览器停靠窗口」，名称填 AppleLive，URL 填 `http://127.0.0.1:18765/`，点击应用。
 5. 拖动 AppleLive 标题栏固定在 OBS 侧边。选择连接方式和画质，点击「开始传输」。
 
 只需添加一次，OBS 会保存布局。脚本随 OBS 启动本地面板服务。如启动时网页尚未加载，右键面板选择刷新。面板只监听本机，不需要配置 OBS WebSocket。
+
+插件文件安装在 OBS 文件夹内；当前面板使用 OBS 的浏览器停靠功能，尚不是 Qt 原生 DLL。脚本加载记录和窗口布局由 OBS 保存，复制到另一台电脑后仍需完成上述首次加载步骤。
 
 ## 连接方式只在电脑选择
 

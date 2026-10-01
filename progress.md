@@ -1,5 +1,12 @@
 # Progress
 
+## 2026-10-01 install inside existing OBS
+
+- User clarified they want installation inside the OBS folder. Installed the existing package to `D:/OBS定制款/OBS定制款/obs studio/data/obs-plugins/AppleLive`; native Qt rewrite was not pursued.
+- Verified OBS streaming and recording inactive before shutdown. After confirmation, OBS saved layout/scenes, unloaded scripts and cleared scenes, but hung in obs-websocket unload; ended only that already-shutting-down process. Configuration backup: `artifacts/obs-install-backup-20261001`. Migrated AppleLive script registration only; retained the user's mixer script, scene content, high/LAN/audio-off settings and dock layout.
+- Added UTF-8 filesystem calls and wide-character process creation to Lua. Local actual LuaJIT/OBS DLL fixture verified Chinese path read/write/rename/remove and successful sender launch with an intentionally missing test camera.
+- Restarted OBS (PID15664); new-folder dock helper loaded automatically and existing panel restored. Fixed newly exposed asynchronous virtualcam startup, reloaded the updated script and clicked the real dock start button from camera-off state. Sender running (PID27816), phone connected over LAN, 1080x1920/30fps/8Mbps, audio off. No phone package change or local development-tool download.
+
 ## 2026-10-01 per-app floating controls
 
 - User clarified that Douyin already displays the correct orientation while stock Camera is upside down, then requested a floating control panel inside target apps. The unshipped global flip was replaced by per-app defaults (Camera EXIF 8, Douyin/TikTok EXIF 6) plus saved rotation adjustments.

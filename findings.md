@@ -1,5 +1,14 @@
 # Findings
 
+## Native dock request (2026-10-01)
+- Final installation: `D:/OBS定制款/OBS定制款/obs studio/data/obs-plugins/AppleLive`. Existing browser dock restored automatically after OBS restart; remains a browser dock, not a native Qt DLL.
+- Actual OBS LuaJIT `io.open` fails on UTF-8 Chinese paths with Illegal byte sequence; fixed using OBS UTF-8 filesystem functions through FFI and Windows CreateProcessW for process startup. Verified file read/write/rename/remove and launching sender from the Chinese folder.
+- OBS frontend virtualcam startup is asynchronous. Immediate active() check produced a false failure after restart. A nonblocking 100ms timer now waits for readiness, with timeout and cancellation on stop/unload. Real dock start button passed from camera-off state.
+- User clarified: "我的意思是直接做到obs文件夹里". Scope is now installing the existing working package inside the customized OBS directory, updating autoload paths, and preserving settings/layout. A native Qt rewrite is not required for this clarified task.
+- User wants an actual native OBS dock. Existing browser dock does not fulfill that request.
+- Installed OBS30.2.3 uses Qt6.6.3; MSVC BuildTools exist locally, but searched locations have no Qt development SDK. Build on GitHub using the official OBS2024-05-08 Qt archive (SHA256 from OBS30.2.3 buildspec: 8f459af5115ce081ae24b108712327e113893f250e14a902b1bd188b43873ed1). No local SDK installation.
+- Native UI should use the OBS theme, show USB/LAN as exclusive choices, explain disabled settings during transmission, and register through obs_frontend_add_dock_by_id.
+
 ## LordVCAM 参考行为
 - 公开仓库显示其客户端连接 `wss://<host>:8765`，USB 模式仍复用 TCP/WebSocket。
 - 二进制视频头部为 20 字节：`type, seqnum, flags, width, height`，均为 little-endian；负载为 H.264/H.265 NAL 数据。
