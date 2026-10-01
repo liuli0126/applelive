@@ -11,7 +11,7 @@ for arch in arm64 arm64e; do
   if [ "$arch" = arm64e ]; then minimum=15.0; fi
   xcrun clang -arch "$arch" -isysroot "$sdk" -miphoneos-version-min="$minimum" -dynamiclib \
     -Wl,-install_name,@rpath/AppleLive.dylib objects/"$arch"/*.o -Llib \
-    -lavformat -lavcodec -lswresample -lswscale -lavutil -lz -lbz2 -liconv -lobjc \
+    -lavformat -lavcodec -lswresample -lswscale -lavutil -lz -lbz2 -liconv -lobjc -lc++ \
     "${arguments[@]}" -o "output/AppleLive-$arch.dylib"
 done
 xcrun lipo -create output/AppleLive-arm64.dylib output/AppleLive-arm64e.dylib -output output/AppleLive.dylib
