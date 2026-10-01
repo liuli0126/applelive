@@ -19,6 +19,7 @@
 #import "ALMediaPlayer.h"
 #import "ALPreview.h"
 #import "ALSampleAudio.h"
+#import "ALUSBReceiver.h"
 #import <ImageIO/ImageIO.h>
 #import <UIKit/UIKit.h>
 #endif
@@ -63,6 +64,8 @@ static void ALHookMessage(Class cls, SEL selector, IMP replacement, IMP *origina
 @property(atomic, copy) NSString *sourceKind;
 @property(nonatomic) NSURL *sourceURL;
 @property(atomic) NSInteger sourceRotation;
+@property(nonatomic) ALUSBReceiver *usbReceiver;
+@property(atomic) BOOL directUSB;
 #endif
 - (BOOL)renderVideoIntoSample:(CMSampleBufferRef)sample;
 @end
@@ -253,6 +256,7 @@ static void ALInstallHooks(void) {
 #ifdef APPLELIVE_STANDALONE
         _sourceKind = @"computer";
         _mediaPlayer = [ALMediaPlayer new];
+        _usbReceiver = [ALUSBReceiver new];
 #endif
         __weak typeof(self) weakSelf = self;
         _decoder.onFrame = ^(CVPixelBufferRef pixelBuffer, uint32_t sequence) {
@@ -277,7 +281,7 @@ static void ALInstallHooks(void) {
         };
         _client.onDisconnected = ^{
 #ifdef APPLELIVE_STANDALONE
-            if (![weakSelf.sourceKind isEqualToString:@"computer"]) return;
+            if (weakSelf.directUSB || ![weakSelf.sourceKind isEqualToString:@"computer"]) return;
 #endif
             weakSelf.lastVideoTime = 0;
             weakSelf.lastAudioTime = 0;
@@ -301,6 +305,21 @@ static void ALInstallHooks(void) {
             if ([weakSelf.sourceKind isEqualToString:@"computer"]) return;
             [weakSelf.audioRing clear];
             if ([weakSelf.sourceKind isEqualToString:@"network"]) [weakSelf.frameStore clear];
+        };
+        _usbReceiver.onConnected = ^{
+            weakSelf.directUSB = YES;
+            [weakSelf.client disconnect];
+            [weakSelf.decoder reset]; [weakSelf.frameStore clear]; [weakSelf.audioRing clear];
+        };
+        _usbReceiver.onBinary = ^(NSData *data) {
+            if (weakSelf.directUSB && !weakSelf.connectionPaused && [weakSelf.sourceKind isEqualToString:@"computer"])
+                [weakSelf.client acceptBinaryData:data];
+        };
+        _usbReceiver.onDisconnected = ^{
+            weakSelf.directUSB = NO;
+            if (![weakSelf.sourceKind isEqualToString:@"computer"]) return;
+            [weakSelf.decoder reset]; [weakSelf.frameStore clear]; [weakSelf.audioRing clear];
+            [weakSelf applyConnection:ALConnectionSettings()];
         };
 #endif
     }
@@ -369,6 +388,11 @@ static void ALInstallHooks(void) {
     if ([NSProcessInfo.processInfo.processName isEqualToString:@"mediaserverd"]) ALPersistConnection(settings);
     self.connectionPaused = [settings[@"paused"] boolValue];
     self.connectionAddresses = addresses;
+#ifdef APPLELIVE_STANDALONE
+    if (self.connectionPaused) [self.usbReceiver stop];
+    else [self.usbReceiver start];
+    if (self.directUSB && !self.connectionPaused) return;
+#endif
     if (self.enabled && !self.connectionPaused && addresses.count) [self.client connectToAddresses:addresses];
     else [self.client disconnect];
     os_log(OS_LOG_DEFAULT, "[AppleLive] connection mode=%{public}@ addresses=%{public}@", settings[@"mode"], addresses);
@@ -376,6 +400,8 @@ static void ALInstallHooks(void) {
 
 - (NSDictionary *)streamStatus {
 #ifdef APPLELIVE_STANDALONE
+    if (self.directUSB) return @{@"connected": @YES, @"usb": @YES,
+        @"video": @(CFAbsoluteTimeGetCurrent() - self.lastVideoTime < 2), @"audio": @(CFAbsoluteTimeGetCurrent() - self.lastAudioTime < 2)};
     if (![self.sourceKind isEqualToString:@"computer"]) {
         CVPixelBufferRef frame = [self.frameStore copyLatestPixelBuffer];
         BOOL hasFrame = frame != NULL;
@@ -560,6 +586,8 @@ static void ALInstallHooks(void) {
     self.sourceKind = kind;
     self.sourceURL = url;
     self.sourceRotation = 0;
+    self.directUSB = NO;
+    [self.usbReceiver stop];
     self.connectionPaused = NO;
     [self.client disconnect];
     [self.decoder reset];

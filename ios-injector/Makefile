@@ -15,8 +15,9 @@ AppleLive_FILES = ../ios-tweak/Tweak.xm \
     ALMediaPanel.m \
     ALPreview.m \
     ALSampleAudio.m \
+    ALUSBReceiver.m \
     ../ios-tweak/ALVirtualCamera.m
-AppleLive_FRAMEWORKS = Foundation UIKit AVFoundation CoreMedia CoreVideo CoreImage CoreGraphics VideoToolbox AudioToolbox QuartzCore Photos PhotosUI UniformTypeIdentifiers Security ImageIO
+AppleLive_FRAMEWORKS = Foundation UIKit AVFoundation CoreMedia CoreVideo CoreImage CoreGraphics VideoToolbox AudioToolbox QuartzCore Photos PhotosUI UniformTypeIdentifiers Security ImageIO Network
 FFMPEG_ROOT = $(THEOS_PROJECT_DIR)/../.build/ios-ffmpeg/universal
 AppleLive_LDFLAGS = -L$(FFMPEG_ROOT)/lib -lavformat -lavcodec -lswresample -lswscale -lavutil -lz -lbz2 -liconv
 AppleLive_CFLAGS = -fobjc-arc -fvisibility=hidden -DAPPLELIVE_STANDALONE=1 \

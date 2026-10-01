@@ -12,5 +12,6 @@
 - (void)connectToAddress:(NSString *)address;
 - (void)connectToAddresses:(NSArray<NSString *> *)addresses;
 - (void)disconnect;
+- (void)acceptBinaryData:(NSData *)data;
 
 @end

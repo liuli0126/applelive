@@ -10,3 +10,4 @@
 #define ALMediaPlayer ALInjectedMediaPlayer
 #define ALPreviewView ALInjectedPreviewView
 #define ALPreviewTicker ALInjectedPreviewTicker
+#define ALUSBReceiver ALInjectedUSBReceiver

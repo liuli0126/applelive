@@ -28,6 +28,8 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.datastructures import Headers
 from websockets.http11 import Response
 from phone_plugin import download_name, plugin_directory, plugin_path
+from stream_server import StreamServer, RTMP_URL
+from usb_direct import watch_usb
 
 LOG = logging.getLogger("applelive.sender")
 VIDEO_HEADER = struct.Struct("<4sIIII")
@@ -111,11 +113,18 @@ def video_command(args: argparse.Namespace) -> list[str]:
             "-f", "gdigrab", "-framerate", str(args.fps), "-draw_mouse", "1",
             "-i", "desktop",
         ]
+    rtmp_url = getattr(args, "rtmp_url", None)
+    if rtmp_url and args.audio_device:
+        command += ["-f", "dshow", "-i", f"audio={args.audio_device}"]
     command += [
         "-vf", (f"scale={args.width}:{args.height}:force_original_aspect_ratio=decrease:"
                 f"force_divisible_by=2,pad={args.width}:{args.height}:(ow-iw)/2:(oh-ih)/2"),
-        "-an",
     ]
+    command += ["-map", "0:v:0"]
+    if rtmp_url and args.audio_device:
+        command += ["-map", "1:a:0", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
+    else:
+        command += ["-an"]
     if args.encoder == "nvenc":
         command += [
             "-c:v", "h264_nvenc", "-preset", "p4", "-tune", "ull",
@@ -134,8 +143,12 @@ def video_command(args: argparse.Namespace) -> list[str]:
         "-b:v", f"{args.bitrate_kbps}k", "-maxrate", f"{args.bitrate_kbps}k",
         "-bufsize", f"{max(args.bitrate_kbps // 2, 500)}k",
         "-g", str(gop_frames), "-bf", "0",
-        "-f", "h264", "pipe:1",
     ]
+    if rtmp_url:
+        command += ["-f", "tee", "-use_fifo", "1", "-fifo_options", "attempt_recovery=1:recover_any_error=1:recovery_wait_time=1",
+                    f"[select=v:f=h264]pipe:1|[onfail=ignore:f=flv:flvflags=no_duration_filesize]{rtmp_url}"]
+    else:
+        command += ["-f", "h264", "pipe:1"]
     return command
 
 
@@ -158,7 +171,7 @@ def select_encoder(ffmpeg: str, requested: str) -> str:
 
 def write_status(path: str | None, state: str, client_count: int = 0,
                  error: str | None = None, usb_clients: int = 0,
-                 connection_mode: str = "auto") -> None:
+                 connection_mode: str = "auto", rtmp_enabled: bool = False, rtmp_readers: int = 0) -> None:
     if not path:
         return
     target = Path(path)
@@ -169,6 +182,8 @@ def write_status(path: str | None, state: str, client_count: int = 0,
         "clients": client_count,
         "usb_clients": usb_clients,
         "connection_mode": connection_mode,
+        "rtmp_enabled": rtmp_enabled,
+        "rtmp_readers": rtmp_readers,
         "pid": os.getpid(),
         "updated_at": int(time.time()),
         "error": error,
@@ -361,18 +376,26 @@ async def send_queues(broadcaster: Broadcaster) -> None:
             payload = await client.queue.get()
             try:
                 await client.websocket.send(payload)
-            except websockets.ConnectionClosed:
+            except (websockets.ConnectionClosed, OSError):
+                await client.websocket.close()
+                await broadcaster.remove(client)
                 return
 
-    while True:
-        with broadcaster._lock:
-            clients = tuple(broadcaster.clients)
-        for client in clients:
-            tasks.setdefault(client, asyncio.create_task(pump(client)))
-        for client in tuple(tasks):
-            if client not in clients:
-                tasks.pop(client).cancel()
-        await asyncio.sleep(0.25)
+    try:
+        while True:
+            with broadcaster._lock:
+                clients = tuple(broadcaster.clients)
+            for client in clients:
+                if client not in tasks:
+                    tasks[client] = asyncio.create_task(pump(client))
+            for client in tuple(tasks):
+                if client not in clients:
+                    tasks.pop(client).cancel()
+            await asyncio.sleep(0.1)
+    finally:
+        for task in tasks.values():
+            task.cancel()
+        await asyncio.gather(*tasks.values(), return_exceptions=True)
 
 
 def connection_filter(mode: str, directory: Path | None = None):
@@ -413,6 +436,8 @@ async def main(args: argparse.Namespace) -> None:
     loop = asyncio.get_running_loop()
     broadcaster = Broadcaster(loop)
     processes: list[subprocess.Popen[bytes]] = []
+    stream_server = StreamServer()
+    args.rtmp_url = None
     async def bound_handler(websocket: ServerConnection, path: str | None = None) -> None:
         await client_handler(websocket, broadcaster)
 
@@ -430,6 +455,8 @@ async def main(args: argparse.Namespace) -> None:
         LOG.info("AppleLive %s server listening on ws://%s:%d", args.connection_mode, bind_host, args.port)
         write_status(args.status_file, "starting", connection_mode=args.connection_mode)
         try:
+            if args.connection_mode == "lan" and stream_server.start():
+                args.rtmp_url = RTMP_URL
             video_process = run_ffmpeg(video_command(args))
             processes.append(video_process)
             threads = [
@@ -454,11 +481,12 @@ async def main(args: argparse.Namespace) -> None:
                                      daemon=True),
                 ])
             else:
-                LOG.warning("No audio device selected; iPhone microphone remains active")
+                LOG.warning("No source audio; phone internal-audio mode will output silence")
 
             for thread in threads:
                 thread.start()
             pump_task = asyncio.create_task(send_queues(broadcaster))
+            usb_task = asyncio.create_task(watch_usb(broadcaster)) if args.connection_mode == "usb" else None
             try:
                 capture_started_at = time.monotonic()
                 while True:
@@ -480,13 +508,19 @@ async def main(args: argparse.Namespace) -> None:
                         for client in tuple(broadcaster.clients)
                     )
                     write_status(args.status_file, state, len(broadcaster.clients),
-                                 usb_clients=usb_clients, connection_mode=args.connection_mode)
+                                 usb_clients=usb_clients, connection_mode=args.connection_mode,
+                                 rtmp_enabled=bool(args.rtmp_url), rtmp_readers=stream_server.readers() if args.rtmp_url else 0)
                     await asyncio.sleep(0.5)
             finally:
                 pump_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await pump_task
+                if usb_task:
+                    usb_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await usb_task
         finally:
+            stream_server.stop()
             for process in processes:
                 stop_process_tree(process)
             for process in processes:

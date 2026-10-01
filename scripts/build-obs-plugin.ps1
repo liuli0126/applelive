@@ -44,6 +44,7 @@ Compress-Archive -LiteralPath @(
   (Join-Path $output "AppleLiveDock.exe"),
   (Join-Path $output "dock"),
   (Join-Path $output "phone-plugin"),
+  (Join-Path $output "server"),
   (Join-Path $output "usb_forward.ps1"),
   (Join-Path $output "README.md")
 ) -DestinationPath $archive -Force

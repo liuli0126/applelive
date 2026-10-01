@@ -6,6 +6,8 @@ packages/
 artifacts/
 .build/
 obs-plugin/*.exe
+obs-plugin/server/*.exe
+obs-plugin/server/*.log
 obs-plugin/phone-plugin/
 obs-plugin/usb_forward.ps1
 obs-plugin/applelive-*.json

@@ -38,6 +38,7 @@ jobs:
           python desktop_sender/dock_test.py
           python desktop_sender/transport_test.py
           python desktop_sender/phone_plugin_test.py
+          python desktop_sender/usb_direct_test.py
 
       - name: Download phone library
         uses: actions/download-artifact@v4
@@ -47,7 +48,14 @@ jobs:
 
       - name: Build portable plugin
         shell: pwsh
-        run: ./scripts/build-obs-plugin.ps1
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'mediamtx.zip'
+          Invoke-WebRequest 'https://github.com/bluenviron/mediamtx/releases/download/v1.18.1/mediamtx_v1.18.1_windows_amd64.zip' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '7f06a10fe43d0d1d698d1cc2655def6d4a66be6db2f3e7910c0b8c9c60052a36') { throw 'MediaMTX checksum mismatch' }
+          $directory = Join-Path $env:RUNNER_TEMP 'mediamtx'
+          Expand-Archive -LiteralPath $archive -DestinationPath $directory
+          Copy-Item -LiteralPath (Join-Path $directory 'mediamtx.exe'), (Join-Path $directory 'LICENSE') -Destination obs-plugin/server/
+          ./scripts/build-obs-plugin.ps1
 
       - name: Upload OBS plugin
         uses: actions/upload-artifact@v4

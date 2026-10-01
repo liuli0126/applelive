@@ -1,0 +1,14 @@
+logLevel: warn
+logDestinations: [stdout]
+api: true
+apiAddress: 127.0.0.1:9997
+rtsp: true
+rtspAddress: :8554
+rtspTransports: [tcp]
+rtmp: true
+rtmpAddress: :1935
+hls: false
+webrtc: false
+srt: false
+paths:
+  all_others:

@@ -227,6 +227,9 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
 }
 
 - (void)_handleBinary:(NSData *)data {
+    [self acceptBinaryData:data];
+}
+- (void)acceptBinaryData:(NSData *)data {
     if (data.length < 4) return;
     const uint8_t *bytes = data.bytes;
     uint32_t type = ALReadLE32(bytes);
@@ -236,6 +239,7 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
         uint32_t flags = ALReadLE32(bytes + 8);
         uint32_t width = ALReadLE32(bytes + 12);
         uint32_t height = ALReadLE32(bytes + 16);
+        if (!width || !height || width > 8192 || height > 8192 || data.length > 8 * 1024 * 1024) return;
         NSData *nal = [data subdataWithRange:NSMakeRange(ALVideoHeaderLength,
                                                          data.length - ALVideoHeaderLength)];
         if (self.onVideoNAL) self.onVideoNAL(nal, sequence, flags, width, height);
@@ -243,6 +247,7 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
         if (data.length < ALAudioHeaderLength) return;
         uint32_t rate = ALReadLE32(bytes + 4);
         uint32_t channels = ALReadLE32(bytes + 8);
+        if ((channels != 1 && channels != 2) || rate < 8000 || rate > 192000) return;
         NSUInteger payloadLength = data.length - ALAudioHeaderLength;
         payloadLength -= payloadLength % sizeof(float);
         if (payloadLength && channels && self.onAudioPCM) {

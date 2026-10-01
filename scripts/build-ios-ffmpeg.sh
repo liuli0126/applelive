@@ -21,13 +21,12 @@ for architecture in arm64 arm64e host; do
   cd "$output/build-$architecture"
   configure_arch=aarch64
   flags="-arch $architecture -miphoneos-version-min=$minimum"
-  extra_options=()
+  extra_options=(--disable-x86asm)
   selected_sdk="$sdk"
   if [ "$architecture" = host ]; then
     configure_arch="$(uname -m)"
     flags="-arch $configure_arch"
     selected_sdk="$(xcrun --sdk macosx --show-sdk-path)"
-    extra_options+=(--disable-x86asm)
   fi
   "$source_dir/configure" \
     --prefix="$prefix" --target-os=darwin --arch="$configure_arch" --enable-cross-compile \
