@@ -31,6 +31,7 @@ static void (*gOriginalAudioSetDelegate)(id, SEL, id, dispatch_queue_t) = NULL;
 @property(nonatomic) CIContext *renderContext;
 @property(atomic, copy) NSDictionary *controls;
 @property(atomic, assign) CFAbsoluteTime lastVideoTime;
+@property(atomic, assign) BOOL connectionPaused;
 @property(atomic, assign) CFAbsoluteTime lastAudioTime;
 @property(nonatomic, strong) dispatch_source_t statusTimer;
 @property(nonatomic, copy) NSArray<NSString *> *connectionAddresses;
@@ -219,6 +220,7 @@ static void ALInstallHooks(void) {
         _decoder = [[ALVideoDecoder alloc] init];
         __weak typeof(self) weakSelf = self;
         _decoder.onFrame = ^(CVPixelBufferRef pixelBuffer, uint32_t sequence) {
+            if (weakSelf.connectionPaused) return;
             [weakSelf.frameStore storePixelBuffer:pixelBuffer sequence:sequence];
             weakSelf.lastVideoTime = CFAbsoluteTimeGetCurrent();
         };
@@ -292,15 +294,15 @@ static void ALInstallHooks(void) {
 - (void)applyConnection:(NSDictionary *)settings {
     NSArray *addresses = ALConnectionAddresses(settings);
     if ([NSProcessInfo.processInfo.processName isEqualToString:@"mediaserverd"]) ALPersistConnection(settings);
-    if ([addresses isEqual:self.connectionAddresses]) return;
+    self.connectionPaused = [settings[@"paused"] boolValue];
     self.connectionAddresses = addresses;
-    if (self.enabled && addresses.count) [self.client connectToAddresses:addresses];
+    if (self.enabled && !self.connectionPaused && addresses.count) [self.client connectToAddresses:addresses];
     else [self.client disconnect];
     os_log(OS_LOG_DEFAULT, "[AppleLive] connection mode=%{public}@ addresses=%{public}@", settings[@"mode"], addresses);
 }
 
 - (CMSampleBufferRef)replacementForVideoSample:(CMSampleBufferRef)original {
-    if (!self.enabled || ![self.controls[@"enabled"] boolValue]) return NULL;
+    if (!self.enabled || self.connectionPaused || ![self.controls[@"enabled"] boolValue]) return NULL;
     if (original && CMGetAttachment((CMAttachmentBearerRef)original,
                                     CFSTR("applelive_virtual"), NULL)) return NULL;
     if (original) {
@@ -315,7 +317,7 @@ static void ALInstallHooks(void) {
 
 - (BOOL)renderVideoIntoSample:(CMSampleBufferRef)sample {
     NSDictionary *controls = self.controls;
-    if (!self.enabled || ![controls[@"enabled"] boolValue] || !sample ||
+    if (!self.enabled || self.connectionPaused || ![controls[@"enabled"] boolValue] || !sample ||
         CMGetAttachment(sample, CFSTR("applelive_virtual"), NULL)) return NO;
     CMFormatDescriptionRef format = CMSampleBufferGetFormatDescription(sample);
     if (!format || CMFormatDescriptionGetMediaType(format) != kCMMediaType_Video) return NO;
@@ -389,7 +391,7 @@ static void ALInstallHooks(void) {
 
 - (CMSampleBufferRef)replacementForAudioSample:(CMSampleBufferRef)original {
     NSDictionary *controls = self.controls;
-    if (!self.enabled || ![controls[@"enabled"] boolValue] || ![controls[@"audio"] boolValue] ||
+    if (!self.enabled || self.connectionPaused || ![controls[@"enabled"] boolValue] || ![controls[@"audio"] boolValue] ||
         !self.audioRing.isActive || !original) return NULL;
     if (CMGetAttachment((CMAttachmentBearerRef)original,
                         CFSTR("applelive_virtual"), NULL)) return NULL;

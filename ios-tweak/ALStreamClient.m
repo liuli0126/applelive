@@ -113,6 +113,7 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
         self->_reconnectScheduled = NO;
         [self _stopPreferredProbeLocked];
         [self _disconnectLocked];
+        if (self.onDisconnected) self.onDisconnected();
     });
 }
 

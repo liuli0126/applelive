@@ -38,6 +38,7 @@
 @property(nonatomic) UISegmentedControl *fitControl;
 @property(nonatomic) UILabel *connectionLabel;
 @property(nonatomic) UIButton *addressButton;
+@property(nonatomic) UIButton *connectButton;
 @property(nonatomic) NSMutableDictionary *connection;
 @property(nonatomic, weak) UIWindow *previousKeyWindow;
 @property(nonatomic) NSMutableDictionary *controls;
@@ -187,6 +188,7 @@
     self.connectionLabel.textAlignment = NSTextAlignmentRight;
     self.connectionLabel.textColor = [UIColor colorWithRed:0.45 green:0.72 blue:1 alpha:1];
     self.addressButton = [self button:@"设置电脑地址" action:@selector(editAddress)];
+    self.connectButton = [self button:@"连接电脑" action:@selector(toggleConnection)];
     [self syncConnection];
     self.mirrorSwitch = [self makeSwitch:@"左右镜像"];
     self.audioSwitch = [self makeSwitch:@"电脑声音"];
@@ -206,7 +208,7 @@
     self.hintLabel.textColor = UIColor.lightGrayColor;
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[
         [self row:@[heading, close]],
-        [self row:@[[self label:@"跟随电脑连接" size:15], self.connectionLabel]], self.addressButton,
+        [self row:@[[self label:@"跟随电脑连接" size:15], self.connectionLabel]], self.connectButton, self.addressButton,
         [self row:@[[self label:@"启用插件" size:16], self.enabledSwitch]],
         [self row:@[self.directionLabel, reset]], rotation,
         [self row:@[[self label:@"左右镜像" size:16], self.mirrorSwitch]],
@@ -282,6 +284,19 @@
         ? [@"电脑 · " stringByAppendingString:address] : @"设置电脑局域网地址" forState:UIControlStateNormal];
 }
 
+- (void)toggleConnection {
+    self.connection = [ALConnectionSettings() mutableCopy];
+    BOOL connected = [ALReadStreamStatus()[@"connected"] boolValue];
+    BOOL paused = [self.connection[@"paused"] boolValue];
+    // When offline, Connect also forces a fresh attempt at the saved addresses.
+    self.connection[@"paused"] = @(!paused && connected);
+    if (!ALPublishConnection(self.connection)) {
+        self.statusLabel.text = @"连接操作失败，请重试";
+        return;
+    }
+    [self refresh];
+}
+
 - (void)editAddress {
     if (self.window.rootViewController.presentedViewController) return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"电脑局域网地址"
@@ -306,6 +321,7 @@
         if (ALParseComputerAddress(weakAlert.textFields.firstObject.text, &host, &port)) {
             self.connection[@"host"] = host;
             self.connection[@"port"] = port;
+            self.connection[@"paused"] = @NO;
             if (!ALPublishConnection(self.connection)) self.statusLabel.text = @"连接设置保存失败";
             [self syncConnection];
         }
@@ -371,9 +387,12 @@
     NSDictionary *status = ALReadStreamStatus();
     NSString *connection = [status[@"usb"] boolValue] ? @"USB" : @"局域网";
     BOOL connected = [status[@"connected"] boolValue];
-    self.connectionLabel.text = connected ? ([status[@"usb"] boolValue] ? @"USB 数据线" : @"局域网") : @"自动连接中…";
+    BOOL paused = [self.connection[@"paused"] boolValue];
+    [self.connectButton setTitle:!paused && connected ? @"断开连接" : @"连接电脑" forState:UIControlStateNormal];
+    self.connectionLabel.text = paused ? @"已断开" : connected ? ([status[@"usb"] boolValue] ? @"USB 数据线" : @"局域网") : @"自动连接中…";
     self.addressButton.hidden = connected && [status[@"usb"] boolValue];
-    if (![self.controls[@"enabled"] boolValue]) self.statusLabel.text = @"已关闭 · 使用手机摄像头";
+    if (paused) self.statusLabel.text = @"已断开 · 使用手机摄像头";
+    else if (![self.controls[@"enabled"] boolValue]) self.statusLabel.text = @"已关闭 · 使用手机摄像头";
     else if ([status[@"video"] boolValue]) self.statusLabel.text = [connection stringByAppendingString:@" · 已收到电脑画面"];
     else if ([status[@"connected"] boolValue]) self.statusLabel.text = [connection stringByAppendingString:@" · 等待电脑画面"];
     else self.statusLabel.text = @"等待电脑连接";

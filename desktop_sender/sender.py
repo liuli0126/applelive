@@ -50,46 +50,47 @@ class AnnexBParser:
 
     def __init__(self) -> None:
         self._buffer = bytearray()
-
-    @staticmethod
-    def _start_code_at(buf: bytearray, index: int) -> int:
-        if index + 3 <= len(buf) and buf[index:index + 3] == b"\x00\x00\x01":
-            return 3
-        if index + 4 <= len(buf) and buf[index:index + 4] == b"\x00\x00\x00\x01":
-            return 4
-        return 0
+        self._scan = 0
+        self._has_start = False
 
     def feed(self, chunk: bytes) -> Iterable[bytes]:
         self._buffer.extend(chunk)
-        starts: list[tuple[int, int]] = []
-        i = 0
-        while i < len(self._buffer) - 2:
-            size = self._start_code_at(self._buffer, i)
-            if size:
-                starts.append((i, size))
-                i += size
-            else:
-                i += 1
-
-        if len(starts) < 2:
-            # Preserve a possible split start code at the end of the buffer.
-            if not starts and len(self._buffer) > 4:
-                self._buffer = self._buffer[-4:]
-            return ()
-
+        starts = [0] if self._has_start else []
+        cursor = self._scan
+        while True:
+            # Native byte search, resuming at the previous chunk boundary. The
+            # old Python byte loop repeatedly rescanned growing IDR frames and
+            # saturated a CPU core, backing up FFmpeg's capture pipe.
+            found = self._buffer.find(b"\x00\x00\x01", cursor)
+            if found < 0:
+                break
+            start = found - 1 if found > 0 and self._buffer[found - 1] == 0 else found
+            starts.append(start)
+            cursor = found + 3
         output: list[bytes] = []
-        for index, (start, _) in enumerate(starts[:-1]):
-            end = starts[index + 1][0]
-            nal = bytes(self._buffer[start:end])
-            if len(nal) > 4:
+        for index, start in enumerate(starts[:-1]):
+            nal = bytes(self._buffer[start:starts[index + 1]])
+            prefix_length = 4 if nal.startswith(b"\x00\x00\x00\x01") else 3
+            if len(nal) > prefix_length:
                 output.append(nal)
-        self._buffer = self._buffer[starts[-1][0]:]
+        if starts:
+            retained = starts[-1]
+            if retained:
+                del self._buffer[:retained]
+            self._has_start = True
+            self._scan = max(cursor - retained, len(self._buffer) - 2)
+        else:
+            self._buffer = self._buffer[-3:]
+            self._scan = 0
         return output
 
     def flush(self) -> bytes | None:
-        if len(self._buffer) > 4:
+        prefix_length = 4 if self._buffer.startswith(b"\x00\x00\x00\x01") else 3
+        if self._has_start and len(self._buffer) > prefix_length:
             result = bytes(self._buffer)
             self._buffer.clear()
+            self._scan = 0
+            self._has_start = False
             return result
         return None
 

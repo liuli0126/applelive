@@ -3,7 +3,8 @@
 #import <notify.h>
 
 static const char *kNotification = "com.applelive.connection.v1";
-static const uint64_t kMagic = UINT64_C(0xa11c000000000000);
+static const uint64_t kMagic = UINT64_C(0xa120000000000000);
+static const uint64_t kLegacyMagic = UINT64_C(0xa11c000000000000);
 
 static int ALConnectionToken(void) {
     static int token = -1;
@@ -30,14 +31,15 @@ BOOL ALParseComputerAddress(NSString *address, NSString **host, NSNumber **port)
 }
 
 static NSDictionary *ALDecodeConnection(uint64_t value) {
-    if ((value & UINT64_C(0xfffc000000000000)) != kMagic) return nil;
-    unsigned mode = (value >> 48) & 3;
+    uint64_t magic = value & UINT64_C(0xfffc000000000000);
+    if (magic != kMagic && magic != kLegacyMagic) return nil;
     unsigned port = (value >> 32) & 0xffff;
-    if (mode > 2 || port == 0) return nil;
+    if (port == 0) return nil;
     struct in_addr ip = { .s_addr = htonl((uint32_t)value) };
     char host[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &ip, host, sizeof(host));
-    return @{@"mode": @"auto", @"host": @(host), @"port": @(port)};
+    return @{@"mode": @"auto", @"host": @(host), @"port": @(port),
+             @"paused": @(magic == kMagic && ((value >> 48) & 1))};
 }
 
 NSDictionary *ALConnectionSettings(void) {
@@ -72,15 +74,14 @@ BOOL ALPublishConnection(NSDictionary *settings) {
     NSMutableDictionary *automatic = [settings mutableCopy];
     automatic[@"mode"] = @"auto";
     settings = automatic;
-    NSUInteger mode = 0;
     struct in_addr ip;
     NSString *host = settings[@"host"];
     NSInteger port = [settings[@"port"] integerValue];
-    if (mode == NSNotFound || ![host isKindOfClass:NSString.class] ||
+    if (![host isKindOfClass:NSString.class] ||
         inet_pton(AF_INET, host.UTF8String, &ip) != 1 || port < 1 || port > 65535) return NO;
-    if (mode == 2 && !ALParseComputerAddress([NSString stringWithFormat:@"%@:%ld", host, (long)port], NULL, NULL)) return NO;
     int token = ALConnectionToken();
-    uint64_t state = kMagic | ((uint64_t)mode << 48) | ((uint64_t)port << 32) | ntohl(ip.s_addr);
+    uint64_t state = kMagic | ((uint64_t)[settings[@"paused"] boolValue] << 48) |
+                     ((uint64_t)port << 32) | ntohl(ip.s_addr);
     if (token < 0 || notify_set_state(token, state) != NOTIFY_STATUS_OK) return NO;
     [NSUserDefaults.standardUserDefaults setObject:settings forKey:@"AppleLive.Connection.v1"];
     return notify_post(kNotification) == NOTIFY_STATUS_OK;

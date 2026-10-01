@@ -1,6 +1,6 @@
 Package: com.applelive.tweak
 Name: AppleLive Virtual Camera
-Version: 0.1.10
+Version: 0.1.11
 Architecture: iphoneos-arm64
 Description: Desktop video and audio source for jailbroken iOS camera apps
 Maintainer: AppleLive

@@ -29,6 +29,23 @@ def test_headers_are_little_endian_and_ascii_typed():
     assert audio == b"audi" + struct.pack("<II", 48000, 2)
 
 
+def test_annexb_large_frames_and_every_start_code_boundary():
+    # Large IDR frames arrive in many pipe chunks. Include 3/4-byte markers,
+    # escape sequences inside payload, leading noise, and tiny valid NALs.
+    nals = [b"\x00\x00\x00\x01\x65" + b"\x12\x00\x00\x03\x01" * 50000,
+            b"\x00\x00\x01\x68", b"\x00\x00\x00\x01\x67\x64",
+            b"\x00\x00\x01\x41" + b"\x37" * 100000]
+    stream = b"leading noise" + b"".join(nals)
+    for size in (1, 3, 1024, 4093, 65536, len(stream)):
+        parser = AnnexBParser()
+        actual = []
+        for offset in range(0, len(stream), size):
+            actual.extend(parser.feed(stream[offset:offset + size]))
+        final = parser.flush()
+        if final: actual.append(final)
+        assert actual == nals, size
+
+
 def test_obs_video_command_uses_virtual_camera():
     args = Namespace(ffmpeg="ffmpeg", fps=30, width=1280, height=720,
                      video_device="OBS Virtual Camera", bitrate_kbps=5000,
@@ -141,6 +158,7 @@ def test_status_reader_lock_does_not_stop_capture():
 
 if __name__ == "__main__":
     test_annexb_parser_handles_split_chunks()
+    test_annexb_large_frames_and_every_start_code_boundary()
     test_headers_are_little_endian_and_ascii_typed()
     test_obs_video_command_uses_virtual_camera()
     test_audio_packets_keep_sample_alignment()
