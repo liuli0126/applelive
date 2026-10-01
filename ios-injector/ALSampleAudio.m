@@ -66,8 +66,8 @@ CMSampleBufferRef ALCreateInjectedAudio(CMSampleBufferRef original, ALAudioRing 
     CMSampleTimingInfo timing;
     if (CMSampleBufferGetSampleTimingInfo(original, 0, &timing) != noErr) return NULL;
     CMSampleBufferRef result = NULL;
-    size_t sampleSize = asbd->mBytesPerFrame;
-    if (CMSampleBufferCreate(kCFAllocatorDefault, NULL, NO, NULL, NULL, format, frames, 1, &timing, 1, &sampleSize, &result) != noErr) return NULL;
+    if (CMAudioSampleBufferCreateWithPacketDescriptions(kCFAllocatorDefault, NULL, NO, NULL, NULL, format,
+            frames, timing.presentationTimeStamp, NULL, &result) != noErr) return NULL;
     OSStatus status = CMSampleBufferSetDataBufferFromAudioBufferList(result, kCFAllocatorDefault, kCFAllocatorDefault, 0, list);
     if (status == noErr) status = CMSampleBufferSetDataReady(result);
     if (status != noErr) { CFRelease(result); return NULL; }

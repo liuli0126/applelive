@@ -133,13 +133,16 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     interrupt.deadline = 0;
     while (atomic_load(&_generation) == generation) {
         @autoreleasepool {
-            if (local && self.paused) {
+            if (local && self.paused && self.requestedSeek < 0) {
                 self.status = @{@"state": @"paused", @"position": @(position), @"duration": @(duration), @"audio": @(audio != NULL)};
                 usleep(20000); originPTS = NAN; continue;
             }
             double seek = self.requestedSeek;
             if (local && seek >= 0) {
                 self.requestedSeek = -1;
+                AVRational rate = av_guess_frame_rate(input, input->streams[videoIndex], NULL);
+                double interval = rate.num > 0 && rate.den > 0 ? av_q2d(av_inv_q(rate)) : 0.05;
+                if (duration > 0) seek = MIN(seek, MAX(0, duration - interval));
                 if (av_seek_frame(input, -1, (int64_t)(seek * AV_TIME_BASE), AVSEEK_FLAG_BACKWARD) >= 0) {
                     avcodec_flush_buffers(video); if (audio) avcodec_flush_buffers(audio);
                     swr_free(&resampler); originPTS = NAN;
@@ -165,6 +168,7 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
                         frame->best_effort_timestamp * av_q2d(stream->time_base);
                     if (input->start_time != AV_NOPTS_VALUE) pts -= (double)input->start_time / AV_TIME_BASE;
                     if (discardBefore >= 0 && pts < discardBefore - 0.02) { av_frame_unref(frame); continue; }
+                    if (!isVideo && local && self.paused) { av_frame_unref(frame); continue; }
                     if (isVideo) discardBefore = -1;
                     if (!isfinite(originPTS)) { originPTS = pts; originClock = CACurrentMediaTime(); }
                     double target = originClock + pts - originPTS;

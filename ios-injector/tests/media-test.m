@@ -31,6 +31,7 @@ static void testAudio(void) {
         require(output != NULL && CMSampleBufferGetNumSamples(output) == 128, "audio injection");
         size_t listCapacity = 1024, needed = 0;
         AudioBufferList *list = calloc(1, listCapacity);
+        list->mNumberBuffers = 8;
         CMBlockBufferRef block = NULL;
         OSStatus bufferStatus = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(output, &needed, list,
             listCapacity, NULL, NULL, 0, &block);
@@ -72,6 +73,8 @@ int main(int argc, char **argv) {
         player.paused = YES; usleep(200000);
         unsigned count = atomic_load(&frames); usleep(200000);
         require(atomic_load(&frames) == count, "pause stops video decode");
+        [player seek:1.2]; usleep(250000);
+        require([player.status[@"position"] doubleValue] >= 1.18 && [player.status[@"state"] isEqualToString:@"paused"], "seek updates paused preview");
         player.paused = NO; [player seek:1.2]; usleep(450000);
         require([player.status[@"position"] doubleValue] >= 1.2, "seek honors target");
         usleep(1700000);

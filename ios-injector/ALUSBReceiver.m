@@ -6,6 +6,8 @@
     nw_listener_t _listener;
     nw_connection_t _connection;
     NSUInteger _generation;
+    dispatch_source_t _healthTimer;
+    CFAbsoluteTime _lastPacketTime;
 }
 @end
 @implementation ALUSBReceiver
@@ -14,6 +16,7 @@
     return self;
 }
 - (void)cancelConnection {
+    if (_healthTimer) { dispatch_source_cancel(_healthTimer); _healthTimer = nil; }
     if (!_connection) return;
     nw_connection_set_state_changed_handler(_connection, nil);
     nw_connection_cancel(_connection); _connection = nil;
@@ -39,6 +42,15 @@
                 ALUSBReceiver *strongSelf = weakSelf;
                 if (!strongSelf || strongSelf->_connection != connection) return;
                 if (state == nw_connection_state_ready) {
+                    strongSelf->_lastPacketTime = CFAbsoluteTimeGetCurrent();
+                    strongSelf->_healthTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, strongSelf->_queue);
+                    dispatch_source_set_timer(strongSelf->_healthTimer, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), NSEC_PER_SEC, NSEC_PER_SEC / 10);
+                    dispatch_source_set_event_handler(strongSelf->_healthTimer, ^{
+                        ALUSBReceiver *receiver = weakSelf;
+                        if (receiver && receiver->_connection == connection && CFAbsoluteTimeGetCurrent() - receiver->_lastPacketTime > 5)
+                            [receiver cancelConnection];
+                    });
+                    dispatch_resume(strongSelf->_healthTimer);
                     if (strongSelf.onConnected) strongSelf.onConnected();
                     NSData *magic = [@"ALUSB1\r\n" dataUsingEncoding:NSASCIIStringEncoding];
                     dispatch_data_t data = dispatch_data_create(magic.bytes, magic.length, strongSelf->_queue, ^{ (void)magic; });
@@ -94,6 +106,7 @@
         dispatch_data_t map = content ? dispatch_data_create_map(content, &bytes, &size) : nil;
         if (error || size != length) { [owner cancelConnection]; return; }
         NSData *packet = [NSData dataWithBytes:bytes length:size]; (void)map;
+        owner->_lastPacketTime = CFAbsoluteTimeGetCurrent();
         if (owner.onBinary) owner.onBinary(packet);
         [owner receiveHeader:connection];
     });
