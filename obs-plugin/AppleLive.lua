@@ -243,7 +243,15 @@ end
 local function launch_dock()
     if file_exists(dock_path) and safe_argument(dock_path) and safe_argument(script_dir) then
         local directory = script_dir:gsub("[/\\]+$", "")
-        os.execute('cmd /d /c start "" /min ' .. quoted(dock_path) .. ' --directory ' .. quoted(directory))
+        local process_id = 0
+        local ok, ffi = pcall(require, "ffi")
+        if ok then
+            pcall(function()
+                ffi.cdef("unsigned long __stdcall GetCurrentProcessId(void);")
+                process_id = tonumber(ffi.load("kernel32").GetCurrentProcessId())
+            end)
+        end
+        os.execute('cmd /d /c start "" /min ' .. quoted(dock_path) .. ' --directory ' .. quoted(directory) .. ' --obs-pid ' .. process_id)
     else
         log(obs.LOG_WARNING, "停靠面板组件缺失，请完整解压插件包")
     end

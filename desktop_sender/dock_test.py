@@ -60,6 +60,11 @@ class DockTests(unittest.TestCase):
         self.assertFalse(self.server.status()["ready"])
         self.assertEqual(self.request({"action": "start"})[0], 503)
 
+    def test_bridge_replace_gap_keeps_recent_obs_heartbeat(self):
+        self.assertTrue(self.server.status()["ready"])
+        (self.path / "applelive-bridge.json").unlink()
+        self.assertTrue(self.server.status()["ready"])
+
     def test_stale_sender_is_stopped(self):
         atomic_json(self.path / "applelive-status.json", {"state": "running", "updated_at": time.time() - 30})
         self.assertEqual(self.server.status()["sender"]["state"], "stopped")

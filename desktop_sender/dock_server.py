@@ -58,12 +58,17 @@ class DockServer(ThreadingHTTPServer):
         self.directory = directory
         self.token = secrets.token_urlsafe(32)
         self.command_lock = threading.Lock()
+        self.last_bridge = {}
         self.addresses = local_addresses()
         super().__init__(("127.0.0.1", port), Handler)
         self.origin = f"http://127.0.0.1:{self.server_port}"
 
     def status(self) -> dict:
         bridge = read_json(self.directory / "applelive-bridge.json")
+        if bridge.get("updated_at", 0) >= self.last_bridge.get("updated_at", 0) and bridge:
+            self.last_bridge = bridge
+        else:
+            bridge = self.last_bridge
         sender = read_json(self.directory / "applelive-status.json")
         ready = 0 <= time.time() - bridge.get("updated_at", 0) < 8
         if not 0 <= time.time() - sender.get("updated_at", 0) < 6:
@@ -152,6 +157,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--port", type=int, default=18765)
+    parser.add_argument("--obs-pid", type=int, default=0)
     args = parser.parse_args()
     try:
         server = DockServer(args.directory.resolve(), args.port)
@@ -160,8 +166,28 @@ def main():
     started = time.time()
 
     def watch_obs():
-        while time.time() - started < 20 or server.status()["ready"]:
-            time.sleep(2)
+        handle = None
+        if os.name == "nt" and args.obs_pid:
+            import ctypes
+            from ctypes import wintypes
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            kernel.OpenProcess.restype = wintypes.HANDLE
+            kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+            kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+            handle = kernel.OpenProcess(0x00100000, False, args.obs_pid)
+        if handle:
+            try:
+                while kernel.WaitForSingleObject(handle, 2000) == 258:
+                    pass
+            finally:
+                kernel.CloseHandle(handle)
+        else:
+            last_seen = started
+            while time.time() - last_seen < 120:
+                if server.status()["ready"]:
+                    last_seen = time.time()
+                time.sleep(2)
         server.shutdown()
 
     threading.Thread(target=watch_obs, daemon=True).start()
