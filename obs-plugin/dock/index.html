@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>AppleLive</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+  <header><div class="logo" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="12" height="14" rx="3"/><path d="m15 10 6-4v12l-6-4"/></svg></div><div><h1>AppleLive</h1><p>把 OBS 画面送到 iPhone</p></div></header>
+  <section class="status" aria-live="polite"><span id="light" class="light"></span><div><strong id="status">正在连接控制面板…</strong><p id="detail">请稍候</p></div></section>
+  <form id="settings"><fieldset id="fields">
+    <label for="connection_mode">连接方式</label><select id="connection_mode"><option value="usb">USB 数据线</option><option value="lan">同一局域网</option></select>
+    <label for="quality">画质</label><select id="quality"><option value="smooth">流畅 · 540p</option><option value="standard">标准 · 720p</option><option value="high">高清 · 1080p</option></select>
+    <label class="check"><span>传输电脑声音</span><input type="checkbox" id="computer_audio"></label>
+  </fieldset></form>
+  <p id="mode_hint" class="hint">USB：连接数据线，并在手机上信任此电脑。</p>
+  <div id="address_box" class="address"><span>手机连接时填写此电脑地址</span><strong id="addresses">正在读取…</strong></div>
+  <p id="error" role="alert" hidden></p>
+  <button id="toggle" type="button" disabled>正在准备…</button>
+  <p id="settings_hint" class="hint center">设置自动保存</p>
+  <details><summary>连接和声音帮助</summary><p>连接方式只在电脑选择，手机自动跟随。切换时先停止传输，选择方式，再开始。</p><p>局域网：手机与电脑连接同一路由器，在手机悬浮窗填写上方电脑地址。</p><p>USB：手机需要 OpenSSH。首次连接按提示完成配对；已配对设备会自动连接。</p><p>声音：在 OBS 中将要传输的声音「监听并输出」至 CABLE Input，再打开手机悬浮窗的「电脑声音」。</p><p>高级参数位于 OBS「工具 → 脚本 → AppleLive」。</p></details>
+  <footer>手机内点蓝色悬浮按钮，可调整画面方向和比例。</footer>
+</main><script src="app.js"></script></body></html>

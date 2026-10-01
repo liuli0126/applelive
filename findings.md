@@ -27,3 +27,8 @@ USB 不是 iOS tweak 自己“看到”的串口。电脑端需要 `usbmuxd`/`py
 - 0.1.5 实机确认 `BWNodeOutput` 只有 `emitSampleBuffer:`（void 返回、一个 CMSampleBuffer 指针参数），原来的 copy 方法不存在。成功解码 720x1280 并写入 2304x1296 的 420v 原相机缓冲；用户确认系统相机和抖音出现 OBS 画面。
 - 用户确认系统相机显示倒置，但抖音为正向。因此不能全局更改旋转方向：0.1.6 用按 App 的默认方向与持久化设置，并通过 Darwin 通知让前台 App 实时控制 mediaserverd。
 - 0.1.6 UIKit 悬浮窗包已构建及安装，USB 视频解码持续正常；悬浮按钮是否可见、通知控制是否实际改变画面仍等用户实机反馈。音频、TikTok 和端到端延迟未完成验证。
+
+## Dock and transport alignment
+- OBS30.2.3 custom browser dock uses http://127.0.0.1:18765/. Local HTTP helper talks to Lua via atomic command files; OBS WebSocket is unnecessary. Browser refresh is available from its right-click menu.
+- Direct new shared preference-file creation by sandboxed mediaserverd fails; com.apple.mediaserverd NSUserDefaults persists via the preferences daemon.
+- Accept-then-close is unsuitable for incompatible transports: iPhone preferred-USB probe would switch at handshake success. Reject incompatible paths with HTTP403 before upgrade, preventing oscillation. PC USB mode binds loopback only.

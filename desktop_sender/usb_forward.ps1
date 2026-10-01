@@ -6,6 +6,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Reuse a paired tunnel started earlier by AppleLive instead of competing for port 2222.
+$existingTunnel = Get-CimInstance Win32_Process -Filter "Name='ssh.exe'" | Where-Object {
+  $_.CommandLine -match 'HostKeyAlias=applelive-' -and
+  $_.CommandLine -match ([regex]::Escape("127.0.0.1:8765:127.0.0.1:$Port") + '(?:\s|"|$)')
+} | Select-Object -First 1
+if ($existingTunnel) { Write-Host "AppleLive USB tunnel is already running."; exit 0 }
+
 $python = (python -c "import sys; print(sys.executable)").Trim()
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $python)) {
   throw "Python is unavailable."

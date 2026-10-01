@@ -25,7 +25,10 @@ jobs:
         run: python -m pip install -r desktop_sender/requirements.txt pyinstaller
 
       - name: Verify protocol
-        run: python desktop_sender/protocol_test.py
+        run: |
+          python desktop_sender/protocol_test.py
+          python desktop_sender/dock_test.py
+          python desktop_sender/transport_test.py
 
       - name: Build portable plugin
         shell: pwsh

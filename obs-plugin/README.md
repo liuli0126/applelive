@@ -1,42 +1,50 @@
-# AppleLive OBS 控制插件 (Windows)
+# AppleLive OBS 停靠面板（Windows）
 
-这是通过 OBS **工具 → 脚本**加载的 Lua 插件，不是放入 `obs-plugins` 目录的 DLL。它控制同目录下的 `AppleLiveSender.exe`。OBS 的画布就是预览，发送源是 OBS 虚拟摄像头的节目画面；场景切换、文字、摄像头和媒体源都会进入 iPhone 画面。
+AppleLive 把 OBS 节目画面发送到越狱 iPhone。控制面板可固定在 OBS 侧边，也可拖出成为独立窗口。场景切换、文字、摄像头和媒体源都会进入手机画面。
 
-## 准备
+## 首次安装
 
-1. 使用现有 OBS 和 FFmpeg。把 `ffmpeg.exe` 加入 PATH，或在脚本面板填写完整路径。
-2. 解压 `AppleLive-OBS-Windows.zip`，将 `AppleLive.lua`、`AppleLiveSender.exe` 和 `usb_forward.ps1` 保持在同一个可写目录，例如用户的文档目录。
-3. 在 OBS 中打开 **工具 → 脚本**，点击 `+`，选择 `AppleLive.lua`。
-4. 在脚本面板选择 **画质** 和 **连接方式**，点击 **启动**。脚本会自动启动 OBS 虚拟摄像头。连接后，面板显示手机连接数和 USB 连接数；点击 **停止**结束发送。视频设备、码率等参数放在 **高级设置**，普通使用无需调整。
+1. 使用现有 OBS 和 FFmpeg。将 FFmpeg 加入 PATH，或在高级设置填写完整路径。
+2. 完整解压 ZIP 到可写目录，保留 AppleLive.lua、AppleLiveSender.exe、AppleLiveDock.exe、usb_forward.ps1 和 dock 文件夹。
+3. 在 OBS「工具 → 脚本」点击 +，加载 AppleLive.lua。只加载一份，旧版重复项可移除。
+4. 打开「停靠窗口 → 自定义浏览器停靠窗口」，名称填 AppleLive，URL 填 `http://127.0.0.1:18765/`，点击应用。
+5. 拖动 AppleLive 标题栏固定在 OBS 侧边。选择连接方式和画质，点击「开始传输」。
 
-这台定制 OBS 的虚拟摄像头在 Windows 中注册为 `HD Camera`，默认值已对应它，源格式为 1080×1920/30 fps。其他 OBS 安装通常使用 `OBS Virtual Camera`；可用 `ffmpeg -list_devices true -f dshow -i dummy` 核对精确名称。默认输出为 720×1280/30 fps、5 Mbps，自动优先 NVIDIA NVENC，硬件不可用时使用 CPU `veryfast`。约每半秒发送关键帧。网络稳定且编码器跟得上时，可将码率调到 8 Mbps 或分辨率调到 1080×1920；若 OBS 出现渲染丢帧，应先降低场景负载或帧率。
+只需添加一次，OBS 会保存布局。脚本随 OBS 启动本地面板服务。如启动时网页尚未加载，右键面板选择刷新。面板只监听本机，不需要配置 OBS WebSocket。
 
-当前构建的可执行文件在本项目 `obs-plugin/AppleLiveSender.exe`；重新构建用：
+## 连接方式只在电脑选择
+
+手机安装 0.1.9 或更新版本后自动跟随电脑，手机浮窗显示实际连接方式，不再提供第二套连接选择。
+
+- **USB 数据线**：发送器只允许 USB 隧道接入，不接受局域网连接。连接数据线并信任电脑；手机浮窗显示「USB 数据线」。
+- **同一局域网**：发送器只允许网络连接，不接受 USB 隧道接入。手机与电脑连接同一路由器，首次在手机浮窗「电脑局域网地址」中填写电脑面板显示的地址，如 `192.168.1.45:8765`。以后自动记住。
+
+要切换方式：在电脑点击「停止传输」→ 选择方式 →「开始传输」。手机会重新连接，无需再次选模式。即使数据线仍插着，选择局域网后也只走局域网。连接数表示接收进程数，不等于手机台数。
+
+USB 需要手机 OpenSSH、Windows Apple 驱动、Python、pymobiledevice3 和 Windows OpenSSH 客户端。首次按 USB 窗口提示输入手机 SSH 密码；已完成专用密钥配对时自动连接。已有的 AppleLive 隧道会复用。停止视频会保留隧道以便再次启动；关闭原 USB 窗口可结束隧道。LAN 不需要 SSH，Windows 防火墙需允许视频端口入站。
+
+## 画质与声音
+
+默认标准画质：720×1280、30 fps、5 Mbps；流畅为 540×960，高清为 1080×1920。优先使用 NVIDIA NVENC，硬件不可用时使用 CPU x264。画质等高级参数可在「工具 → 脚本 → AppleLive」中设置。
+
+这台定制 OBS 的虚拟摄像头叫 `HD Camera`，默认已对应它。普通 OBS 通常叫 `OBS Virtual Camera`，需在高级设置调整。启动时会自动开启 OBS 虚拟摄像头。
+
+OBS 虚拟摄像头只有视频。电脑声音需要：
+
+1. 安装 VB-CABLE。
+2. OBS「设置 → 音频 → 高级 → 监听设备」选择 CABLE Input。
+3. 混音器「高级音频属性」中，将需要发送的源设为「监听并输出」。
+4. 在电脑面板打开「传输电脑声音」，手机悬浮窗打开「电脑声音」。
+
+默认关闭电脑声音，使用手机麦克风。声音端到端仍需真实直播 App 验证。
+
+## 构建与诊断
 
 ```powershell
 python -m pip install -r desktop_sender/requirements.txt pyinstaller
 .\scripts\build-obs-plugin.ps1
 ```
 
-## OBS 节目音频
+输出为 `artifacts/AppleLive-OBS-Windows.zip`。协议、控制接口和 USB/LAN 隔离检查在 GitHub Actions 中执行。运行状态及错误日志位于插件目录的 applelive-status.json、applelive-bridge.json、applelive-sender.log。
 
-OBS 虚拟摄像头只有视频。要把 OBS 的节目声音也送到 iPhone：
-
-1. 安装 [VB-CABLE](https://vb-audio.com/Cable/)。
-2. OBS **设置 → 音频 → 高级 → 监听设备** 选择 `CABLE Input (VB-Audio Virtual Cable)`。
-3. 在 OBS 混音器的 **高级音频属性** 中，把需要发送的源设为 **监听并输出**。
-4. 在 AppleLive 脚本的音频设备填写 `CABLE Output (VB-Audio Virtual Cable)`。
-
-FFmpeg 可以列出设备精确名称：
-
-```powershell
-ffmpeg -list_devices true -f dshow -i dummy
-```
-
-不填写音频设备时，只传 OBS 画面，iPhone 仍使用手机麦克风。
-
-## iPhone 连接
-
-LAN 模式下，iPhone 越狱插件配置中的 `server` 填电脑的局域网 IPv4 地址和端口，例如 `192.168.1.20:8765`。Windows 防火墙需要允许 AppleLiveSender 的入站连接。OBS 脚本面板的“状态”显示发送器状态和 iPhone 连接数；更详细的错误在同目录的 `applelive-sender.log`。
-
-USB 模式需先在 iPhone 的 Cydia 安装并启动 OpenSSH。OBS 面板选择 **USB 数据线** 后点击 **启动**，会自动打开连接窗口；在该窗口输入 SSH 密码，并在使用时保持窗口开启。完成专用密钥配对后，脚本自动使用 `%USERPROFILE%\.ssh\applelive-<UDID>`，无需重复输入密码。iOS 13 一体包优先连接 USB，USB 不可用时回退到 LAN；已经连上 LAN 时也会自动探测并切换到 USB。测试手机的 OpenSSH 和 USB WebSocket 握手已验证，相机画面替换和手机声音仍需实测。iPhone 11 / iOS 13 应使用旧 arm64e ABI 构建的包，0.1.3 的系统相机注入不兼容。
+已在 iPhone 11 / iOS 13.3 上验证 USB 视频替换，用户也已确认 LAN 连接成功。TikTok、其他机型系统、声音和端到端延迟需分别实测，不由编译通过推断兼容。

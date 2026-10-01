@@ -13,13 +13,13 @@
 | 4. 摄像头注入 | complete | mediaserverd BWNodeOutput hook 和 AVCapture delegate fallback，保留原帧回退 |
 | 5. 打包与验证 | complete | Theos Makefile、安装说明、Python AST/协议/WebSocket/FFmpeg 冒烟检查；iOS deb 需在 macOS/Linux + Theos 上构建 |
 | 6. OBS 控制插件 | complete | OBS Lua 脚本控制虚拟摄像头、发送器和连接状态；Windows 可执行文件 |
-| 7. OBS 验证 | in_progress | dshow 视频传输、启停清理、Lua 语法、本地与 GitHub Actions Windows ZIP 构建通过；真实 OBS 面板和 iPhone 直播 App 待设备实测 |
+| 7. OBS 验证 | complete | 真实 OBS 浏览器停靠面板、启停、设置保存和 USB/LAN 通道切换已验证；本机 Windows ZIP 已构建 |
 | 8. iOS 13.3 rootful 适配 | in_progress | 0.1.5 用户确认相机与抖音显示 OBS，抖音方向正确、系统相机倒置；0.1.6 改为分 App 保存方向，声音、TikTok 与延迟仍待实测 |
-| 9. 手机悬浮控制面板 | in_progress | 已实现 App 内可拖动按钮、开关、旋转、镜像、适配和声音设置，通过通知实时传给相机服务，待编译及实机验证 |
+| 9. 手机悬浮控制面板 | in_progress | 0.1.9 已安装；连接由电脑统一选择，手机自动跟随，真实 USB/LAN 切换通过；旋转等交互与声音仍待完整实测 |
+| 10. OBS 停靠面板与连接一致性 | complete | 实际 OBS 停靠显示和控制通过；USB 只监听回环，LAN 拒绝 USB 隧道；已实测手机随电脑切换，模式与状态一致 |
 
 ## Constraints
-- 当前扩展：OBS 自定义浏览器停靠控制面板；手机悬浮窗增加自动、USB、局域网及电脑地址设置，构建安装后验证。
-- 当前工作区为空，无法复用现成工程。
+- 连接方式只在电脑选择，手机自动跟随；手机只保留局域网电脑地址设置，避免两端选择冲突。
 - iOS 相机服务是私有实现，不同 iOS 版本需要单独验证类名和方法签名。
 - 必须只在越狱设备上测试；桌面端音频采集依赖 FFmpeg 和可用的 WASAPI/dshow 设备。
 

@@ -13,6 +13,12 @@ local usb_script_path = script_dir .. "usb_forward.ps1"
 local status_path = script_dir .. "applelive-status.json"
 local stop_path = script_dir .. "applelive-stop.flag"
 local log_path = script_dir .. "applelive-sender.log"
+local dock_path = script_dir .. "AppleLiveDock.exe"
+local bridge_path = script_dir .. "applelive-bridge.json"
+local command_path = script_dir .. "applelive-command.json"
+local settings_ref = nil
+local last_command = ""
+local command_error = ""
 
 local port = 8765
 local width = 720
@@ -78,7 +84,7 @@ end
 
 local function status_label(state, clients, usb_clients)
     if state == "running" then
-        return "运行中 | 手机 " .. tostring(clients or 0) .. " | USB " .. tostring(usb_clients or 0)
+        return "运行中 | 接收连接 " .. tostring(clients or 0) .. " | USB " .. tostring(usb_clients or 0)
     elseif state == "starting" then
         return "正在启动"
     elseif state == "stopping" then
@@ -196,6 +202,7 @@ local function start_sender(props, property)
     launch_started_at = os.time()
     local command = 'cmd /d /c start "" /min ' .. quoted(sender_path) ..
         ' --host "0.0.0.0" --port ' .. port ..
+        ' --connection-mode ' .. quoted(connection_mode) ..
         ' --video-device ' .. quoted(video_device) ..
         ' --width ' .. width .. ' --height ' .. height .. ' --fps ' .. fps ..
         ' --bitrate-kbps ' .. bitrate_kbps ..
@@ -220,7 +227,7 @@ local function start_sender(props, property)
         status_text = "正在启动"
         log(obs.LOG_INFO, "发送器已启动，监听端口 " .. port)
         if connection_mode == "usb" then
-            local usb_command = 'cmd /d /c start "AppleLive USB" powershell.exe -NoProfile -NoExit -ExecutionPolicy Bypass -File ' ..
+            local usb_command = 'cmd /d /c start "AppleLive USB" /min powershell.exe -NoProfile -ExecutionPolicy Bypass -File ' ..
                 quoted(usb_script_path) .. ' -Port ' .. port
             os.execute(usb_command)
         end
@@ -231,6 +238,78 @@ end
 local function stop_sender(props, property)
     request_stop()
     return true
+end
+
+local function launch_dock()
+    if file_exists(dock_path) and safe_argument(dock_path) and safe_argument(script_dir) then
+        local directory = script_dir:gsub("[/\\]+$", "")
+        os.execute('cmd /d /c start "" /min ' .. quoted(dock_path) .. ' --directory ' .. quoted(directory))
+    else
+        log(obs.LOG_WARNING, "停靠面板组件缺失，请完整解压插件包")
+    end
+    return true
+end
+
+local function dock_tick()
+    local content = read_file(command_path)
+    if content and settings_ref then
+        local data = obs.obs_data_create_from_json(content)
+        if data then
+            local id = obs.obs_data_get_string(data, "id")
+            local action = obs.obs_data_get_string(data, "action")
+            local created = obs.obs_data_get_double(data, "created_at")
+            command_error = ""
+            if os.time() - created > 15 or created - os.time() > 5 then
+                command_error = "操作已过期，请重试"
+            elseif id ~= last_command then
+                refresh_status()
+                if action == "settings" then
+                    if sender_state == "running" or sender_state == "starting" or sender_state == "stopping" then
+                        command_error = "请先停止传输，再调整设置"
+                    else
+                        local updates = obs.obs_data_get_obj(data, "settings")
+                        if updates then
+                            obs.obs_data_apply(settings_ref, updates)
+                            obs.obs_data_release(updates)
+                            script_update(settings_ref)
+                            obs.obs_frontend_save()
+                        end
+                    end
+                elseif action == "start" then
+                    start_sender(nil, nil)
+                    if sender_state ~= "starting" and sender_state ~= "running" then command_error = status_text end
+                elseif action == "stop" then
+                    if not request_stop() then command_error = "停止失败，请检查插件目录是否可写" end
+                else command_error = "不支持的操作" end
+            end
+            last_command = id
+            obs.obs_data_release(data)
+        end
+        os.remove(command_path)
+    end
+    local state = obs.obs_data_create()
+    local config = obs.obs_data_create()
+    obs.obs_data_set_string(config, "quality", quality)
+    obs.obs_data_set_string(config, "connection_mode", connection_mode)
+    obs.obs_data_set_bool(config, "computer_audio", computer_audio)
+    obs.obs_data_set_int(config, "port", port)
+    obs.obs_data_set_int(config, "width", width)
+    obs.obs_data_set_int(config, "height", height)
+    obs.obs_data_set_int(config, "fps", fps)
+    obs.obs_data_set_int(config, "bitrate_kbps", bitrate_kbps)
+    obs.obs_data_set_obj(state, "settings", config)
+    obs.obs_data_set_int(state, "updated_at", os.time())
+    obs.obs_data_set_string(state, "last_command", last_command)
+    obs.obs_data_set_string(state, "command_error", command_error)
+    obs.obs_data_set_string(state, "sender_state", sender_state)
+    obs.obs_data_set_string(state, "status_text", status_text)
+    local temp = bridge_path .. ".tmp"
+    if write_file(temp, obs.obs_data_get_json(state)) then
+        os.remove(bridge_path)
+        os.rename(temp, bridge_path)
+    end
+    obs.obs_data_release(config)
+    obs.obs_data_release(state)
 end
 
 function script_description()
@@ -305,6 +384,8 @@ end
 function script_properties()
     refresh_status()
     local props = obs.obs_properties_create()
+    obs.obs_properties_add_text(props, "dock_url", "停靠窗口地址：http://127.0.0.1:18765/", obs.OBS_TEXT_INFO)
+    obs.obs_properties_add_button(props, "dock", "启动停靠面板服务", launch_dock)
     obs.obs_properties_add_text(props, "status", "状态: " .. status_text, obs.OBS_TEXT_INFO)
     local qualities = obs.obs_properties_add_list(props, "quality", "画质", obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
     obs.obs_property_list_add_string(qualities, "流畅", "smooth")
@@ -341,10 +422,23 @@ function script_properties()
 end
 
 function script_load(settings)
+    settings_ref = settings
+    obs.obs_data_addref(settings_ref)
+    os.remove(command_path)
+    dock_tick()
+    launch_dock()
     obs.timer_add(refresh_status, 1000)
+    obs.timer_add(dock_tick, 500)
+end
+
+function script_save(settings)
+    if settings_ref then obs.obs_data_apply(settings, settings_ref) end
 end
 
 function script_unload()
+    obs.timer_remove(dock_tick)
+    os.remove(bridge_path)
+    if settings_ref then obs.obs_data_release(settings_ref); settings_ref = nil end
     obs.timer_remove(refresh_status)
     refresh_status()
     if sender_state == "running" or sender_state == "starting" or sender_state == "stopping" then

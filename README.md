@@ -7,7 +7,7 @@
 ## 当前目录
 
 - `desktop_sender/`：Windows 发送端和局域网/USB 端口转发脚本。
-- `obs-plugin/`：OBS 脚本控制面板与 Windows 发送器，安装见 [OBS 插件说明](obs-plugin/README.md)。
+- `obs-plugin/`：OBS 浏览器停靠面板、Lua 控制桥接与 Windows 发送器，安装见 [OBS 插件说明](obs-plugin/README.md)。
 - `ios-tweak/`：Theos + CydiaSubstrate/ElleKit tweak 源码。
 - `findings.md`：协议和越狱注入点记录。
 
@@ -72,7 +72,7 @@ python sender.py --host 0.0.0.0 --port 8765 --audio-device "CABLE Output"
 
 ## USB 状态
 
-USB 通过 `pymobiledevice3` 正向转发至 iPhone OpenSSH，再由 SSH 建立反向隧道，让手机从 `127.0.0.1:8765` 连接电脑发送器。目标手机目前没有开放 SSH 22 端口，需先在 Cydia 安装 OpenSSH；`desktop_sender/usb_forward.ps1` 已在无 SSH 情况下验证会明确报错。iOS 13 rootful 包优先尝试 USB，再回退到 LAN。USB 画面、声音及直播 App 注入效果仍需手机实测。
+USB 通过 `pymobiledevice3` 正向转发至 iPhone OpenSSH，再由 SSH 建立反向隧道，让手机从 `127.0.0.1:8765` 连接电脑发送器。测试手机已完成 OpenSSH 和密钥配对，USB 视频替换与 LAN 接收均已实测。0.1.9 起连接方式只在 OBS 停靠面板选择：USB 模式只监听回环，LAN 模式在握手时拒绝回环连接；手机自动跟随，浮窗显示实际通道。声音、TikTok 与其他 iOS 版本仍需独立实测。
 
 ## 限制
 

@@ -71,3 +71,12 @@
 - GitHub Actions Windows 工作流成功（run 36677356994），已上传 `AppleLive-OBS-Windows` ZIP；本机尚无可运行的 OBS，真实脚本面板与目标 iPhone 的抖音/TikTok 尚未实测。
 - 用户照片确认目标手机为 iPhone 11 / iOS 13.3 / unc0ver + Cydia + Substitute。新增 iOS 13.0 最低部署版本的 rootful 构建工作流、rootful 控制文件和测试 App 注入过滤器；需在 CI 生成包并在该设备上验证。
 - GitHub Actions rootful 构建成功（run 36684920099）；下载并检查 `com.applelive.tweak_0.1.0_iphoneos-arm.deb`，控制信息为 iphoneos-arm、`mobilesubstrate | com.ex.substitute`，dylib/plist 位于 rootful 的 `/Library/MobileSubstrate/DynamicLibraries/`。同次触发的 rootless 构建也成功，真实手机相机和直播 App 效果未验证。
+
+## 2026-10-01 OBS dock and unified transport controls
+
+- Implemented and installed OBS browser dock, Lua bridge, packaged helper, settings/controls, and live status. UI start/stop and saving mode are verified in running OBS. Removed only the duplicate old AppleLive Lua registration, preserving its files.
+- Initial phone connection UI 0.1.7 installed; user successfully connected via LAN (phone 192.168.1.53, PC 192.168.1.45). User correctly identified conflicting PC selected USB versus actual LAN status, and requested one unambiguous selection.
+- Final design: PC selects USB or LAN and enforces that transport at WebSocket handshake; USB binds loopback, LAN rejects loopback before upgrade. Phone 0.1.9 auto-follows and shows the actual transport, with only LAN computer-address editing. Rootful and rootless builds pass; 0.1.9 installed over USB, SHA256 5ff6ab37901a8e652f19b4f4c8efe6404ceefd1835c8f66dd3f9e085278d5fe1.
+- Fixed sandboxed connection persistence via mediaserverd NSUserDefaults and iOS15 deprecation for legacy keyboard focus fallback. Dock protocol/control/transport tests pass. Final real-device PC-only USB/LAN switch verification is running; audio, TikTok, and latency remain unverified.
+
+- Final device transport test passed: switched solely through the PC control API from LAN to USB and back to LAN; the phone followed each change. USB listener refused the PC LAN address; LAN server rejected USB tunnel handshake with HTTP403. Evidence: artifacts/dock-transport-verification.json. Current user-selected settings are LAN and high (1080x1920/30fps/8Mbps), audio off; preserved. OBS scene JSON confirms settings persistence. Local ZIP bytes match current Lua, README and web assets.

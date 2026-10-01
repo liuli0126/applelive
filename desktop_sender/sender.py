@@ -11,6 +11,8 @@ import asyncio
 import contextlib
 import json
 import logging
+import ipaddress
+from http import HTTPStatus
 import os
 from pathlib import Path
 import shutil
@@ -22,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Iterable
 
 import websockets
-from websockets.server import ServerConnection
+from websockets.asyncio.server import ServerConnection, serve
 
 LOG = logging.getLogger("applelive.sender")
 VIDEO_HEADER = struct.Struct("<4sIIII")
@@ -151,7 +153,8 @@ def select_encoder(ffmpeg: str, requested: str) -> str:
 
 
 def write_status(path: str | None, state: str, client_count: int = 0,
-                 error: str | None = None, usb_clients: int = 0) -> None:
+                 error: str | None = None, usb_clients: int = 0,
+                 connection_mode: str = "auto") -> None:
     if not path:
         return
     target = Path(path)
@@ -161,6 +164,7 @@ def write_status(path: str | None, state: str, client_count: int = 0,
         "state": state,
         "clients": client_count,
         "usb_clients": usb_clients,
+        "connection_mode": connection_mode,
         "pid": os.getpid(),
         "updated_at": int(time.time()),
         "error": error,
@@ -352,6 +356,19 @@ async def send_queues(broadcaster: Broadcaster) -> None:
         await asyncio.sleep(0.25)
 
 
+def connection_filter(mode: str):
+    def check(connection, _request):
+        peer = connection.remote_address
+        try:
+            loopback = bool(peer) and ipaddress.ip_address(peer[0]).is_loopback
+        except ValueError:
+            loopback = False
+        if (mode == "usb" and not loopback) or (mode == "lan" and loopback):
+            return connection.respond(HTTPStatus.FORBIDDEN, f"AppleLive is set to {mode}; select the matching mode on your phone.\n")
+        return None
+    return check
+
+
 async def main(args: argparse.Namespace) -> None:
     if shutil.which(args.ffmpeg) is None:
         raise RuntimeError(f"FFmpeg not found: {args.ffmpeg}")
@@ -364,17 +381,19 @@ async def main(args: argparse.Namespace) -> None:
     async def bound_handler(websocket: ServerConnection, path: str | None = None) -> None:
         await client_handler(websocket, broadcaster)
 
-    async with websockets.serve(
+    bind_host = "127.0.0.1" if args.connection_mode == "usb" else args.host
+    async with serve(
         bound_handler,
-        args.host,
+        bind_host,
         args.port,
         max_size=8 * 1024 * 1024,
         ping_interval=5,
         ping_timeout=10,
         compression=None,
+        process_request=connection_filter(args.connection_mode),
     ):
-        LOG.info("AppleLive server listening on ws://%s:%d", args.host, args.port)
-        write_status(args.status_file, "starting")
+        LOG.info("AppleLive %s server listening on ws://%s:%d", args.connection_mode, bind_host, args.port)
+        write_status(args.status_file, "starting", connection_mode=args.connection_mode)
         try:
             video_process = run_ffmpeg(video_command(args))
             processes.append(video_process)
@@ -426,7 +445,7 @@ async def main(args: argparse.Namespace) -> None:
                         for client in tuple(broadcaster.clients)
                     )
                     write_status(args.status_file, state, len(broadcaster.clients),
-                                 usb_clients=usb_clients)
+                                 usb_clients=usb_clients, connection_mode=args.connection_mode)
                     await asyncio.sleep(0.5)
             finally:
                 pump_task.cancel()
@@ -438,12 +457,13 @@ async def main(args: argparse.Namespace) -> None:
             for process in processes:
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     process.wait(timeout=2)
-            write_status(args.status_file, "stopped")
+            write_status(args.status_file, "stopped", connection_mode=args.connection_mode)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="AppleLive PC -> jailbroken iPhone sender")
     parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--connection-mode", choices=("auto", "usb", "lan"), default="auto")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--width", type=int, default=1920)
     parser.add_argument("--height", type=int, default=1080)
@@ -478,5 +498,5 @@ if __name__ == "__main__":
         pass
     except Exception as error:
         LOG.exception("AppleLive sender failed")
-        write_status(arguments.status_file, "error", error=str(error))
+        write_status(arguments.status_file, "error", error=str(error), connection_mode=arguments.connection_mode)
         raise SystemExit(1)
