@@ -159,8 +159,8 @@ def write_status(path: str | None, state: str, client_count: int = 0,
         return
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    pending = target.with_name(target.name + ".tmp")
-    pending.write_text(json.dumps({
+    pending = target.with_name(target.name + f".{os.getpid()}.tmp")
+    payload = json.dumps({
         "state": state,
         "clients": client_count,
         "usb_clients": usb_clients,
@@ -168,8 +168,23 @@ def write_status(path: str | None, state: str, client_count: int = 0,
         "pid": os.getpid(),
         "updated_at": int(time.time()),
         "error": error,
-    }), encoding="utf-8")
-    os.replace(pending, target)
+    })
+    try:
+        pending.write_text(payload, encoding="utf-8")
+        # Lua and antivirus readers may briefly open the destination without
+        # Windows FILE_SHARE_DELETE. A status refresh must never stop capture.
+        for attempt in range(6):
+            try:
+                os.replace(pending, target)
+                return
+            except PermissionError:
+                if attempt == 5:
+                    raise
+                time.sleep(0.015)
+    except OSError as error:
+        LOG.warning("Could not refresh status; capture continues: %s", error)
+        with contextlib.suppress(OSError):
+            pending.unlink()
 
 
 @dataclass(eq=False)
@@ -457,7 +472,7 @@ async def main(args: argparse.Namespace) -> None:
             for process in processes:
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     process.wait(timeout=2)
-            write_status(args.status_file, "stopped", connection_mode=args.connection_mode)
+    write_status(args.status_file, "stopped", connection_mode=args.connection_mode)
 
 
 def parse_args() -> argparse.Namespace:

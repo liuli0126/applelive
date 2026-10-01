@@ -1,6 +1,7 @@
 param(
   [string]$Python = "python",
-  [switch]$SkipSender
+  [switch]$SkipSender,
+  [switch]$SkipDock
 )
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -15,10 +16,12 @@ if (-not $SkipSender) {
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
 }
 
-& $Python -m PyInstaller --noconfirm --clean --onefile --noconsole `
+if (-not $SkipDock) {
+  & $Python -m PyInstaller --noconfirm --clean --onefile --noconsole `
   --name AppleLiveDock --distpath $output --workpath (Join-Path $build "dock") `
   --specpath $build (Join-Path $projectRoot "desktop_sender\dock_server.py")
 if ($LASTEXITCODE -ne 0) { throw "Dock build failed" }
+}
 
 Copy-Item -LiteralPath (Join-Path $projectRoot "desktop_sender\usb_forward.ps1") `
   -Destination (Join-Path $output "usb_forward.ps1") -Force

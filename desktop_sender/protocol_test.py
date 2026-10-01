@@ -4,6 +4,7 @@ from argparse import Namespace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import json
+import os
 
 from sender import AnnexBParser, AUDIO_HEADER, VIDEO_HEADER, Broadcaster, capture_audio, video_command, write_status
 
@@ -113,6 +114,31 @@ def test_status_file_is_atomic_and_readable():
         assert not (Path(directory) / "status.json.tmp").exists()
 
 
+def test_status_reader_lock_does_not_stop_capture():
+    if os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                   wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    with TemporaryDirectory() as directory:
+        target = Path(directory) / "status.json"
+        write_status(str(target), "running", 1)
+        handle = kernel.CreateFileW(str(target), 0x80000000, 3, None, 3, 0, None)
+        assert handle != wintypes.HANDLE(-1).value
+        try:
+            write_status(str(target), "running", 2)
+            assert json.loads(target.read_text())["clients"] == 1
+            assert not list(Path(directory).glob("*.tmp"))
+        finally:
+            kernel.CloseHandle(handle)
+        write_status(str(target), "running", 2)
+        assert json.loads(target.read_text())["clients"] == 2
+
+
 if __name__ == "__main__":
     test_annexb_parser_handles_split_chunks()
     test_headers_are_little_endian_and_ascii_typed()
@@ -120,4 +146,5 @@ if __name__ == "__main__":
     test_audio_packets_keep_sample_alignment()
     test_slow_client_resumes_at_keyframe()
     test_status_file_is_atomic_and_readable()
+    test_status_reader_lock_does_not_stop_capture()
     print("protocol self-test passed")
