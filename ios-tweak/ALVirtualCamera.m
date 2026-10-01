@@ -477,7 +477,8 @@ static void ALInstallHooks(void) {
         }
         // Stock Camera and live apps apply different preview orientations.
         // The foreground app publishes its own defaults and saved adjustments.
-        if ((inputBounds.size.width < inputBounds.size.height) != (width < height)) {
+        if (!CMGetAttachment(sample, CFSTR("applelive_preview"), NULL) &&
+            (inputBounds.size.width < inputBounds.size.height) != (width < height)) {
             image = [image imageByApplyingOrientation:[controls[@"cameraPortrait"] boolValue] ? 8 : 6];
         }
         NSUInteger turns = [controls[@"rotation"] unsignedIntegerValue] % 4;
@@ -642,7 +643,11 @@ static void ALInstallHooks(void) {
     if (!self.enabled || self.connectionPaused || ![self.controls[@"enabled"] boolValue]) return NULL;
     CVPixelBufferRef latest = [self.frameStore copyLatestPixelBuffer];
     if (!latest) return NULL;
-    if (size.width < 1 || size.height < 1) size = CGSizeMake(CVPixelBufferGetWidth(latest), CVPixelBufferGetHeight(latest));
+    if (size.width < 1 || size.height < 1) {
+        BOOL rotated = (self.sourceRotation + [self.controls[@"rotation"] integerValue]) % 2;
+        size = CGSizeMake(rotated ? CVPixelBufferGetHeight(latest) : CVPixelBufferGetWidth(latest),
+                          rotated ? CVPixelBufferGetWidth(latest) : CVPixelBufferGetHeight(latest));
+    }
     CVPixelBufferRelease(latest);
     CVPixelBufferRef target = NULL;
     NSDictionary *attributes = @{(id)kCVPixelBufferIOSurfacePropertiesKey: @{}};
@@ -651,6 +656,7 @@ static void ALInstallHooks(void) {
     CMSampleBufferRef sample = ALCreateVideoSample(target, NULL);
     if (!sample) { CVPixelBufferRelease(target); return NULL; }
     CMRemoveAttachment(sample, CFSTR("applelive_virtual"));
+    CMSetAttachment(sample, CFSTR("applelive_preview"), kCFBooleanTrue, kCMAttachmentMode_ShouldNotPropagate);
     BOOL rendered = [self renderVideoIntoSample:sample];
     CFRelease(sample);
     if (!rendered) { CVPixelBufferRelease(target); return NULL; }

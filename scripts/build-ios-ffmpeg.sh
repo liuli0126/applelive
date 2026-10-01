@@ -40,6 +40,7 @@ for architecture in arm64 arm64e host; do
     --enable-videotoolbox --enable-securetransport --enable-zlib \
     --enable-protocol=file,http,https,tcp,tls,udp,rtp,rtmp,rtmpt,rtmps,rtmpts,crypto,data \
     --enable-demuxer=mov,matroska,flv,hls,mpegts,rtsp,aac,mp3,wav,ogg,flac,image2,image2pipe,h264,hevc \
+    --enable-muxer=flv \
     --enable-decoder=h264,hevc,aac,mp3,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,vorbis,opus,flac,alac,mjpeg,png,bmp,gif \
     --enable-parser=h264,hevc,aac,mpegaudio,opus,vorbis,flac \
     --enable-hwaccel=h264_videotoolbox,hevc_videotoolbox

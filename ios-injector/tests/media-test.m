@@ -29,11 +29,12 @@ static void testAudio(void) {
         [ring clear]; [ring pushSamples:pcm count:128 channels:2 sampleRate:48000];
         CMSampleBufferRef output = ALCreateInjectedAudio(original, ring, NO);
         require(output != NULL && CMSampleBufferGetNumSamples(output) == 128, "audio injection");
-        AudioBufferList *list = calloc(1, offsetof(AudioBufferList, mBuffers) + 2 * sizeof(AudioBuffer));
+        size_t listCapacity = 1024, needed = 0;
+        AudioBufferList *list = calloc(1, listCapacity);
         CMBlockBufferRef block = NULL;
-        OSStatus bufferStatus = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(output, NULL, list,
-            offsetof(AudioBufferList, mBuffers) + 2 * sizeof(AudioBuffer), NULL, NULL, 0, &block);
-        if (bufferStatus != noErr) fprintf(stderr, "planar=%d float=%d status=%d length=%zu\n", planar, floating, (int)bufferStatus, CMSampleBufferGetTotalSampleSize(output));
+        OSStatus bufferStatus = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(output, &needed, list,
+            listCapacity, NULL, NULL, 0, &block);
+        if (bufferStatus != noErr) fprintf(stderr, "planar=%d float=%d status=%d length=%zu needed=%zu channels=%u\n", planar, floating, (int)bufferStatus, CMSampleBufferGetTotalSampleSize(output), needed, asbd.mChannelsPerFrame);
         require(bufferStatus == noErr, "audio buffers");
         require(list->mNumberBuffers == (planar ? 2 : 1), "PCM layout preserved");
         if (floating) require(fabs(((float *)list->mBuffers[0].mData)[0] - 0.5) < 0.001, "float audio amplitude");
@@ -44,7 +45,7 @@ static void testAudio(void) {
         require(output != NULL, "underflow preserves injection");
         block = NULL;
         CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(output, NULL, list,
-            offsetof(AudioBufferList, mBuffers) + 2 * sizeof(AudioBuffer), NULL, NULL, 0, &block);
+            listCapacity, NULL, NULL, 0, &block);
         for (UInt32 b = 0; b < list->mNumberBuffers; b++) for (UInt32 i = 0; i < list->mBuffers[b].mDataByteSize; i++)
             require(((uint8_t *)list->mBuffers[b].mData)[i] == 0, "underflow silence");
         CFRelease(block); CFRelease(output); CFRelease(original); CFRelease(format); free(list);

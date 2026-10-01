@@ -222,7 +222,14 @@ static BOOL ALValidStreamURL(NSString *value) {
 - (void)togglePanel { self.expanded = !self.expanded; [self refresh]; }
 - (void)present:(UIViewController *)controller {
     if (self.window.rootViewController.presentedViewController) return;
-    for (UIWindow *window in self.window.windowScene.windows)
+    NSArray *windows = self.window.windowScene.windows;
+    if (!windows) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        windows = UIApplication.sharedApplication.windows;
+#pragma clang diagnostic pop
+    }
+    for (UIWindow *window in windows)
         if (window.isKeyWindow && window != self.window) self.previousKeyWindow = window;
     [self.window makeKeyWindow];
     [self.window.rootViewController presentViewController:controller animated:YES completion:nil];

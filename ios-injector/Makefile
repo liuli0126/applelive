@@ -17,7 +17,7 @@ AppleLive_FILES = ../ios-tweak/Tweak.xm \
     ALSampleAudio.m \
     ALUSBReceiver.m \
     ALAudioUnitBridge.m \
-    ../.build/fishhook/fishhook.c \
+    ../.build/fishhook/fishhook.m \
     ../ios-tweak/ALVirtualCamera.m
 AppleLive_FRAMEWORKS = Foundation UIKit AVFoundation CoreMedia CoreVideo CoreImage CoreGraphics VideoToolbox AudioToolbox QuartzCore Photos PhotosUI UniformTypeIdentifiers Security ImageIO Network
 FFMPEG_ROOT = $(THEOS_PROJECT_DIR)/../.build/ios-ffmpeg/universal

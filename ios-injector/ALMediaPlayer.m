@@ -66,7 +66,7 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
 }
 
 - (void)stop {
-    atomic_fetch_add(&_generation, 1);
+    @synchronized (self) { atomic_fetch_add(&_generation, 1); }
     self.paused = NO;
     self.status = @{@"state": @"stopped", @"position": @0, @"duration": @0};
 }
@@ -201,7 +201,12 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
                                 if (!scaler) { CVPixelBufferRelease(pixel); pixel = NULL; }
                             }
                         }
-                        if (pixel) { if (self.onFrame) self.onFrame(pixel, rotation); CVPixelBufferRelease(pixel); }
+                        if (pixel) {
+                            @synchronized (self) {
+                                if (atomic_load(&_generation) == generation && self.onFrame) self.onFrame(pixel, rotation);
+                            }
+                            CVPixelBufferRelease(pixel);
+                        }
                         position = MAX(0, pts);
                     } else {
                         if (!resampler) {
@@ -216,11 +221,13 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
                             NSMutableData *pcm = [NSMutableData dataWithLength:(NSUInteger)capacity * 2 * sizeof(float)];
                             uint8_t *output = pcm.mutableBytes;
                             int count = swr_convert(resampler, &output, capacity, (const uint8_t **)frame->extended_data, frame->nb_samples);
-                            if (count > 0 && self.onAudio) self.onAudio((const float *)pcm.bytes, count);
+                            @synchronized (self) {
+                                if (atomic_load(&_generation) == generation && count > 0 && self.onAudio) self.onAudio((const float *)pcm.bytes, count);
+                            }
                         }
                     }
                     av_frame_unref(frame);
-                    if (CACurrentMediaTime() - lastStatus > 0.2) {
+                    if (atomic_load(&_generation) == generation && CACurrentMediaTime() - lastStatus > 0.2) {
                         lastStatus = CACurrentMediaTime();
                         self.status = @{@"state": @"playing", @"position": @(position), @"duration": @(duration), @"audio": @(audio != NULL)};
                     }
