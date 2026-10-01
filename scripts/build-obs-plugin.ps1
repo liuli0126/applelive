@@ -16,6 +16,8 @@ if (-not (Test-Path -LiteralPath $phonePlugin)) {
 if ($LASTEXITCODE -ne 0) { throw "Phone library verification failed" }
 
 if (-not $SkipSender) {
+  & $Python -c "import websockets, pymobiledevice3.usbmux"
+  if ($LASTEXITCODE -ne 0) { throw "Missing sender dependencies. Install desktop_sender/requirements.txt into the selected Python environment." }
   & $Python -m PyInstaller --noconfirm --clean --onefile --noconsole `
   --name AppleLiveSender --distpath $output --workpath $build `
   --specpath $build $sender
@@ -23,6 +25,8 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
 }
 
 if (-not $SkipDock) {
+  & $Python -c "import qrcode, PIL"
+  if ($LASTEXITCODE -ne 0) { throw "Missing QR dependencies. Install desktop_sender/requirements.txt into the selected Python environment." }
   & $Python -m PyInstaller --noconfirm --clean --onefile --noconsole `
   --name AppleLiveDock --distpath $output --workpath (Join-Path $build "dock") `
   --specpath $build (Join-Path $projectRoot "desktop_sender\dock_server.py")

@@ -57,7 +57,9 @@ jobs:
           Expand-Archive -LiteralPath $archive -DestinationPath $directory
           Copy-Item -LiteralPath (Join-Path $directory 'mediamtx.exe'), (Join-Path $directory 'LICENSE') -Destination obs-plugin/server/
           choco install ffmpeg -y --no-progress
-          $env:Path = "C:\ProgramData\chocolatey\bin;$env:Path"
+          $nativeFFmpeg = Get-ChildItem 'C:\ProgramData\chocolatey\lib\ffmpeg\tools' -Filter ffmpeg.exe -Recurse | Select-Object -First 1
+          if (-not $nativeFFmpeg) { throw 'FFmpeg executable not found' }
+          $env:Path = "$($nativeFFmpeg.DirectoryName);$env:Path"
           python desktop_sender/stream_server_test.py
           python desktop_sender/tee_test.py
           ./scripts/build-obs-plugin.ps1

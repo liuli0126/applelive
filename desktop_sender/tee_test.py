@@ -2,6 +2,7 @@
 from argparse import Namespace
 from pathlib import Path
 import math
+import os
 import shutil
 import struct
 import sys
@@ -11,15 +12,16 @@ import time
 import json
 from urllib.request import urlopen
 
-from sender import video_command, AnnexBParser
-from stream_server import StreamServer, RTMP_URL
+from sender import video_command, AnnexBParser, stop_process_tree
+from stream_server import StreamServer
 
 
 def main():
     ffmpeg = shutil.which("ffmpeg")
     fixture = str(Path(__file__).resolve().parents[1] / "ios-injector/tests/fixture.mp4")
+    stream_path = f"live/applelive-test-{os.getpid()}"
     args = Namespace(ffmpeg=ffmpeg, fps=25, width=320, height=240, video_device="fixture", audio_device="fixture",
-                     bitrate_kbps=600, encoder=sys.argv[1] if len(sys.argv) > 1 else "x264", encoder_preset="veryfast", rtmp_url=RTMP_URL)
+                     bitrate_kbps=600, encoder=sys.argv[1] if len(sys.argv) > 1 else "x264", encoder_preset="veryfast", rtmp_url=f"rtmp://127.0.0.1:1935/{stream_path}")
     command = video_command(args)
     # Use a deterministic file for the two capture inputs while preserving the output graph.
     end = command.index("-vf")
@@ -39,12 +41,12 @@ def main():
         for _ in range(80):
             with urlopen('http://127.0.0.1:9997/v3/paths/list', timeout=1) as response:
                 paths = json.load(response)['items']
-            if any(p.get('name') == 'live/applelive' and p.get('ready') for p in paths): break
+            if any(p.get('name') == stream_path and p.get('ready') for p in paths): break
             if process.poll() is not None: raise RuntimeError('Encoder exited')
             time.sleep(0.1)
         else: raise RuntimeError('Encoder did not publish a stream')
         audio = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp", "-i",
-            "rtsp://127.0.0.1:8554/live/applelive", "-t", "0.5", "-map", "0:a:0", "-ac", "1", "-ar", "48000", "-f", "f32le", "pipe:1"],
+            f"rtsp://127.0.0.1:8554/{stream_path}", "-t", "0.5", "-map", "0:a:0", "-ac", "1", "-ar", "48000", "-f", "f32le", "pipe:1"],
             capture_output=True, timeout=12, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if audio.returncode: raise RuntimeError(audio.stderr.decode("utf-8", "replace"))
         samples = struct.unpack('<' + 'f' * (len(audio.stdout) // 4), audio.stdout)
@@ -54,7 +56,7 @@ def main():
         print("Production H.264 tee and audible AAC stream passed")
     finally:
         if process:
-            process.terminate(); process.wait(timeout=4)
+            stop_process_tree(process); process.wait(timeout=4)
             thread.join(timeout=2)
             error = process.stderr.read().decode("utf-8", "replace")
             if error: print(error[-2000:])
