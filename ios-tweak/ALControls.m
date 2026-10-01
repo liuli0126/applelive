@@ -8,7 +8,9 @@ static const char *kALControlNotification = "com.applelive.controls.v1";
 #endif
 static const char *kALStatusNotification = "com.applelive.status.v1";
 static NSString *const kALSavedControls = @"AppleLive.Controls.v1";
+#ifndef APPLELIVE_STANDALONE
 static const uint64_t kALControlMagic = UINT64_C(0x414c000100000000);
+#endif
 
 #ifndef APPLELIVE_STANDALONE
 static int ALControlToken(void) {

@@ -4,6 +4,7 @@ from pathlib import Path
 import math
 import shutil
 import struct
+import sys
 import subprocess
 import threading
 import time
@@ -18,7 +19,7 @@ def main():
     ffmpeg = shutil.which("ffmpeg")
     fixture = str(Path(__file__).resolve().parents[1] / "ios-injector/tests/fixture.mp4")
     args = Namespace(ffmpeg=ffmpeg, fps=25, width=320, height=240, video_device="fixture", audio_device="fixture",
-                     bitrate_kbps=600, encoder="x264", encoder_preset="veryfast", rtmp_url=RTMP_URL)
+                     bitrate_kbps=600, encoder=sys.argv[1] if len(sys.argv) > 1 else "x264", encoder_preset="veryfast", rtmp_url=RTMP_URL)
     command = video_command(args)
     # Use a deterministic file for the two capture inputs while preserving the output graph.
     end = command.index("-vf")

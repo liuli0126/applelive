@@ -58,7 +58,7 @@ jobs:
           cp .build/fishhook/fishhook.c .build/fishhook/fishhook.m
 
       - name: Compile device interface
-        run: make -C ios-injector all FINALPACKAGE=1 ARCHS=arm64 TARGET=iphone:clang:16.5:14.0
+        run: make -k -C ios-injector all FINALPACKAGE=1 ARCHS=arm64 TARGET=iphone:clang:16.5:14.0
 
       - name: Test media and microphone replacement
         run: |
