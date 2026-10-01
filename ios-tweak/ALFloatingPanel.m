@@ -1,5 +1,6 @@
 #import "ALFloatingPanel.h"
 #import "ALControls.h"
+#import "ALConnection.h"
 #import <UIKit/UIKit.h>
 #import <os/log.h>
 
@@ -35,6 +36,10 @@
 @property(nonatomic) UISwitch *mirrorSwitch;
 @property(nonatomic) UISwitch *audioSwitch;
 @property(nonatomic) UISegmentedControl *fitControl;
+@property(nonatomic) UISegmentedControl *connectionControl;
+@property(nonatomic) UIButton *addressButton;
+@property(nonatomic) NSMutableDictionary *connection;
+@property(nonatomic, weak) UIWindow *previousKeyWindow;
 @property(nonatomic) NSMutableDictionary *controls;
 @property(nonatomic) BOOL expanded;
 @property(nonatomic) BOOL published;
@@ -51,6 +56,7 @@
         if (controller) return;
         controller = [ALFloatingPanel new];
         controller.controls = [ALLoadAppControls() mutableCopy];
+        controller.connection = [ALConnectionSettings() mutableCopy];
         NSDictionary *position = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"AppleLive.BubblePosition.v1"];
         controller.bubbleFraction = position ? CGPointMake([position[@"x"] doubleValue], [position[@"y"] doubleValue])
                                              : CGPointMake(1, 0.22);
@@ -69,6 +75,7 @@
 }
 
 - (void)willResign:(NSNotification *)notification {
+    [self restoreKeyWindow];
     self.window.hidden = YES;
     self.expanded = NO;
     self.published = NO;
@@ -176,6 +183,13 @@
     UIButton *close = [self button:@"收起" action:@selector(togglePanel)];
     [close.widthAnchor constraintEqualToConstant:58].active = YES;
     self.enabledSwitch = [self makeSwitch:@"启用插件"];
+    self.connectionControl = [[UISegmentedControl alloc] initWithItems:@[@"自动", @"USB", @"局域网"]];
+    self.connectionControl.accessibilityLabel = @"连接方式";
+    self.connectionControl.selectedSegmentTintColor = [UIColor colorWithRed:0.18 green:0.43 blue:0.87 alpha:1];
+    [self.connectionControl.heightAnchor constraintEqualToConstant:44].active = YES;
+    [self.connectionControl addTarget:self action:@selector(connectionChanged) forControlEvents:UIControlEventValueChanged];
+    self.addressButton = [self button:@"设置电脑地址" action:@selector(editAddress)];
+    [self syncConnection];
     self.mirrorSwitch = [self makeSwitch:@"左右镜像"];
     self.audioSwitch = [self makeSwitch:@"电脑声音"];
     self.directionLabel = [self label:@"画面方向 · 0°" size:15];
@@ -194,6 +208,7 @@
     self.hintLabel.textColor = UIColor.lightGrayColor;
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[
         [self row:@[heading, close]],
+        [self label:@"连接方式" size:15], self.connectionControl, self.addressButton,
         [self row:@[[self label:@"启用插件" size:16], self.enabledSwitch]],
         [self row:@[self.directionLabel, reset]], rotation,
         [self row:@[[self label:@"左右镜像" size:16], self.mirrorSwitch]],
@@ -231,7 +246,7 @@
     self.bubble.frame = CGRectMake(safe.origin.x + availableX * MAX(0, MIN(1, self.bubbleFraction.x)),
                                   safe.origin.y + availableY * MAX(0, MIN(1, self.bubbleFraction.y)), 56, 56);
     CGFloat width = MIN(336, safe.size.width);
-    CGFloat height = MIN(444, safe.size.height);
+    CGFloat height = MIN(600, safe.size.height);
     self.panel.frame = CGRectMake(CGRectGetMidX(safe) - width / 2, CGRectGetMidY(safe) - height / 2, width, height);
     self.panel.hidden = !self.expanded;
     self.bubble.hidden = self.expanded;
@@ -256,6 +271,68 @@
     self.expanded = !self.expanded;
     [self layoutControls];
     [self refresh];
+}
+
+- (void)restoreKeyWindow {
+    [self.previousKeyWindow makeKeyWindow];
+    self.previousKeyWindow = nil;
+}
+
+- (void)syncConnection {
+    NSUInteger mode = [@[@"auto", @"usb", @"lan"] indexOfObject:self.connection[@"mode"]];
+    self.connectionControl.selectedSegmentIndex = mode == NSNotFound ? 0 : mode;
+    NSString *address = [NSString stringWithFormat:@"%@:%@", self.connection[@"host"], self.connection[@"port"]];
+    [self.addressButton setTitle:ALParseComputerAddress(address, NULL, NULL)
+        ? [@"电脑 · " stringByAppendingString:address] : @"设置电脑局域网地址" forState:UIControlStateNormal];
+    self.addressButton.hidden = [self.connection[@"mode"] isEqual:@"usb"];
+}
+
+- (void)connectionChanged {
+    self.connection[@"mode"] = @[@"auto", @"usb", @"lan"][self.connectionControl.selectedSegmentIndex];
+    if (!ALPublishConnection(self.connection)) { [self editAddress]; return; }
+    [self syncConnection];
+    self.statusLabel.text = @"正在切换连接…";
+}
+
+- (void)editAddress {
+    if (self.window.rootViewController.presentedViewController) return;
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"电脑局域网地址"
+        message:@"填写 OBS 的 AppleLive 面板显示的地址。手机和电脑需连接同一局域网。"
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        NSString *address = [NSString stringWithFormat:@"%@:%@", self.connection[@"host"], self.connection[@"port"]];
+        field.text = ALParseComputerAddress(address, NULL, NULL) ? address : @"";
+        field.placeholder = @"例如 192.168.1.45:8765";
+        field.keyboardType = UIKeyboardTypeNumbersAndPunctuation;
+        field.autocorrectionType = UITextAutocorrectionTypeNo;
+        field.accessibilityLabel = @"电脑 IPv4 地址和端口";
+        [field addTarget:self action:@selector(addressEdited:) forControlEvents:UIControlEventEditingChanged];
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
+        self.connection = [ALConnectionSettings() mutableCopy];
+        [self syncConnection]; [self restoreKeyWindow];
+    }]];
+    UIAlertAction *save = [UIAlertAction actionWithTitle:@"保存并连接" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        NSString *host; NSNumber *port;
+        if (ALParseComputerAddress(alert.textFields.firstObject.text, &host, &port)) {
+            self.connection[@"host"] = host;
+            self.connection[@"port"] = port;
+            if (!ALPublishConnection(self.connection)) self.statusLabel.text = @"连接设置保存失败";
+            [self syncConnection];
+        }
+        [self restoreKeyWindow];
+    }];
+    save.enabled = ALParseComputerAddress(alert.textFields.firstObject.text, NULL, NULL);
+    [alert addAction:save];
+    NSArray *windows = self.window.windowScene ? self.window.windowScene.windows : UIApplication.sharedApplication.windows;
+    for (UIWindow *window in windows) if (window.isKeyWindow && window != self.window) self.previousKeyWindow = window;
+    [self.window makeKeyWindow];
+    [self.window.rootViewController presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)addressEdited:(UITextField *)field {
+    UIAlertController *alert = (UIAlertController *)self.window.rootViewController.presentedViewController;
+    if ([alert isKindOfClass:UIAlertController.class]) alert.actions.lastObject.enabled = ALParseComputerAddress(field.text, NULL, NULL);
 }
 
 - (void)syncControls {
@@ -290,6 +367,10 @@
         return;
     }
     if (!self.window) [self buildWindow];
+    if (!self.window.rootViewController.presentedViewController) {
+        self.connection = [ALConnectionSettings() mutableCopy];
+        [self syncConnection];
+    }
     self.window.hidden = NO;
     if (!self.published) self.published = ALPublishControls(self.controls);
     NSDictionary *status = ALReadStreamStatus();

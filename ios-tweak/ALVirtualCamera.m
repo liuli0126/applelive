@@ -4,6 +4,7 @@
 #import "ALStreamClient.h"
 #import "ALVideoDecoder.h"
 #import "ALControls.h"
+#import "ALConnection.h"
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
 #import <CoreMedia/CoreMedia.h>
@@ -32,6 +33,7 @@ static void (*gOriginalAudioSetDelegate)(id, SEL, id, dispatch_queue_t) = NULL;
 @property(atomic, assign) CFAbsoluteTime lastVideoTime;
 @property(atomic, assign) CFAbsoluteTime lastAudioTime;
 @property(nonatomic, strong) dispatch_source_t statusTimer;
+@property(nonatomic, copy) NSArray<NSString *> *connectionAddresses;
 - (BOOL)renderVideoIntoSample:(CMSampleBufferRef)sample;
 @end
 
@@ -265,17 +267,12 @@ static void ALInstallHooks(void) {
         if (preferences) break;
     }
     self.enabled = [preferences[@"enabled"] boolValue];
-    NSString *server = [preferences[@"server"] isKindOfClass:[NSString class]] ? preferences[@"server"] : nil;
-    NSArray *servers = [preferences[@"servers"] isKindOfClass:[NSArray class]] ? preferences[@"servers"] : nil;
     self.audioRing.active = [preferences[@"audioEnabled"] boolValue];
-    if (self.enabled && (servers.count || server.length)) {
-        if (servers.count) [self.client connectToAddresses:servers];
-        else [self.client connectToAddress:server];
-        os_log(OS_LOG_DEFAULT, "[AppleLive] connecting to configured servers");
-    } else {
-        os_log(OS_LOG_DEFAULT, "[AppleLive] disabled or server not configured");
-    }
+    ALObserveConnection(^(NSDictionary *settings) { [weakSelf applyConnection:settings]; });
+    NSDictionary *connection = ALConnectionSettings();
+    [self applyConnection:connection];
     if ([NSProcessInfo.processInfo.processName isEqualToString:@"mediaserverd"]) {
+        ALPublishConnection(connection);
         self.statusTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
                                                    dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
         dispatch_source_set_timer(self.statusTimer, DISPATCH_TIME_NOW, NSEC_PER_SEC, NSEC_PER_SEC / 10);
@@ -288,6 +285,16 @@ static void ALInstallHooks(void) {
         });
         dispatch_resume(self.statusTimer);
     }
+}
+
+- (void)applyConnection:(NSDictionary *)settings {
+    NSArray *addresses = ALConnectionAddresses(settings);
+    if ([NSProcessInfo.processInfo.processName isEqualToString:@"mediaserverd"]) ALPersistConnection(settings);
+    if ([addresses isEqual:self.connectionAddresses]) return;
+    self.connectionAddresses = addresses;
+    if (self.enabled && addresses.count) [self.client connectToAddresses:addresses];
+    else [self.client disconnect];
+    os_log(OS_LOG_DEFAULT, "[AppleLive] connection mode=%{public}@ addresses=%{public}@", settings[@"mode"], addresses);
 }
 
 - (CMSampleBufferRef)replacementForVideoSample:(CMSampleBufferRef)original {

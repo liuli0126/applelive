@@ -11,6 +11,7 @@ AppleLive_FILES = Tweak.xm \
     ALFrameStore.m \
     ALAudioRing.m \
     ALControls.m \
+    ALConnection.m \
     ALFloatingPanel.m \
     ALVirtualCamera.m
 

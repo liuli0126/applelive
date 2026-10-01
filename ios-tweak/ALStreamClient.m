@@ -21,6 +21,7 @@ const NSUInteger ALAudioHeaderLength = 12;
     NSArray<NSString *> *_addresses;
     NSUInteger _nextAddressIndex;
     NSUInteger _activeAddressIndex;
+    NSUInteger _generation;
 }
 @property(atomic, readwrite, getter=isConnected) BOOL connected;
 @property(atomic, copy, readwrite) NSString *address;
@@ -56,11 +57,13 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
     }
     if (!validAddresses.count) return;
     dispatch_async(_queue, ^{
+        self->_generation++;
         self->_stopping = NO;
         self->_reconnectScheduled = NO;
         [self _stopPreferredProbeLocked];
         self->_addresses = [validAddresses copy];
         self->_nextAddressIndex = 0;
+        if (self.onDisconnected) self.onDisconnected();
         if (self->_addresses.count > 1) {
             self->_preferredTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, self->_queue);
             dispatch_source_set_timer(self->_preferredTimer,
@@ -98,6 +101,7 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
 - (void)disconnect {
     dispatch_async(_queue, ^{
         self->_stopping = YES;
+        self->_generation++;
         self->_reconnectScheduled = NO;
         [self _stopPreferredProbeLocked];
         [self _disconnectLocked];
@@ -173,8 +177,10 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
     if (!_addresses.count) return;
     if (self.onDisconnected) self.onDisconnected();
     _reconnectScheduled = YES;
+    NSUInteger generation = _generation;
     NSTimeInterval delay = _nextAddressIndex == 0 ? 2.0 : 0.2;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), _queue, ^{
+        if (generation != self->_generation) return;
         self->_reconnectScheduled = NO;
         if (!self->_stopping && !self.connected) {
             [self _connectNextLocked];
