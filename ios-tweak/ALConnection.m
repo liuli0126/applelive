@@ -37,7 +37,7 @@ static NSDictionary *ALDecodeConnection(uint64_t value) {
     struct in_addr ip = { .s_addr = htonl((uint32_t)value) };
     char host[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &ip, host, sizeof(host));
-    return @{@"mode": @[@"auto", @"usb", @"lan"][mode], @"host": @(host), @"port": @(port)};
+    return @{@"mode": @"auto", @"host": @(host), @"port": @(port)};
 }
 
 NSDictionary *ALConnectionSettings(void) {
@@ -48,7 +48,11 @@ NSDictionary *ALConnectionSettings(void) {
         if (settings) return settings;
     }
     NSDictionary *saved = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"AppleLive.Connection.v1"];
-    if (saved) return saved;
+    if (saved) {
+        NSMutableDictionary *settings = [saved mutableCopy];
+        settings[@"mode"] = @"auto"; // Migrate old manually selected phone modes.
+        return settings;
+    }
     // Import the existing computer address on upgrade; no device-specific default.
     for (NSString *path in @[@"/var/mobile/Library/Preferences/com.applelive.tweak.plist",
                             @"/var/jb/var/mobile/Library/Preferences/com.applelive.tweak.plist"]) {
@@ -65,7 +69,10 @@ NSDictionary *ALConnectionSettings(void) {
 }
 
 BOOL ALPublishConnection(NSDictionary *settings) {
-    NSUInteger mode = [@[@"auto", @"usb", @"lan"] indexOfObject:settings[@"mode"]];
+    NSMutableDictionary *automatic = [settings mutableCopy];
+    automatic[@"mode"] = @"auto";
+    settings = automatic;
+    NSUInteger mode = 0;
     struct in_addr ip;
     NSString *host = settings[@"host"];
     NSInteger port = [settings[@"port"] integerValue];
@@ -97,8 +104,8 @@ void ALPersistConnection(NSDictionary *settings) {
 
 NSArray<NSString *> *ALConnectionAddresses(NSDictionary *settings) {
     NSMutableArray *addresses = [NSMutableArray array];
-    if (![settings[@"mode"] isEqual:@"lan"]) [addresses addObject:@"127.0.0.1:8765"];
+    [addresses addObject:@"127.0.0.1:8765"];
     NSString *address = [NSString stringWithFormat:@"%@:%@", settings[@"host"], settings[@"port"]];
-    if (![settings[@"mode"] isEqual:@"usb"] && ALParseComputerAddress(address, NULL, NULL)) [addresses addObject:address];
+    if (ALParseComputerAddress(address, NULL, NULL)) [addresses addObject:address];
     return addresses;
 }

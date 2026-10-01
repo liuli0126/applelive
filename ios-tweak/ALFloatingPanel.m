@@ -36,7 +36,7 @@
 @property(nonatomic) UISwitch *mirrorSwitch;
 @property(nonatomic) UISwitch *audioSwitch;
 @property(nonatomic) UISegmentedControl *fitControl;
-@property(nonatomic) UISegmentedControl *connectionControl;
+@property(nonatomic) UILabel *connectionLabel;
 @property(nonatomic) UIButton *addressButton;
 @property(nonatomic) NSMutableDictionary *connection;
 @property(nonatomic, weak) UIWindow *previousKeyWindow;
@@ -183,11 +183,9 @@
     UIButton *close = [self button:@"收起" action:@selector(togglePanel)];
     [close.widthAnchor constraintEqualToConstant:58].active = YES;
     self.enabledSwitch = [self makeSwitch:@"启用插件"];
-    self.connectionControl = [[UISegmentedControl alloc] initWithItems:@[@"自动", @"USB", @"局域网"]];
-    self.connectionControl.accessibilityLabel = @"连接方式";
-    self.connectionControl.selectedSegmentTintColor = [UIColor colorWithRed:0.18 green:0.43 blue:0.87 alpha:1];
-    [self.connectionControl.heightAnchor constraintEqualToConstant:44].active = YES;
-    [self.connectionControl addTarget:self action:@selector(connectionChanged) forControlEvents:UIControlEventValueChanged];
+    self.connectionLabel = [self label:@"自动连接中…" size:15];
+    self.connectionLabel.textAlignment = NSTextAlignmentRight;
+    self.connectionLabel.textColor = [UIColor colorWithRed:0.45 green:0.72 blue:1 alpha:1];
     self.addressButton = [self button:@"设置电脑地址" action:@selector(editAddress)];
     [self syncConnection];
     self.mirrorSwitch = [self makeSwitch:@"左右镜像"];
@@ -208,7 +206,7 @@
     self.hintLabel.textColor = UIColor.lightGrayColor;
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[
         [self row:@[heading, close]],
-        [self label:@"连接方式" size:15], self.connectionControl, self.addressButton,
+        [self row:@[[self label:@"跟随电脑连接" size:15], self.connectionLabel]], self.addressButton,
         [self row:@[[self label:@"启用插件" size:16], self.enabledSwitch]],
         [self row:@[self.directionLabel, reset]], rotation,
         [self row:@[[self label:@"左右镜像" size:16], self.mirrorSwitch]],
@@ -279,25 +277,15 @@
 }
 
 - (void)syncConnection {
-    NSUInteger mode = [@[@"auto", @"usb", @"lan"] indexOfObject:self.connection[@"mode"]];
-    self.connectionControl.selectedSegmentIndex = mode == NSNotFound ? 0 : mode;
     NSString *address = [NSString stringWithFormat:@"%@:%@", self.connection[@"host"], self.connection[@"port"]];
     [self.addressButton setTitle:ALParseComputerAddress(address, NULL, NULL)
         ? [@"电脑 · " stringByAppendingString:address] : @"设置电脑局域网地址" forState:UIControlStateNormal];
-    self.addressButton.hidden = [self.connection[@"mode"] isEqual:@"usb"];
-}
-
-- (void)connectionChanged {
-    self.connection[@"mode"] = @[@"auto", @"usb", @"lan"][self.connectionControl.selectedSegmentIndex];
-    if (!ALPublishConnection(self.connection)) { [self editAddress]; return; }
-    [self syncConnection];
-    self.statusLabel.text = @"正在切换连接…";
 }
 
 - (void)editAddress {
     if (self.window.rootViewController.presentedViewController) return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"电脑局域网地址"
-        message:@"填写 OBS 的 AppleLive 面板显示的地址。手机和电脑需连接同一局域网。"
+        message:@"连接方式在电脑 OBS 面板选择，手机自动跟随。局域网连接请填写电脑显示的地址，并连接同一路由器。"
         preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
         NSString *address = [NSString stringWithFormat:@"%@:%@", self.connection[@"host"], self.connection[@"port"]];
@@ -382,6 +370,9 @@
     if (!self.published) self.published = ALPublishControls(self.controls);
     NSDictionary *status = ALReadStreamStatus();
     NSString *connection = [status[@"usb"] boolValue] ? @"USB" : @"局域网";
+    BOOL connected = [status[@"connected"] boolValue];
+    self.connectionLabel.text = connected ? ([status[@"usb"] boolValue] ? @"USB 数据线" : @"局域网") : @"自动连接中…";
+    self.addressButton.hidden = connected && [status[@"usb"] boolValue];
     if (![self.controls[@"enabled"] boolValue]) self.statusLabel.text = @"已关闭 · 使用手机摄像头";
     else if ([status[@"video"] boolValue]) self.statusLabel.text = [connection stringByAppendingString:@" · 已收到电脑画面"];
     else if ([status[@"connected"] boolValue]) self.statusLabel.text = [connection stringByAppendingString:@" · 等待电脑画面"];
