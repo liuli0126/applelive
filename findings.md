@@ -1,5 +1,21 @@
 # Findings
 
+## Verified iOS15.6 environment and setup limitation (2026-10-01)
+- Actual device: iPhone12,1 / iOS15.6 /19G71, /var/jb -> Dopamine preboot procursus, dpkg iphoneos-arm64. Initially no ElleKit; installed official ElleKit1.2 (331444bytes, SHA256e21dc91bdc1be193dc915daecfff45256239b4fe583a36861e662ab1f43906dc) and AppleLive0.1.12. The rootless framework compatibility symlink now resolves to /var/jb/usr/lib/libellekit.dylib.
+- Rootless SSH users' home directories are under /var/jb/var/, so keys placed in /var/mobile or /var/root do not authenticate. Dedicated key/pin applelive-ssh-f6d0b440ebedafe9 works for both mobile and root using the correct account homes.
+- Official Dopamine2.x DOEnvironmentManager rebootUserspace invokes /var/jb/basebin/jbctl reboot_userspace. Verified process restart and key reconnection after using that command.
+- mediaserverd persisted AppleLive.Connection.v1 with host0.0.0.0 after install, proving constructor/connection code runs, but direct legacy preference import failed in its sandbox. App/service notifications take priority over the legacy file. Updating raw prefs alone therefore does not reliably fix active connections; publish through ALConnection's existing notification path instead.
+- Downloaded and structurally parsed installed filter and Douyin Info.plist: filter is correct; app bundle is com.ss.iphone.ugc.Aweme, version39.9.0. Desktop's sole current client is192.168.1.53; cannot claim the new phone192.168.1.28 connected yet.
+
+## Dopamine package manager recovery (2026-10-01)
+- The latest settings screenshot contains Refresh Jailbreak Apps, so the earlier inference of a1.x-only settings menu was incorrect. Official2.x DOPkgManagerPickerViewController calls reinstallPackageManagers and pops back to settings; returning there after Continue alone does not prove success. DOEnvironmentManager refreshJailbreakApps runs rootless uicache -a.
+- User confirmed Sileo became searchable and opened after Refresh Jailbreak Apps. The package-manager recovery issue is resolved; new-phone SSH installation and current network address are pending.
+- The supplied older-UI screenshot displayed "越狱" and disabled restart actions, so the phone was not actively jailbroken at that moment. After completing the flow the user reported "已越狱" and missing Sileo icon.
+- Official tag1.1.11 Dopamine/Dopamine/UI/Views/SettingsView.swift places Reinstall Package Managers under isBootstrapped()/isJailbroken(). PackageManagerSelectionView.swift only changes selectedNames when an icon is selected; the separate Reinstall button invokes dpkg -i on the bundled sileo.deb. The old SettingsView has no Refresh Jailbreak Apps action. Reference: https://github.com/opa334/Dopamine/blob/1.1.11/Dopamine/Dopamine/UI/Views/PackageManagerSelectionView.swift .
+- User confirmed the actual Dopamine status button reads "已越狱 / Jailbroken"; the home-screen icon alone was not treated as evidence.
+- Official repository opa334/Dopamine branch2.x, Application/Dopamine/UI/Settings/DOSettingsController.m exposes Reinstall Package Managers when envManager.isJailbroken and pushes DOPkgManagerPickerViewController. zh-Hans.lproj/Localizable.strings names it "重新安装包管理器"; the picker recommends Sileo. This is a settings action, not Remove Jailbreak.
+- Source references: https://github.com/opa334/Dopamine/blob/2.x/Application/Dopamine/UI/Settings/DOSettingsController.m and https://github.com/opa334/Dopamine/blob/2.x/Application/Dopamine/zh-Hans.lproj/Localizable.strings .
+
 ## USB waiting regression (2026-10-01)
 - Sender PID31648 running in USB mode on loopback8765, zero clients. USB device still detected as the paired iPhone11/iOS13.3.
 - No listener on local2222 and no usbmux forwarder process. Old ssh41848 from an earlier artifact script remained; current usb_forward.ps1 reused it by command-line match alone. SSH diagnostics therefore failed to connect to2222.

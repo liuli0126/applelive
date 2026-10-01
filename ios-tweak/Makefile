@@ -23,3 +23,11 @@ AppleLive_CCFLAGS = $(AppleLive_CFLAGS)
 INSTALL_TARGET_PROCESSES = mediaserverd
 
 include $(THEOS_MAKE_PATH)/tweak.mk
+
+TOOL_NAME = AppleLiveSetup
+AppleLiveSetup_FILES = ALConnectionTool.m ALConnection.m
+AppleLiveSetup_FRAMEWORKS = Foundation
+AppleLiveSetup_CFLAGS = -fobjc-arc
+AppleLiveSetup_INSTALL_PATH = /usr/bin
+
+include $(THEOS_MAKE_PATH)/tool.mk

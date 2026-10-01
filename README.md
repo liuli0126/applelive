@@ -48,7 +48,15 @@ make package FINALPACKAGE=1
 
 iPhone 11 / iOS 13.3 / unc0ver + Substitute 使用单独的 rootful 包，不能安装上面的 rootless `.deb`。构建与安装步骤见 [IOS13_ROOTFUL.md](IOS13_ROOTFUL.md)。
 
-通用包安装后可在 `/var/mobile/Library/Preferences/com.applelive.tweak.plist` 配置（rootless 设备也可放在 `/var/jb/var/mobile/Library/Preferences/`）。iOS 13 rootful 一体包已内置默认地址，无需单独传配置文件：
+0.1.13 起，安装包包含 `AppleLiveSetup` 配置工具。电脑完成 SSH 配对后，可直接设置局域网地址；手机相机服务会接收通知并保存，无需手动编辑文件。rootless 示例：
+
+```sh
+/var/jb/usr/bin/AppleLiveSetup 192.168.1.45:8765
+```
+
+rootful 使用 `/usr/bin/AppleLiveSetup`。这只更新电脑地址并恢复接收，连接方式仍由 OBS 选择。工具执行成功不代表目标 App 的画面替换已验证。
+
+旧版本使用 `/var/mobile/Library/Preferences/com.applelive.tweak.plist`（rootless 也可放在 `/var/jb/var/mobile/Library/Preferences/`），但相机服务可能无法直接读取这些文件。iOS 13 rootful 一体包内置了默认地址：
 
 ```plist
 {
