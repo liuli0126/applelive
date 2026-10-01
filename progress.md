@@ -1,11 +1,21 @@
 # Progress
 
+## 2026-10-01 per-app floating controls
+
+- User clarified that Douyin already displays the correct orientation while stock Camera is upside down, then requested a floating control panel inside target apps. The unshipped global flip was replaced by per-app defaults (Camera EXIF 8, Douyin/TikTok EXIF 6) plus saved rotation adjustments.
+- Implemented a UIKit floating button and panel with pass-through background touches, drag positioning, safe-area clamping, collapse, enable, quarter-turn rotation, mirror, fit/fill and PC audio controls. Settings and position use the host app's preferences; Darwin notification state carries the active app's settings to mediaserverd without cross-sandbox file writes.
+- Added camera-service status updates for fresh video/audio and USB/LAN, plus live rendering settings. The microphone setting gates the existing app audio replacement path; actual PC-audio capture/injection is still unverified.
+- Applying ui-ux-pro-max's native safe-area, 44pt touch-target and control-spacing guidance. Awaiting compilation, notification IPC and on-device UI tests for 0.1.6.
+
 ## 2026-10-01 camera output path repair
 
 - User confirms the Camera preview still shows the physical camera on 0.1.4. USB clients increased to two, confirming separate camera/service connections; no recent Camera/mediaserverd crash reports were found in the mobile CrashReporter folder.
 - Current implementation only attempts `BWNodeOutput copyNextSampleBuffer`. Published Celestial runtime headers instead expose `emitSampleBuffer:`. Preparing 0.1.5 to verify the runtime method signature and hook that push path when the copy accessor is absent.
 - New push hook paints the decoded stream into the original video pixel buffer using Core Image, preserving dimensions, timing, format and camera metadata. Unsupported pixel formats and non-video samples pass through. Added sampled decode/render logs and explicit hook availability logs to verify actual behavior on the phone.
 - Awaiting CI compilation and phone tests; this change does not yet establish successful preview replacement.
+- CI run 36805192850 succeeded for 0.1.5 (commit cb4f08f). Installed via SSH after read-back SHA-256 validation (`381319a4c040d50eed32b7b464b056cb1cb31b936d24bd5293f8336571b44e1f`). Device confirmed `BW hooks class=1 copy=0 emit=1 signature=v24@0:8^{opaqueCMSampleBuffer=}16`, 720x1280 decoding and continuous rendering into 2304x1296 NV12 camera buffers. User confirms OBS is visible, but upside down.
+- Correcting the portrait transform from EXIF 6 to EXIF 8 in 0.1.6; awaiting the new build and visual check. Stock Camera replacement is now confirmed, but Douyin/TikTok, PC audio, other orientations, LAN and latency still need tests.
+- Standard git push was unreliable while the GitHub API worked. Used `artifacts/git-api-push.py` to publish exact matching local blob/tree/commit objects and fast-forward main with identity checks; no history rewrite. Screenshot service was unavailable without a developer image; no dependencies were downloaded for screenshots.
 
 ## 2026-10-01 USB connection and iOS 13 ABI repair
 

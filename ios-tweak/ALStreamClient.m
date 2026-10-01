@@ -22,8 +22,8 @@ const NSUInteger ALAudioHeaderLength = 12;
     NSUInteger _nextAddressIndex;
     NSUInteger _activeAddressIndex;
 }
-@property(nonatomic, readwrite, getter=isConnected) BOOL connected;
-@property(nonatomic, copy, readwrite) NSString *address;
+@property(atomic, readwrite, getter=isConnected) BOOL connected;
+@property(atomic, copy, readwrite) NSString *address;
 @end
 
 static uint32_t ALReadLE32(const uint8_t *bytes) {

@@ -10,9 +10,11 @@ AppleLive_FILES = Tweak.xm \
     ALVideoDecoder.m \
     ALFrameStore.m \
     ALAudioRing.m \
+    ALControls.m \
+    ALFloatingPanel.m \
     ALVirtualCamera.m
 
-AppleLive_FRAMEWORKS = Foundation AVFoundation CoreMedia CoreVideo CoreImage CoreGraphics VideoToolbox AudioToolbox
+AppleLive_FRAMEWORKS = Foundation UIKit AVFoundation CoreMedia CoreVideo CoreImage CoreGraphics VideoToolbox AudioToolbox
 AppleLive_LIBRARIES = substrate
 AppleLive_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)
 AppleLive_CCFLAGS = $(AppleLive_CFLAGS)

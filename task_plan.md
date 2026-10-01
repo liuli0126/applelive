@@ -14,7 +14,8 @@
 | 5. 打包与验证 | complete | Theos Makefile、安装说明、Python AST/协议/WebSocket/FFmpeg 冒烟检查；iOS deb 需在 macOS/Linux + Theos 上构建 |
 | 6. OBS 控制插件 | complete | OBS Lua 脚本控制虚拟摄像头、发送器和连接状态；Windows 可执行文件 |
 | 7. OBS 验证 | in_progress | dshow 视频传输、启停清理、Lua 语法、本地与 GitHub Actions Windows ZIP 构建通过；真实 OBS 面板和 iPhone 直播 App 待设备实测 |
-| 8. iOS 13.3 rootful 适配 | in_progress | 0.1.4 旧 arm64e ABI 修正版 CI 和架构检查通过并已直接安装；设备日志确认 mediaserverd 加载插件，电脑端 USB 连接数为 1；等待手机解锁后验证实际相机画面及直播 App |
+| 8. iOS 13.3 rootful 适配 | in_progress | 0.1.5 用户确认相机与抖音显示 OBS，抖音方向正确、系统相机倒置；0.1.6 改为分 App 保存方向，声音、TikTok 与延迟仍待实测 |
+| 9. 手机悬浮控制面板 | in_progress | 已实现 App 内可拖动按钮、开关、旋转、镜像、适配和声音设置，通过通知实时传给相机服务，待编译及实机验证 |
 
 ## Constraints
 - 当前工作区为空，无法复用现成工程。

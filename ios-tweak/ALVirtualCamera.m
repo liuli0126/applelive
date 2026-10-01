@@ -3,6 +3,7 @@
 #import "ALFrameStore.h"
 #import "ALStreamClient.h"
 #import "ALVideoDecoder.h"
+#import "ALControls.h"
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
 #import <CoreMedia/CoreMedia.h>
@@ -27,6 +28,10 @@ static void (*gOriginalAudioSetDelegate)(id, SEL, id, dispatch_queue_t) = NULL;
 @property(nonatomic) ALVideoDecoder *decoder;
 @property(nonatomic) BOOL started;
 @property(nonatomic) CIContext *renderContext;
+@property(atomic, copy) NSDictionary *controls;
+@property(atomic, assign) CFAbsoluteTime lastVideoTime;
+@property(atomic, assign) CFAbsoluteTime lastAudioTime;
+@property(nonatomic, strong) dispatch_source_t statusTimer;
 - (BOOL)renderVideoIntoSample:(CMSampleBufferRef)sample;
 @end
 
@@ -213,6 +218,7 @@ static void ALInstallHooks(void) {
         __weak typeof(self) weakSelf = self;
         _decoder.onFrame = ^(CVPixelBufferRef pixelBuffer, uint32_t sequence) {
             [weakSelf.frameStore storePixelBuffer:pixelBuffer sequence:sequence];
+            weakSelf.lastVideoTime = CFAbsoluteTimeGetCurrent();
         };
         _client.onVideoNAL = ^(NSData *nal, uint32_t sequence, uint32_t flags,
                                uint32_t width, uint32_t height) {
@@ -224,6 +230,7 @@ static void ALInstallHooks(void) {
         _client.onAudioPCM = ^(const float *samples, NSUInteger count,
                                uint32_t channels, double rate) {
             [weakSelf.audioRing pushSamples:samples count:count channels:channels sampleRate:rate];
+            weakSelf.lastAudioTime = CFAbsoluteTimeGetCurrent();
         };
         _client.onDisconnected = ^{
             [weakSelf.decoder reset];
@@ -237,6 +244,15 @@ static void ALInstallHooks(void) {
 - (void)start {
     if (self.started) return;
     self.started = YES;
+    self.controls = ALCurrentControls() ?: ALDefaultControls(NSBundle.mainBundle.bundleIdentifier);
+    __weak typeof(self) weakSelf = self;
+    ALObserveControls(^(NSDictionary *controls) {
+        weakSelf.controls = controls;
+        os_log(OS_LOG_DEFAULT, "[AppleLive] controls enabled=%d rotation=%d mirror=%d fill=%d camera=%d",
+               [controls[@"enabled"] boolValue], [controls[@"rotation"] intValue],
+               [controls[@"mirror"] boolValue], [controls[@"fill"] boolValue],
+               [controls[@"cameraPortrait"] boolValue]);
+    });
     ALInstallHooks();
 
     NSDictionary *preferences = nil;
@@ -259,12 +275,28 @@ static void ALInstallHooks(void) {
     } else {
         os_log(OS_LOG_DEFAULT, "[AppleLive] disabled or server not configured");
     }
+    if ([NSProcessInfo.processInfo.processName isEqualToString:@"mediaserverd"]) {
+        self.statusTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
+                                                   dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
+        dispatch_source_set_timer(self.statusTimer, DISPATCH_TIME_NOW, NSEC_PER_SEC, NSEC_PER_SEC / 10);
+        dispatch_source_set_event_handler(self.statusTimer, ^{
+            ALVirtualCamera *camera = weakSelf;
+            CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+            BOOL usb = [camera.client.address containsString:@"127.0.0.1:"];
+            ALPublishStreamStatus(camera.client.isConnected, usb,
+                                  now - camera.lastVideoTime < 2, now - camera.lastAudioTime < 2);
+        });
+        dispatch_resume(self.statusTimer);
+    }
 }
 
 - (CMSampleBufferRef)replacementForVideoSample:(CMSampleBufferRef)original {
-    if (!self.enabled) return NULL;
+    if (!self.enabled || ![self.controls[@"enabled"] boolValue]) return NULL;
     if (original && CMGetAttachment((CMAttachmentBearerRef)original,
                                     CFSTR("applelive_virtual"), NULL)) return NULL;
+    if (original) {
+        return [self renderVideoIntoSample:original] ? (CMSampleBufferRef)CFRetain(original) : NULL;
+    }
     CVPixelBufferRef pixelBuffer = [self.frameStore copyLatestPixelBuffer];
     if (!pixelBuffer) return NULL;
     CMSampleBufferRef replacement = ALCreateVideoSample(pixelBuffer, original);
@@ -273,7 +305,8 @@ static void ALInstallHooks(void) {
 }
 
 - (BOOL)renderVideoIntoSample:(CMSampleBufferRef)sample {
-    if (!self.enabled || !sample ||
+    NSDictionary *controls = self.controls;
+    if (!self.enabled || ![controls[@"enabled"] boolValue] || !sample ||
         CMGetAttachment(sample, CFSTR("applelive_virtual"), NULL)) return NO;
     CMFormatDescriptionRef format = CMSampleBufferGetFormatDescription(sample);
     if (!format || CMFormatDescriptionGetMediaType(format) != kCMMediaType_Video) return NO;
@@ -300,14 +333,22 @@ static void ALInstallHooks(void) {
         CGFloat height = CVPixelBufferGetHeight(target);
         CIImage *image = [CIImage imageWithCVPixelBuffer:incoming];
         CGRect inputBounds = image.extent;
-        // Native camera buffers are landscape; the Camera UI rotates them.
-        if ((inputBounds.size.width < inputBounds.size.height) != (width < height)) {
-            image = [image imageByApplyingOrientation:6];
-            inputBounds = image.extent;
+        if ([controls[@"mirror"] boolValue]) {
+            image = [image imageByApplyingTransform:CGAffineTransformMakeScale(-1, 1)];
         }
+        // Stock Camera and live apps apply different preview orientations.
+        // The foreground app publishes its own defaults and saved adjustments.
+        if ((inputBounds.size.width < inputBounds.size.height) != (width < height)) {
+            image = [image imageByApplyingOrientation:[controls[@"cameraPortrait"] boolValue] ? 8 : 6];
+        }
+        NSUInteger turns = [controls[@"rotation"] unsignedIntegerValue] % 4;
+        if (turns) image = [image imageByApplyingTransform:CGAffineTransformMakeRotation(-(CGFloat)turns * M_PI_2)];
+        inputBounds = image.extent;
         image = [image imageByApplyingTransform:CGAffineTransformMakeTranslation(
             -inputBounds.origin.x, -inputBounds.origin.y)];
-        CGFloat scale = MIN(width / inputBounds.size.width, height / inputBounds.size.height);
+        CGFloat scale = [controls[@"fill"] boolValue]
+            ? MAX(width / inputBounds.size.width, height / inputBounds.size.height)
+            : MIN(width / inputBounds.size.width, height / inputBounds.size.height);
         image = [image imageByApplyingTransform:CGAffineTransformMakeScale(scale, scale)];
         image = [image imageByApplyingTransform:CGAffineTransformMakeTranslation(
             (width - inputBounds.size.width * scale) / 2,
@@ -338,7 +379,9 @@ static void ALInstallHooks(void) {
 }
 
 - (CMSampleBufferRef)replacementForAudioSample:(CMSampleBufferRef)original {
-    if (!self.enabled || !self.audioRing.isActive || !original) return NULL;
+    NSDictionary *controls = self.controls;
+    if (!self.enabled || ![controls[@"enabled"] boolValue] || ![controls[@"audio"] boolValue] ||
+        !self.audioRing.isActive || !original) return NULL;
     if (CMGetAttachment((CMAttachmentBearerRef)original,
                         CFSTR("applelive_virtual"), NULL)) return NULL;
     CMAudioFormatDescriptionRef originalFormat = (CMAudioFormatDescriptionRef)CMSampleBufferGetFormatDescription(original);
