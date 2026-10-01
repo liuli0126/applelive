@@ -2,6 +2,16 @@
 #import <CoreMedia/CoreMedia.h>
 #import <VideoToolbox/VideoToolbox.h>
 #import <os/lock.h>
+#import <os/log.h>
+
+static void ALReportDecodeError(const char *stage, OSStatus status) {
+    static uint64_t errors = 0;
+    uint64_t count = __sync_add_and_fetch(&errors, 1);
+    if (count <= 3 || count % 300 == 0) {
+        os_log_error(OS_LOG_DEFAULT, "[AppleLive] decoder %{public}s failed status=%d errors=%llu",
+                     stage, (int)status, count);
+    }
+}
 
 @interface ALVideoDecoder () {
     NSData *_sps;
@@ -24,6 +34,14 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
     ALVideoDecoder *decoder = (__bridge ALVideoDecoder *)refCon;
     if (status == noErr && imageBuffer && decoder.onFrame) {
         decoder.onFrame((CVPixelBufferRef)imageBuffer, (uint32_t)(uintptr_t)frameRefCon);
+        static uint64_t frames = 0;
+        uint64_t count = __sync_add_and_fetch(&frames, 1);
+        if (count == 1 || count % 300 == 0) {
+            os_log(OS_LOG_DEFAULT, "[AppleLive] decoded frames=%llu size=%dx%d", count,
+                   (int)CVPixelBufferGetWidth(imageBuffer), (int)CVPixelBufferGetHeight(imageBuffer));
+        }
+    } else if (status != noErr) {
+        ALReportDecodeError("callback", status);
     }
     (void)infoFlags;
     (void)pts;
@@ -65,7 +83,10 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
     CMVideoFormatDescriptionRef format = NULL;
     OSStatus status = CMVideoFormatDescriptionCreateFromH264ParameterSets(
         kCFAllocatorDefault, 2, parameterSets, parameterSizes, 4, &format);
-    if (status != noErr || !format) return NO;
+    if (status != noErr || !format) {
+        ALReportDecodeError("format", status);
+        return NO;
+    }
 
     NSDictionary *attributes = @{
         (__bridge NSString *)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
@@ -81,6 +102,7 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
                                            (__bridge CFDictionaryRef)attributes,
                                            &callback, &session);
     if (status != noErr || !session) {
+        ALReportDecodeError("session", status);
         CFRelease(format);
         return NO;
     }
@@ -152,9 +174,10 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
     CFRelease(block);
     if (status == noErr && sample) {
         VTDecodeInfoFlags info = 0;
-        VTDecompressionSessionDecodeFrame(_session, sample,
+        OSStatus decodeStatus = VTDecompressionSessionDecodeFrame(_session, sample,
                                            kVTDecodeFrame_EnableAsynchronousDecompression,
                                            (void *)(uintptr_t)sequence, &info);
+        if (decodeStatus != noErr) ALReportDecodeError("frame", decodeStatus);
         CFRelease(sample);
     }
     os_unfair_lock_unlock(&_lock);

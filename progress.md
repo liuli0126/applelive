@@ -1,5 +1,12 @@
 # Progress
 
+## 2026-10-01 camera output path repair
+
+- User confirms the Camera preview still shows the physical camera on 0.1.4. USB clients increased to two, confirming separate camera/service connections; no recent Camera/mediaserverd crash reports were found in the mobile CrashReporter folder.
+- Current implementation only attempts `BWNodeOutput copyNextSampleBuffer`. Published Celestial runtime headers instead expose `emitSampleBuffer:`. Preparing 0.1.5 to verify the runtime method signature and hook that push path when the copy accessor is absent.
+- New push hook paints the decoded stream into the original video pixel buffer using Core Image, preserving dimensions, timing, format and camera metadata. Unsupported pixel formats and non-video samples pass through. Added sampled decode/render logs and explicit hook availability logs to verify actual behavior on the phone.
+- Awaiting CI compilation and phone tests; this change does not yet establish successful preview replacement.
+
 ## 2026-10-01 USB connection and iOS 13 ABI repair
 
 - OpenSSH 8.4-2 is running. With the user's explicit default-password instruction, logged in as mobile and verified `com.applelive.tweak` 0.1.3, installed library/filter, and USB/LAN configuration.

@@ -6,6 +6,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
 #import <CoreMedia/CoreMedia.h>
+#import <CoreImage/CoreImage.h>
 #import <objc/runtime.h>
 #import <substrate.h>
 #import <os/log.h>
@@ -15,6 +16,7 @@ static const void *kALVideoProxyKey = &kALVideoProxyKey;
 static const void *kALAudioProxyKey = &kALAudioProxyKey;
 static BOOL gALHooksInstalled = NO;
 static CMSampleBufferRef (*gOriginalBWCopyNext)(id, SEL) = NULL;
+static void (*gOriginalBWEmitSample)(id, SEL, CMSampleBufferRef) = NULL;
 static void (*gOriginalVideoSetDelegate)(id, SEL, id, dispatch_queue_t) = NULL;
 static void (*gOriginalAudioSetDelegate)(id, SEL, id, dispatch_queue_t) = NULL;
 
@@ -24,6 +26,8 @@ static void (*gOriginalAudioSetDelegate)(id, SEL, id, dispatch_queue_t) = NULL;
 @property(nonatomic) ALStreamClient *client;
 @property(nonatomic) ALVideoDecoder *decoder;
 @property(nonatomic) BOOL started;
+@property(nonatomic) CIContext *renderContext;
+- (BOOL)renderVideoIntoSample:(CMSampleBufferRef)sample;
 @end
 
 @interface ALDelegateProxy : NSObject
@@ -66,6 +70,21 @@ static CMSampleBufferRef ALHookBWCopyNext(id self, SEL selector) {
     return replacement;
 }
 
+static void ALHookBWEmitSample(id self, SEL selector, CMSampleBufferRef sample) {
+    @autoreleasepool {
+        static uint64_t calls = 0;
+        uint64_t count = __sync_add_and_fetch(&calls, 1);
+        BOOL replaced = [[ALVirtualCamera sharedInstance] renderVideoIntoSample:sample];
+        if (count == 1 || count % 900 == 0) {
+            CVImageBufferRef image = sample ? CMSampleBufferGetImageBuffer(sample) : NULL;
+            os_log(OS_LOG_DEFAULT, "[AppleLive] BW emit calls=%llu replaced=%d image=%dx%d",
+                   count, replaced, image ? (int)CVPixelBufferGetWidth(image) : 0,
+                   image ? (int)CVPixelBufferGetHeight(image) : 0);
+        }
+        if (gOriginalBWEmitSample) gOriginalBWEmitSample(self, selector, sample);
+    }
+}
+
 static void ALHookVideoSetDelegate(id self, SEL selector, id delegate, dispatch_queue_t queue) {
     ALVirtualCamera *camera = [ALVirtualCamera sharedInstance];
     if (delegate) {
@@ -99,6 +118,24 @@ static void ALInstallHooks(void) {
         MSHookMessageEx(bwNodeOutput, @selector(copyNextSampleBuffer),
                         (IMP)ALHookBWCopyNext, (IMP *)&gOriginalBWCopyNext);
     }
+    // iOS 13 pushes frames through emitSampleBuffer: instead of exposing a
+    // copyNextSampleBuffer accessor. Keep the pipeline's original buffers,
+    // dimensions, timing and attachments when painting the incoming image.
+    SEL emitSelector = NSSelectorFromString(@"emitSampleBuffer:");
+    Method emitMethod = bwNodeOutput ? class_getInstanceMethod(bwNodeOutput, emitSelector) : NULL;
+    if (!gOriginalBWCopyNext && emitMethod && method_getNumberOfArguments(emitMethod) == 3) {
+        char returnType[16] = {0};
+        char argumentType[128] = {0};
+        method_getReturnType(emitMethod, returnType, sizeof(returnType));
+        method_getArgumentType(emitMethod, 2, argumentType, sizeof(argumentType));
+        if (returnType[0] == 'v' && argumentType[0] == '^') {
+            MSHookMessageEx(bwNodeOutput, emitSelector, (IMP)ALHookBWEmitSample,
+                           (IMP *)&gOriginalBWEmitSample);
+        }
+    }
+    os_log(OS_LOG_DEFAULT, "[AppleLive] BW hooks class=%d copy=%d emit=%d signature=%{public}s",
+           bwNodeOutput != Nil, gOriginalBWCopyNext != NULL, gOriginalBWEmitSample != NULL,
+           emitMethod ? method_getTypeEncoding(emitMethod) : "absent");
 
     Class videoOutput = [AVCaptureVideoDataOutput class];
     if (videoOutput) {
@@ -233,6 +270,71 @@ static void ALInstallHooks(void) {
     CMSampleBufferRef replacement = ALCreateVideoSample(pixelBuffer, original);
     CVPixelBufferRelease(pixelBuffer);
     return replacement;
+}
+
+- (BOOL)renderVideoIntoSample:(CMSampleBufferRef)sample {
+    if (!self.enabled || !sample ||
+        CMGetAttachment(sample, CFSTR("applelive_virtual"), NULL)) return NO;
+    CMFormatDescriptionRef format = CMSampleBufferGetFormatDescription(sample);
+    if (!format || CMFormatDescriptionGetMediaType(format) != kCMMediaType_Video) return NO;
+    CVPixelBufferRef target = CMSampleBufferGetImageBuffer(sample);
+    if (!target) return NO;
+    OSType pixelFormat = CVPixelBufferGetPixelFormatType(target);
+    if (pixelFormat != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange &&
+        pixelFormat != kCVPixelFormatType_420YpCbCr8BiPlanarFullRange &&
+        pixelFormat != kCVPixelFormatType_32BGRA) return NO;
+    CVPixelBufferRef incoming = [self.frameStore copyLatestPixelBuffer];
+    if (!incoming) return NO;
+    BOOL rendered = NO;
+    @try {
+        // Reuse the GPU context. This method can run on multiple camera queues.
+        @synchronized (self) {
+            if (!self.renderContext) {
+                self.renderContext = [CIContext contextWithOptions:@{
+                    kCIContextUseSoftwareRenderer: @NO,
+                    kCIContextCacheIntermediates: @NO,
+                }];
+            }
+        }
+        CGFloat width = CVPixelBufferGetWidth(target);
+        CGFloat height = CVPixelBufferGetHeight(target);
+        CIImage *image = [CIImage imageWithCVPixelBuffer:incoming];
+        CGRect inputBounds = image.extent;
+        // Native camera buffers are landscape; the Camera UI rotates them.
+        if ((inputBounds.size.width < inputBounds.size.height) != (width < height)) {
+            image = [image imageByApplyingOrientation:6];
+            inputBounds = image.extent;
+        }
+        image = [image imageByApplyingTransform:CGAffineTransformMakeTranslation(
+            -inputBounds.origin.x, -inputBounds.origin.y)];
+        CGFloat scale = MIN(width / inputBounds.size.width, height / inputBounds.size.height);
+        image = [image imageByApplyingTransform:CGAffineTransformMakeScale(scale, scale)];
+        image = [image imageByApplyingTransform:CGAffineTransformMakeTranslation(
+            (width - inputBounds.size.width * scale) / 2,
+            (height - inputBounds.size.height * scale) / 2)];
+        CGRect bounds = CGRectMake(0, 0, width, height);
+        CIImage *black = [[CIImage imageWithColor:[CIColor colorWithRed:0 green:0 blue:0 alpha:1]]
+                         imageByCroppingToRect:bounds];
+        image = [[image imageByCompositingOverImage:black] imageByCroppingToRect:bounds];
+        [self.renderContext render:image toCVPixelBuffer:target bounds:bounds colorSpace:nil];
+        CMSetAttachment(sample, CFSTR("applelive_virtual"), kCFBooleanTrue,
+                        kCMAttachmentMode_ShouldPropagate);
+        static uint64_t renders = 0;
+        uint64_t count = __sync_add_and_fetch(&renders, 1);
+        if (count == 1 || count % 300 == 0) {
+            os_log(OS_LOG_DEFAULT, "[AppleLive] rendered frames=%llu source=%dx%d target=%dx%d format=%u",
+                   count, (int)CVPixelBufferGetWidth(incoming), (int)CVPixelBufferGetHeight(incoming),
+                   (int)width, (int)height, (unsigned)pixelFormat);
+        }
+        rendered = YES;
+    } @catch (NSException *exception) {
+        static uint64_t failures = 0;
+        if (__sync_add_and_fetch(&failures, 1) <= 3) {
+            os_log_error(OS_LOG_DEFAULT, "[AppleLive] frame render exception: %{public}@", exception);
+        }
+    }
+    CVPixelBufferRelease(incoming);
+    return rendered;
 }
 
 - (CMSampleBufferRef)replacementForAudioSample:(CMSampleBufferRef)original {
