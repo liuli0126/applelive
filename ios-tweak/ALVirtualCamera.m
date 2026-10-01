@@ -20,6 +20,7 @@
 #import "ALPreview.h"
 #import "ALSampleAudio.h"
 #import "ALUSBReceiver.h"
+#import "ALAudioUnitBridge.h"
 #import <ImageIO/ImageIO.h>
 #import <UIKit/UIKit.h>
 #endif
@@ -68,6 +69,9 @@ static void ALHookMessage(Class cls, SEL selector, IMP replacement, IMP *origina
 @property(atomic) BOOL directUSB;
 #endif
 - (BOOL)renderVideoIntoSample:(CMSampleBufferRef)sample;
+#ifdef APPLELIVE_STANDALONE
+- (void)configureAudioBridge;
+#endif
 @end
 
 @interface ALDelegateProxy : NSObject
@@ -333,6 +337,9 @@ static void ALInstallHooks(void) {
     __weak typeof(self) weakSelf = self;
     ALObserveControls(^(NSDictionary *controls) {
         weakSelf.controls = controls;
+#ifdef APPLELIVE_STANDALONE
+        [weakSelf configureAudioBridge];
+#endif
         os_log(OS_LOG_DEFAULT, "[AppleLive] controls enabled=%d rotation=%d mirror=%d fill=%d camera=%d",
                [controls[@"enabled"] boolValue], [controls[@"rotation"] intValue],
                [controls[@"mirror"] boolValue], [controls[@"fill"] boolValue],
@@ -341,6 +348,7 @@ static void ALInstallHooks(void) {
     ALInstallHooks();
 #ifdef APPLELIVE_STANDALONE
     ALInstallPreviewHooks();
+    ALInstallAudioUnitBridge();
 #endif
 
 #ifdef APPLELIVE_STANDALONE
@@ -389,6 +397,7 @@ static void ALInstallHooks(void) {
     self.connectionPaused = [settings[@"paused"] boolValue];
     self.connectionAddresses = addresses;
 #ifdef APPLELIVE_STANDALONE
+    [self configureAudioBridge];
     if (self.connectionPaused) [self.usbReceiver stop];
     else [self.usbReceiver start];
     if (self.directUSB && !self.connectionPaused) return;
@@ -510,6 +519,7 @@ static void ALInstallHooks(void) {
 
 - (CMSampleBufferRef)replacementForAudioSample:(CMSampleBufferRef)original {
 #ifdef APPLELIVE_STANDALONE
+    ALMarkAudioDelegate();
     NSDictionary *settings = self.controls;
     if (!self.enabled || self.connectionPaused || ![settings[@"enabled"] boolValue] ||
         ![settings[@"audio"] boolValue] || !original ||
@@ -589,6 +599,7 @@ static void ALInstallHooks(void) {
     self.directUSB = NO;
     [self.usbReceiver stop];
     self.connectionPaused = NO;
+    [self configureAudioBridge];
     [self.client disconnect];
     [self.decoder reset];
     [self.frameStore clear];
@@ -616,6 +627,11 @@ static void ALInstallHooks(void) {
     }
 }
 - (NSDictionary *)mediaStatus { return self.mediaPlayer.status; }
+- (void)configureAudioBridge {
+    ALConfigureAudioUnitBridge(self.audioRing,
+        self.enabled && !self.connectionPaused && ![self.sourceKind isEqualToString:@"none"] &&
+        [self.controls[@"enabled"] boolValue] && [self.controls[@"audio"] boolValue], [self.controls[@"muted"] boolValue]);
+}
 - (void)setMediaPaused:(BOOL)paused {
     self.mediaPlayer.paused = paused;
     [self.audioRing clear];

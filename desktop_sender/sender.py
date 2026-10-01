@@ -146,7 +146,7 @@ def video_command(args: argparse.Namespace) -> list[str]:
     ]
     if rtmp_url:
         command += ["-f", "tee", "-use_fifo", "1", "-fifo_options", "attempt_recovery=1:recover_any_error=1:recovery_wait_time=1",
-                    f"[select=v:f=h264]pipe:1|[onfail=ignore:f=flv:flvflags=no_duration_filesize]{rtmp_url}"]
+                    f"[select=v:f=h264]pipe:1|[onfail=ignore:f=flv:flush_packets=1:flvflags=no_duration_filesize]{rtmp_url}"]
     else:
         command += ["-f", "h264", "pipe:1"]
     return command

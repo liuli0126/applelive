@@ -55,6 +55,9 @@ jobs:
           $directory = Join-Path $env:RUNNER_TEMP 'mediamtx'
           Expand-Archive -LiteralPath $archive -DestinationPath $directory
           Copy-Item -LiteralPath (Join-Path $directory 'mediamtx.exe'), (Join-Path $directory 'LICENSE') -Destination obs-plugin/server/
+          choco install ffmpeg -y --no-progress
+          $env:Path = "C:\ProgramData\chocolatey\bin;$env:Path"
+          python desktop_sender/stream_server_test.py
           ./scripts/build-obs-plugin.ps1
 
       - name: Upload OBS plugin

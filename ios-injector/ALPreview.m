@@ -105,7 +105,10 @@ void ALInstallPreviewHooks(void) {
         gALPreviewViews = [NSHashTable weakObjectsHashTable];
         ALReplaceMethod(AVCaptureVideoPreviewLayer.class, @selector(layoutSublayers), (IMP)ALPreviewLayout, (IMP *)&gALPreviewLayout);
         ALReplaceMethod(AVCaptureVideoPreviewLayer.class, @selector(setSession:), (IMP)ALPreviewSetSession, (IMP *)&gALPreviewSetSession);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         ALReplaceMethod(object_getClass(AVCaptureStillImageOutput.class), @selector(jpegStillImageNSDataRepresentation:), (IMP)ALStillJPEG, (IMP *)&gALStillJPEG);
+#pragma clang diagnostic pop
         ALReplaceMethod(AVCapturePhoto.class, @selector(fileDataRepresentation), (IMP)ALPhotoData, (IMP *)&gALPhotoData);
         dispatch_async(dispatch_get_main_queue(), ^{
             static ALPreviewTicker *ticker; ticker = [ALPreviewTicker new];

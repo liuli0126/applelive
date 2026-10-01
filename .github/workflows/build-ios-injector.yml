@@ -32,13 +32,28 @@ jobs:
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
 
       - name: Cache iOS FFmpeg
-        uses: actions/cache@v4
+        id: ffmpeg-cache
+        uses: actions/cache/restore@v4
         with:
           path: .build/ios-ffmpeg
           key: ios-ffmpeg-6.1.2-arm64-arm64e-sdk16.5-${{ hashFiles('scripts/build-ios-ffmpeg.sh') }}
 
       - name: Build iOS media libraries
         run: bash scripts/build-ios-ffmpeg.sh
+
+      - name: Save media libraries
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .build/ios-ffmpeg
+          key: ios-ffmpeg-6.1.2-arm64-arm64e-sdk16.5-${{ hashFiles('scripts/build-ios-ffmpeg.sh') }}
+
+      - name: Prepare audio binding library
+        run: |
+          mkdir -p .build/fishhook
+          for file in fishhook.c fishhook.h LICENSE; do
+            curl --retry 3 -fsSL "https://raw.githubusercontent.com/facebook/fishhook/aadc161ac3b80db07a9908851839a17ba63a9eb1/$file" -o ".build/fishhook/$file"
+          done
 
       - name: Test media and microphone replacement
         run: |
@@ -55,12 +70,29 @@ jobs:
       - name: Build injector dylib
         run: |
           mkdir -p injector-artifact
+          mkdir -p relink/objects/arm64 relink/objects/arm64e
           make -C ios-injector all FINALPACKAGE=1 ARCHS=arm64 TARGET=iphone:clang:16.5:14.0
           cp ios-injector/.theos/obj/AppleLive.dylib "$RUNNER_TEMP/AppleLive-arm64.dylib"
+          find ios-injector/.theos/obj -path '*/arm64/*' -name '*.o' -exec cp '{}' relink/objects/arm64/ \;
           make -C ios-injector all FINALPACKAGE=1 ARCHS=arm64e TARGET=iphone:clang:16.5:15.0
+          find ios-injector/.theos/obj -path '*/arm64e/*' -name '*.o' -exec cp '{}' relink/objects/arm64e/ \;
           xcrun lipo -create "$RUNNER_TEMP/AppleLive-arm64.dylib" ios-injector/.theos/obj/AppleLive.dylib -output injector-artifact/AppleLive.dylib
           ldid -S injector-artifact/AppleLive.dylib
           cp .build/ios-ffmpeg/universal/FFmpeg-*.txt injector-artifact/
+          cp .build/fishhook/LICENSE injector-artifact/fishhook-LICENSE.txt
+          cp scripts/relink-injector.sh relink/
+          cp -R .build/ios-ffmpeg/universal/lib .build/ios-ffmpeg/universal/include relink/
+          cp .build/ios-ffmpeg/universal/FFmpeg-*.txt relink/
+          cp -R .build/fishhook relink/
+          tar --exclude=.git -czf relink/ffmpeg-source.tar.gz -C .build/ios-ffmpeg source
+          mkdir -p relink/source
+          git archive HEAD ios-injector ios-tweak scripts/build-ios-ffmpeg.sh | tar -x -C relink/source
+          test "$(find relink/objects/arm64 -name '*.o' | wc -l)" -ge 12
+          test "$(find relink/objects/arm64e -name '*.o' | wc -l)" -ge 12
+          (cd relink && bash relink-injector.sh)
+          python3 scripts/verify-injector-dylib.py relink/output/AppleLive.dylib
+          rm -rf relink/output
+          tar -czf injector-artifact/AppleLive-relink.tar.gz relink
 
       - name: Verify standalone binary
         run: |

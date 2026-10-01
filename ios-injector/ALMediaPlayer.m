@@ -123,7 +123,10 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     if (audioIndex >= 0) audio = ALOpenMediaCodec(input->streams[audioIndex], NO);
     duration = input->duration > 0 ? (double)input->duration / AV_TIME_BASE : 0;
     size_t matrixSize = 0;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     uint8_t *matrix = av_stream_get_side_data(input->streams[videoIndex], AV_PKT_DATA_DISPLAYMATRIX, &matrixSize);
+#pragma clang diagnostic pop
     double angle = matrix && matrixSize >= 9 * sizeof(int32_t) ? av_display_rotation_get((int32_t *)matrix) : 0;
     NSInteger rotation = isfinite(angle) ? (NSInteger)llround(-angle / 90.0) : 0;
     rotation = (rotation % 4 + 4) % 4;

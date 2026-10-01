@@ -31,8 +31,10 @@ static void testAudio(void) {
         require(output != NULL && CMSampleBufferGetNumSamples(output) == 128, "audio injection");
         AudioBufferList *list = calloc(1, offsetof(AudioBufferList, mBuffers) + 2 * sizeof(AudioBuffer));
         CMBlockBufferRef block = NULL;
-        require(CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(output, NULL, list,
-            offsetof(AudioBufferList, mBuffers) + 2 * sizeof(AudioBuffer), NULL, NULL, 0, &block) == noErr, "audio buffers");
+        OSStatus bufferStatus = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(output, NULL, list,
+            offsetof(AudioBufferList, mBuffers) + 2 * sizeof(AudioBuffer), NULL, NULL, 0, &block);
+        if (bufferStatus != noErr) fprintf(stderr, "planar=%d float=%d status=%d length=%zu\n", planar, floating, (int)bufferStatus, CMSampleBufferGetTotalSampleSize(output));
+        require(bufferStatus == noErr, "audio buffers");
         require(list->mNumberBuffers == (planar ? 2 : 1), "PCM layout preserved");
         if (floating) require(fabs(((float *)list->mBuffers[0].mData)[0] - 0.5) < 0.001, "float audio amplitude");
         else require(abs(((int16_t *)list->mBuffers[0].mData)[0] - 16384) < 2, "integer audio amplitude");
