@@ -24,3 +24,6 @@ USB 不是 iOS tweak 自己“看到”的串口。电脑端需要 `usbmuxd`/`py
 - OpenSSH 8.4-2 已安装；USB 隧道和专用密钥认证实际通过，手机 loopback 8765 的 WebSocket 升级返回 HTTP 101。诊断连接不等于插件连接；尚未验证 OBS 画面替换。
 - 手机自带的 `uiopen` 用法是 `uiopen com.apple.camera`，锁屏时系统拒绝打开相机。手机没有 log/netstat/lsof，使用 pymobiledevice3 syslog 获取限定 AppleLive/相机进程的日志。
 - 0.1.4 旧 ABI 包已成功构建并通过 USB 直接安装。安装后 mediaserverd 日志确认加载 AppleLive，发送端出现一个持续 USB 客户端，证明先前的加载不兼容已解决；实际画面替换仍待解锁测试。
+- 0.1.5 实机确认 `BWNodeOutput` 只有 `emitSampleBuffer:`（void 返回、一个 CMSampleBuffer 指针参数），原来的 copy 方法不存在。成功解码 720x1280 并写入 2304x1296 的 420v 原相机缓冲；用户确认系统相机和抖音出现 OBS 画面。
+- 用户确认系统相机显示倒置，但抖音为正向。因此不能全局更改旋转方向：0.1.6 用按 App 的默认方向与持久化设置，并通过 Darwin 通知让前台 App 实时控制 mediaserverd。
+- 0.1.6 UIKit 悬浮窗包已构建及安装，USB 视频解码持续正常；悬浮按钮是否可见、通知控制是否实际改变画面仍等用户实机反馈。音频、TikTok 和端到端延迟未完成验证。

@@ -6,6 +6,8 @@
 - Implemented a UIKit floating button and panel with pass-through background touches, drag positioning, safe-area clamping, collapse, enable, quarter-turn rotation, mirror, fit/fill and PC audio controls. Settings and position use the host app's preferences; Darwin notification state carries the active app's settings to mediaserverd without cross-sandbox file writes.
 - Added camera-service status updates for fresh video/audio and USB/LAN, plus live rendering settings. The microphone setting gates the existing app audio replacement path; actual PC-audio capture/injection is still unverified.
 - Applying ui-ux-pro-max's native safe-area, 44pt touch-target and control-spacing guidance. Awaiting compilation, notification IPC and on-device UI tests for 0.1.6.
+- Rootful CI run 36806477292 (commit c35350d) passed compilation and the legacy ABI gate. Downloaded 0.1.6 (47,796 bytes, SHA-256 `c0e664db7591abed8533018706f505c80c9acef068653c8fba2b5d674bde1dac`), verified the phone copy and installed with dpkg. Restarted Camera/Aweme and issued `uiopen com.ss.iphone.ugc.Aweme` to load the new app code.
+- mediaserverd and Aweme continue decoding 720x1280 over USB after update. The bounded syslog capture did not capture a floating-controls-ready or control-change message; do not yet claim visual appearance or IPC adjustments are verified. User has been asked to check the button, rotate left and reset in Douyin's camera preview; awaiting that result. Phone screenshot service remains unavailable, so no automatic screenshot validation was performed.
 
 ## 2026-10-01 camera output path repair
 
