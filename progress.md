@@ -1,5 +1,16 @@
 # Progress
 
+## 2026-10-01 USB recovery, phone buttons and video stalls
+
+- Final user feedback: phone Disconnect/Connect works and picture is smooth. Sustained LAN/high output measurement after warmup:602frames over20.0227seconds,30.016fps (PC-side measurement, not end-to-end latency). Current modeLAN, high1080x1920/30fps/8Mbps, audio off, two phone receiver processes.
+- USB supervisor syntax check and duplicate-supervisor mutex behavior passed. No-device enumeration now gives the correct no-phone error and retries (rather than invalid UDID). Installed Lua, USB script and sender hashes match source/build. The cable is currently unplugged; physical unplug/replug auto-recovery has not been fully device-tested. Supervisor PID37060 follows OBS15664; current in-memory Lua has older launch arguments but reuses this supervisor, and next script load reads the updated ObsPid launch.
+
+- USB sender was active but local2222 forwarder had disappeared. A stale pre-key SSH process41848 survived, so process-only reuse skipped reconstruction. Retired that verified stale process and restored tunnel; user confirmed OBS picture returned.
+- Added a per-route USB supervisor mutex, checks for real forwarding listener and established SSH TCP transport, retries, actual forwarder readiness waiting, no hidden password prompt, USB-only device filtering, and OBS lifetime tracking. Current phone was unplugged during testing and PC selection changed to LAN; preserved LAN/high/audio-off and installed the supervisor changes.
+- Diagnosed video stalls: Python AnnexBParser saturated a core at about99% while FFmpeg capture dropped frames continuously. Old parser repeatedly scanned large incomplete NALs byte by byte. Native byte search plus incremental cursor reduced a960040-byte/4096-chunk fixture from6.0349s to0.0022s; chunk-boundary and large-NAL regression tests passed. Installed rebuilt sender. Actual sender CPU sampled0%; LAN/high output measured288frames in10.008s (~28.8fps including startup).
+- Added phone connection toggle in0.1.11, globally shared pause through the connection notification, real disconnect/retry of receive clients, frame/audio clearing and immediate original-camera fallback. Legacy notifications migrate to unpaused auto mode. Both iOS CI builds passed (rootful36815887666/rootless36815887772); Windows36815887703 also passed.
+- Installed rootful0.1.11 over pinned Wi-Fi SSH (56,016bytes, SHA25620c503574339a74989777db474b18996c247b68b411094debd582e93305a2304), restarted test apps and opened Douyin. User confirmation of button interaction and perceived smoothness pending; USB unplug/replug regression requires the cable to be reattached.
+
 ## 2026-10-01 install inside existing OBS
 
 - User clarified they want installation inside the OBS folder. Installed the existing package to `D:/OBS定制款/OBS定制款/obs studio/data/obs-plugins/AppleLive`; native Qt rewrite was not pursued.

@@ -320,8 +320,9 @@ local function start_sender(props, property)
         status_text = "正在启动"
         log(obs.LOG_INFO, "发送器已启动，监听端口 " .. port)
         if connection_mode == "usb" then
-            local usb_command = 'cmd /d /c start "AppleLive USB" /min powershell.exe -NoProfile -ExecutionPolicy Bypass -File ' ..
-                quoted(usb_script_path) .. ' -Port ' .. port
+            local process_id = kernel and tonumber(kernel.GetCurrentProcessId()) or 0
+            local usb_command = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File ' ..
+                quoted(usb_script_path) .. ' -Port ' .. port .. ' -ObsPid ' .. process_id
             execute_hidden(usb_command)
         end
     end

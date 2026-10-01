@@ -1,5 +1,10 @@
 # Findings
 
+## USB waiting regression (2026-10-01)
+- Sender PID31648 running in USB mode on loopback8765, zero clients. USB device still detected as the paired iPhone11/iOS13.3.
+- No listener on local2222 and no usbmux forwarder process. Old ssh41848 from an earlier artifact script remained; current usb_forward.ps1 reused it by command-line match alone. SSH diagnostics therefore failed to connect to2222.
+- Removed only the verified stale AppleLive SSH process (no established TCP connections), then started the existing installed tunnel to restore service while implementing durable recovery.
+
 ## Native dock request (2026-10-01)
 - Final installation: `D:/OBS定制款/OBS定制款/obs studio/data/obs-plugins/AppleLive`. Existing browser dock restored automatically after OBS restart; remains a browser dock, not a native Qt DLL.
 - Actual OBS LuaJIT `io.open` fails on UTF-8 Chinese paths with Illegal byte sequence; fixed using OBS UTF-8 filesystem functions through FFI and Windows CreateProcessW for process startup. Verified file read/write/rename/remove and launching sender from the Chinese folder.
