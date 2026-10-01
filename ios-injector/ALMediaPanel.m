@@ -311,7 +311,11 @@ static BOOL ALValidStreamURL(NSString *value) {
 - (void)editStream {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"拉流地址" message:nil preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        field.text = self.source[@"url"] ?: @"";
+        NSDictionary *connection = ALConnectionSettings();
+        NSString *address = [NSString stringWithFormat:@"%@:%@", connection[@"host"], connection[@"port"]];
+        NSString *defaultURL = ALParseComputerAddress(address, NULL, NULL)
+            ? [NSString stringWithFormat:@"rtmp://%@:1935/live/applelive", connection[@"host"]] : @"";
+        field.text = self.source[@"url"] ?: defaultURL;
         field.placeholder = @"rtmp://电脑IP/live/流名称";
         field.keyboardType = UIKeyboardTypeURL; field.autocorrectionType = UITextAutocorrectionTypeNo;
         field.autocapitalizationType = UITextAutocapitalizationTypeNone; field.accessibilityLabel = @"拉流地址";

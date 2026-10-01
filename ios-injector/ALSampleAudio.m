@@ -66,11 +66,15 @@ CMSampleBufferRef ALCreateInjectedAudio(CMSampleBufferRef original, ALAudioRing 
     CMSampleTimingInfo timing;
     if (CMSampleBufferGetSampleTimingInfo(original, 0, &timing) != noErr) return NULL;
     CMSampleBufferRef result = NULL;
-    if (CMAudioSampleBufferCreateWithPacketDescriptions(kCFAllocatorDefault, NULL, NO, NULL, NULL, format,
-            frames, timing.presentationTimeStamp, NULL, &result) != noErr) return NULL;
-    OSStatus status = CMSampleBufferSetDataBufferFromAudioBufferList(result, kCFAllocatorDefault, kCFAllocatorDefault, 0, list);
-    if (status == noErr) status = CMSampleBufferSetDataReady(result);
-    if (status != noErr) { CFRelease(result); return NULL; }
+    CMBlockBufferRef block = NULL;
+    OSStatus status = CMBlockBufferCreateWithMemoryBlock(kCFAllocatorDefault, NULL, memory.length,
+        kCFAllocatorDefault, NULL, 0, memory.length, kCMBlockBufferAssureMemoryNowFlag, &block);
+    if (status != noErr) return NULL;
+    status = CMBlockBufferReplaceDataBytes(memory.bytes, block, 0, memory.length);
+    if (status == noErr) status = CMAudioSampleBufferCreateReadyWithPacketDescriptions(kCFAllocatorDefault,
+        block, format, frames, timing.presentationTimeStamp, NULL, &result);
+    CFRelease(block);
+    if (status != noErr) { if (result) CFRelease(result); return NULL; }
     CMSetAttachment(result, CFSTR("applelive_virtual"), kCFBooleanTrue, kCMAttachmentMode_ShouldPropagate);
     return result;
 }

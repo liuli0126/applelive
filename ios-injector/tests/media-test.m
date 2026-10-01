@@ -29,13 +29,16 @@ static void testAudio(void) {
         [ring clear]; [ring pushSamples:pcm count:128 channels:2 sampleRate:48000];
         CMSampleBufferRef output = ALCreateInjectedAudio(original, ring, NO);
         require(output != NULL && CMSampleBufferGetNumSamples(output) == 128, "audio injection");
-        size_t listCapacity = 1024, needed = 0;
+        size_t listCapacity = 0, needed = 0;
+        CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(output, &listCapacity, NULL, 0, NULL, NULL, 0, NULL);
         AudioBufferList *list = calloc(1, listCapacity);
-        list->mNumberBuffers = 8;
         CMBlockBufferRef block = NULL;
         OSStatus bufferStatus = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(output, &needed, list,
             listCapacity, NULL, NULL, 0, &block);
-        if (bufferStatus != noErr) fprintf(stderr, "planar=%d float=%d status=%d length=%zu needed=%zu channels=%u\n", planar, floating, (int)bufferStatus, CMSampleBufferGetTotalSampleSize(output), needed, asbd.mChannelsPerFrame);
+        if (bufferStatus != noErr) {
+            fprintf(stderr, "planar=%d float=%d status=%d length=%zu needed=%zu capacity=%zu channels=%u\n", planar, floating, (int)bufferStatus, CMSampleBufferGetTotalSampleSize(output), needed, listCapacity, asbd.mChannelsPerFrame);
+            CFShow(output);
+        }
         require(bufferStatus == noErr, "audio buffers");
         require(list->mNumberBuffers == (planar ? 2 : 1), "PCM layout preserved");
         if (floating) require(fabs(((float *)list->mBuffers[0].mData)[0] - 0.5) < 0.001, "float audio amplitude");
