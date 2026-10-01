@@ -27,7 +27,7 @@ static int ALStatusToken(void) {
 }
 
 NSDictionary *ALDefaultControls(NSString *bundleIdentifier) {
-    return @{@"enabled": @YES, @"audio": @NO, @"mirror": @NO, @"fill": @NO,
+    return @{@"enabled": @YES, @"audio": @NO, @"muted": @NO, @"mirror": @NO, @"fill": @NO,
              @"rotation": @0, @"cameraPortrait": @([bundleIdentifier isEqualToString:@"com.apple.camera"])};
 }
 
@@ -51,10 +51,14 @@ static NSDictionary *ALDecodeControls(uint64_t state) {
 NSDictionary *ALLoadAppControls(void) {
     NSMutableDictionary *controls = [ALDefaultControls(NSBundle.mainBundle.bundleIdentifier) mutableCopy];
     NSDictionary *saved = [NSUserDefaults.standardUserDefaults dictionaryForKey:kALSavedControls];
-    for (NSString *key in @[@"enabled", @"audio", @"mirror", @"fill", @"rotation"]) {
+    for (NSString *key in @[@"enabled", @"audio", @"muted", @"mirror", @"fill", @"rotation"]) {
         if ([saved[key] isKindOfClass:NSNumber.class]) controls[key] = saved[key];
     }
+#ifdef APPLELIVE_STANDALONE
+    return controls;
+#else
     return ALDecodeControls(ALEncodeControls(controls));
+#endif
 }
 
 BOOL ALPublishControls(NSDictionary *controls) {

@@ -41,9 +41,10 @@ def verify(path: Path) -> None:
                     raise ValueError(f"Injection framework dependency: {dependency}")
                 imports.append(dependency)
             cursor += length
-        if minimum != 0x000F0000:
-            raise ValueError("Expected a deployment target of iOS 15.0")
-        print(f"Verified {subtype:#x}, iOS 15.0, {len(imports)} system imports")
+        expected = 0x000E0000 if subtype == 0 else 0x000F0000
+        if minimum != expected:
+            raise ValueError(f"Unexpected deployment target for subtype {subtype:#x}")
+        print(f"Verified {subtype:#x}, iOS {minimum >> 16}.0, {len(imports)} system imports")
     if found != {0, 0x80000002}:
         raise ValueError("Expected arm64 and modern arm64e")
     if b"ALInjectedVirtualCamera" not in data:

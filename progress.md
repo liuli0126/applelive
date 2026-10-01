@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-10-01 match tested reference feature scope
+
+- User supplied Vacm_afasds_v10(2).dylib and confirmed it is tested and works well; explicitly requests matching its full functionality. Static comparison saved in artifacts/DYLIB_COMPARISON.md. Reference is4884752bytes, arm64/iOS14.0,22 system dependencies, built-in FFmpeg libavformat60.16.100 and Objective-C runtime hooks. Our current434720-byte dylib is arm64+modernarm64e/iOS15.0 and OBS WebSocket only.
+- Confirmed reference interfaces for local image/video selection, loop, RTMP/RTSP/HLS-capable FFmpeg, audio decode/resample, network preview, AVCaptureVideoPreviewLayer overlay and JPEG still-photo interception. It has no external Substrate/ElleKit dependency. USB implementation and actual latency cannot be inferred from this phone file.
+- Implementing equivalent capabilities with public FFmpeg source and our existing engine. New source/media/preview modules are standalone-only so the original iOS13.3 tested deb installation is preserved. Requested reference UI screenshots asynchronously while work continues.
+
 ## 2026-10-01 standalone dylib distribution
 
 - Standalone commit61828ac compiled successfully (injector36824607865). No Substrate/ElleKit linkage; distinct Objective-C class names and app-local stream status. Actual app injection remains untested.
@@ -129,6 +135,9 @@
 - GitHub Actions rootful 构建成功（run 36684920099）；下载并检查 `com.applelive.tweak_0.1.0_iphoneos-arm.deb`，控制信息为 iphoneos-arm、`mobilesubstrate | com.ex.substitute`，dylib/plist 位于 rootful 的 `/Library/MobileSubstrate/DynamicLibraries/`。同次触发的 rootless 构建也成功，真实手机相机和直播 App 效果未验证。
 
 ## 2026-10-01 OBS dock and unified transport controls
+
+- Reference UI supplied: album, file, network entry labeled detection, mirror, mute, internal audio, rotation, restore camera. User confirmed internal audio must replace the microphone entirely. Their desktop server is the existing MediaMTX 1.18.1 at E:/服务器/服务器/mediamtx_v1.18.1_windows_amd64, not SRS.
+- Added standalone FFmpeg media player, source picker panel, preview/photo hooks and PCM injection supporting planar/interleaved formats with silence on underflow. Host playback and PCM tests plus a generated H.264/AAC fixture are now CI gates. Implementation and builds are still in progress; no new phone result claimed.
 
 - Implemented and installed OBS browser dock, Lua bridge, packaged helper, settings/controls, and live status. UI start/stop and saving mode are verified in running OBS. Removed only the duplicate old AppleLive Lua registration, preserving its files.
 - Initial phone connection UI 0.1.7 installed; user successfully connected via LAN (phone 192.168.1.53, PC 192.168.1.45). User correctly identified conflicting PC selected USB versus actual LAN status, and requested one unambiguous selection.

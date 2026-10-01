@@ -8,6 +8,7 @@ on:
       - "ios-injector/**"
       - "ios-tweak/**"
       - "scripts/verify-injector-dylib.py"
+      - "scripts/build-ios-ffmpeg.sh"
       - ".github/workflows/build-ios-injector.yml"
 
 jobs:
@@ -30,12 +31,36 @@ jobs:
           cp -R "$RUNNER_TEMP/theos-sdks/." "$THEOS/sdks/"
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
 
+      - name: Cache iOS FFmpeg
+        uses: actions/cache@v4
+        with:
+          path: .build/ios-ffmpeg
+          key: ios-ffmpeg-6.1.2-arm64-arm64e-sdk16.5-${{ hashFiles('scripts/build-ios-ffmpeg.sh') }}
+
+      - name: Build iOS media libraries
+        run: bash scripts/build-ios-ffmpeg.sh
+
+      - name: Test media and microphone replacement
+        run: |
+          FF=.build/ios-ffmpeg/host
+          xcrun clang -fobjc-arc -Iios-injector -Iios-tweak -I"$FF/include" \
+            ios-injector/tests/media-test.m ios-injector/ALMediaPlayer.m \
+            ios-injector/ALSampleAudio.m ios-tweak/ALAudioRing.m \
+            -L"$FF/lib" -lavformat -lavcodec -lswresample -lswscale -lavutil -lz -lbz2 -liconv \
+            -framework Foundation -framework QuartzCore -framework CoreVideo -framework CoreMedia \
+            -framework VideoToolbox -framework AudioToolbox -framework Security -framework CoreFoundation \
+            -o "$RUNNER_TEMP/applelive-media-test"
+          "$RUNNER_TEMP/applelive-media-test" ios-injector/tests/fixture.mp4
+
       - name: Build injector dylib
         run: |
-          make -C ios-injector all FINALPACKAGE=1
           mkdir -p injector-artifact
-          cp ios-injector/.theos/obj/AppleLive.dylib injector-artifact/AppleLive.dylib
+          make -C ios-injector all FINALPACKAGE=1 ARCHS=arm64 TARGET=iphone:clang:16.5:14.0
+          cp ios-injector/.theos/obj/AppleLive.dylib "$RUNNER_TEMP/AppleLive-arm64.dylib"
+          make -C ios-injector all FINALPACKAGE=1 ARCHS=arm64e TARGET=iphone:clang:16.5:15.0
+          xcrun lipo -create "$RUNNER_TEMP/AppleLive-arm64.dylib" ios-injector/.theos/obj/AppleLive.dylib -output injector-artifact/AppleLive.dylib
           ldid -S injector-artifact/AppleLive.dylib
+          cp .build/ios-ffmpeg/universal/FFmpeg-*.txt injector-artifact/
 
       - name: Verify standalone binary
         run: |
@@ -48,6 +73,6 @@ jobs:
       - name: Upload dylib
         uses: actions/upload-artifact@v4
         with:
-          name: AppleLive-Injector-iOS15
+          name: AppleLive-Injector-iOS14
           path: injector-artifact/*
           if-no-files-found: error

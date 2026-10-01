@@ -15,6 +15,13 @@
 #endif
 #import <os/log.h>
 #import <math.h>
+#ifdef APPLELIVE_STANDALONE
+#import "ALMediaPlayer.h"
+#import "ALPreview.h"
+#import "ALSampleAudio.h"
+#import <ImageIO/ImageIO.h>
+#import <UIKit/UIKit.h>
+#endif
 
 static const void *kALVideoProxyKey = &kALVideoProxyKey;
 static const void *kALAudioProxyKey = &kALAudioProxyKey;
@@ -51,6 +58,12 @@ static void ALHookMessage(Class cls, SEL selector, IMP replacement, IMP *origina
 @property(atomic, assign) CFAbsoluteTime lastAudioTime;
 @property(nonatomic, strong) dispatch_source_t statusTimer;
 @property(nonatomic, copy) NSArray<NSString *> *connectionAddresses;
+#ifdef APPLELIVE_STANDALONE
+@property(nonatomic) ALMediaPlayer *mediaPlayer;
+@property(atomic, copy) NSString *sourceKind;
+@property(nonatomic) NSURL *sourceURL;
+@property(atomic) NSInteger sourceRotation;
+#endif
 - (BOOL)renderVideoIntoSample:(CMSampleBufferRef)sample;
 @end
 
@@ -237,9 +250,16 @@ static void ALInstallHooks(void) {
         _audioRing = [[ALAudioRing alloc] init];
         _client = [[ALStreamClient alloc] init];
         _decoder = [[ALVideoDecoder alloc] init];
+#ifdef APPLELIVE_STANDALONE
+        _sourceKind = @"computer";
+        _mediaPlayer = [ALMediaPlayer new];
+#endif
         __weak typeof(self) weakSelf = self;
         _decoder.onFrame = ^(CVPixelBufferRef pixelBuffer, uint32_t sequence) {
             if (weakSelf.connectionPaused) return;
+#ifdef APPLELIVE_STANDALONE
+            if (![weakSelf.sourceKind isEqualToString:@"computer"]) return;
+#endif
             [weakSelf.frameStore storePixelBuffer:pixelBuffer sequence:sequence];
             weakSelf.lastVideoTime = CFAbsoluteTimeGetCurrent();
         };
@@ -256,12 +276,33 @@ static void ALInstallHooks(void) {
             weakSelf.lastAudioTime = CFAbsoluteTimeGetCurrent();
         };
         _client.onDisconnected = ^{
+#ifdef APPLELIVE_STANDALONE
+            if (![weakSelf.sourceKind isEqualToString:@"computer"]) return;
+#endif
             weakSelf.lastVideoTime = 0;
             weakSelf.lastAudioTime = 0;
             [weakSelf.decoder reset];
             [weakSelf.frameStore clear];
             [weakSelf.audioRing clear];
         };
+#ifdef APPLELIVE_STANDALONE
+        _mediaPlayer.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) {
+            if ([weakSelf.sourceKind isEqualToString:@"computer"]) return;
+            weakSelf.sourceRotation = rotation;
+            [weakSelf.frameStore storePixelBuffer:frame sequence:weakSelf.frameStore.latestSequence + 1];
+            weakSelf.lastVideoTime = CFAbsoluteTimeGetCurrent();
+        };
+        _mediaPlayer.onAudio = ^(const float *samples, NSUInteger frames) {
+            if ([weakSelf.sourceKind isEqualToString:@"computer"]) return;
+            [weakSelf.audioRing pushSamples:samples count:frames channels:2 sampleRate:48000];
+            weakSelf.lastAudioTime = CFAbsoluteTimeGetCurrent();
+        };
+        _mediaPlayer.onReset = ^{
+            if ([weakSelf.sourceKind isEqualToString:@"computer"]) return;
+            [weakSelf.audioRing clear];
+            if ([weakSelf.sourceKind isEqualToString:@"network"]) [weakSelf.frameStore clear];
+        };
+#endif
     }
     return self;
 }
@@ -279,6 +320,9 @@ static void ALInstallHooks(void) {
                [controls[@"cameraPortrait"] boolValue]);
     });
     ALInstallHooks();
+#ifdef APPLELIVE_STANDALONE
+    ALInstallPreviewHooks();
+#endif
 
 #ifdef APPLELIVE_STANDALONE
     self.enabled = YES;
@@ -318,6 +362,9 @@ static void ALInstallHooks(void) {
 }
 
 - (void)applyConnection:(NSDictionary *)settings {
+#ifdef APPLELIVE_STANDALONE
+    if (![self.sourceKind isEqualToString:@"computer"]) return;
+#endif
     NSArray *addresses = ALConnectionAddresses(settings);
     if ([NSProcessInfo.processInfo.processName isEqualToString:@"mediaserverd"]) ALPersistConnection(settings);
     self.connectionPaused = [settings[@"paused"] boolValue];
@@ -328,6 +375,15 @@ static void ALInstallHooks(void) {
 }
 
 - (NSDictionary *)streamStatus {
+#ifdef APPLELIVE_STANDALONE
+    if (![self.sourceKind isEqualToString:@"computer"]) {
+        CVPixelBufferRef frame = [self.frameStore copyLatestPixelBuffer];
+        BOOL hasFrame = frame != NULL;
+        if (frame) CVPixelBufferRelease(frame);
+        return @{@"connected": @(hasFrame), @"video": @(hasFrame), @"usb": @NO,
+                 @"audio": @(CFAbsoluteTimeGetCurrent() - self.lastAudioTime < 2)};
+    }
+#endif
     CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
     return @{@"connected": @(self.client.isConnected),
              @"usb": @([self.client.address containsString:@"127.0.0.1:"]),
@@ -377,6 +433,9 @@ static void ALInstallHooks(void) {
         CGFloat width = CVPixelBufferGetWidth(target);
         CGFloat height = CVPixelBufferGetHeight(target);
         CIImage *image = [CIImage imageWithCVPixelBuffer:incoming];
+#ifdef APPLELIVE_STANDALONE
+        if (self.sourceRotation) image = [image imageByApplyingTransform:CGAffineTransformMakeRotation(-(CGFloat)self.sourceRotation * M_PI_2)];
+#endif
         CGRect inputBounds = image.extent;
         if ([controls[@"mirror"] boolValue]) {
             image = [image imageByApplyingTransform:CGAffineTransformMakeScale(-1, 1)];
@@ -424,6 +483,13 @@ static void ALInstallHooks(void) {
 }
 
 - (CMSampleBufferRef)replacementForAudioSample:(CMSampleBufferRef)original {
+#ifdef APPLELIVE_STANDALONE
+    NSDictionary *settings = self.controls;
+    if (!self.enabled || self.connectionPaused || ![settings[@"enabled"] boolValue] ||
+        ![settings[@"audio"] boolValue] || !original ||
+        CMGetAttachment(original, CFSTR("applelive_virtual"), NULL)) return NULL;
+    return ALCreateInjectedAudio(original, self.audioRing, [settings[@"muted"] boolValue]);
+#else
     NSDictionary *controls = self.controls;
     if (!self.enabled || self.connectionPaused || ![controls[@"enabled"] boolValue] || ![controls[@"audio"] boolValue] ||
         !self.audioRing.isActive || !original) return NULL;
@@ -485,6 +551,78 @@ static void ALInstallHooks(void) {
                         kCFBooleanTrue, kCMAttachmentMode_ShouldPropagate);
     }
     return result;
+#endif
 }
+
+#ifdef APPLELIVE_STANDALONE
+- (void)selectSource:(NSString *)kind URL:(NSURL *)url {
+    [self.mediaPlayer stop];
+    self.sourceKind = kind;
+    self.sourceURL = url;
+    self.sourceRotation = 0;
+    self.connectionPaused = NO;
+    [self.client disconnect];
+    [self.decoder reset];
+    [self.frameStore clear];
+    [self.audioRing clear];
+    self.lastVideoTime = self.lastAudioTime = 0;
+    self.frameStore.holdsFrame = [kind isEqualToString:@"local"];
+    if ([kind isEqualToString:@"computer"]) [self applyConnection:ALConnectionSettings()];
+    else if (url) {
+        UIImage *still = url.isFileURL ? [UIImage imageWithContentsOfFile:url.path] : nil;
+        if (still.CGImage) {
+            static const int orientations[] = {1, 3, 8, 6, 2, 4, 5, 7};
+            CIImage *image = [[CIImage imageWithCGImage:still.CGImage] imageByApplyingOrientation:orientations[still.imageOrientation]];
+            CGFloat scale = MIN(1, 1920 / MAX(image.extent.size.width, image.extent.size.height));
+            image = [image imageByApplyingTransform:CGAffineTransformMakeScale(scale, scale)];
+            CVPixelBufferRef frame = NULL;
+            NSDictionary *attributes = @{(id)kCVPixelBufferIOSurfacePropertiesKey: @{}};
+            if (CVPixelBufferCreate(NULL, ceil(image.extent.size.width), ceil(image.extent.size.height), kCVPixelFormatType_32BGRA,
+                    (__bridge CFDictionaryRef)attributes, &frame) == kCVReturnSuccess) {
+                CIContext *context = [CIContext contextWithOptions:@{kCIContextUseSoftwareRenderer: @NO}];
+                [context render:image toCVPixelBuffer:frame];
+                [self.frameStore storePixelBuffer:frame sequence:1];
+                CVPixelBufferRelease(frame); self.lastVideoTime = CFAbsoluteTimeGetCurrent();
+            }
+        } else [self.mediaPlayer playURL:url];
+    }
+}
+- (NSDictionary *)mediaStatus { return self.mediaPlayer.status; }
+- (void)setMediaPaused:(BOOL)paused {
+    self.mediaPlayer.paused = paused;
+    [self.audioRing clear];
+}
+- (void)setMediaLoop:(BOOL)loop { self.mediaPlayer.loop = loop; }
+- (void)seekMedia:(NSTimeInterval)seconds { [self.mediaPlayer seek:seconds]; }
+- (CVPixelBufferRef)copyPreviewPixelBuffer:(CGSize)size {
+    if (!self.enabled || self.connectionPaused || ![self.controls[@"enabled"] boolValue]) return NULL;
+    CVPixelBufferRef latest = [self.frameStore copyLatestPixelBuffer];
+    if (!latest) return NULL;
+    if (size.width < 1 || size.height < 1) size = CGSizeMake(CVPixelBufferGetWidth(latest), CVPixelBufferGetHeight(latest));
+    CVPixelBufferRelease(latest);
+    CVPixelBufferRef target = NULL;
+    NSDictionary *attributes = @{(id)kCVPixelBufferIOSurfacePropertiesKey: @{}};
+    if (CVPixelBufferCreate(NULL, (size_t)size.width, (size_t)size.height, kCVPixelFormatType_32BGRA,
+            (__bridge CFDictionaryRef)attributes, &target) != kCVReturnSuccess) return NULL;
+    CMSampleBufferRef sample = ALCreateVideoSample(target, NULL);
+    if (!sample) { CVPixelBufferRelease(target); return NULL; }
+    CMRemoveAttachment(sample, CFSTR("applelive_virtual"));
+    BOOL rendered = [self renderVideoIntoSample:sample];
+    CFRelease(sample);
+    if (!rendered) { CVPixelBufferRelease(target); return NULL; }
+    return target;
+}
+- (NSData *)sourceJPEG {
+    CVPixelBufferRef frame = [self copyPreviewPixelBuffer:CGSizeZero];
+    if (!frame) return nil;
+    CIImage *image = [CIImage imageWithCVPixelBuffer:frame];
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    NSData *jpeg = [self.renderContext JPEGRepresentationOfImage:image colorSpace:colorSpace
+        options:@{(id)kCGImageDestinationLossyCompressionQuality: @0.95}];
+    CGColorSpaceRelease(colorSpace);
+    CVPixelBufferRelease(frame);
+    return jpeg;
+}
+#endif
 
 @end

@@ -9,6 +9,7 @@ on:
       - "ios-injector/**"
       - "ios-tweak/**"
       - "scripts/verify-injector-dylib.py"
+      - "scripts/build-ios-ffmpeg.sh"
       - ".github/workflows/build-ios-injector.yml"
       - "scripts/build-obs-plugin.ps1"
       - ".github/workflows/build-obs-plugin.yml"
@@ -41,7 +42,7 @@ jobs:
       - name: Download phone library
         uses: actions/download-artifact@v4
         with:
-          name: AppleLive-Injector-iOS15
+          name: AppleLive-Injector-iOS14
           path: obs-plugin/phone-plugin
 
       - name: Build portable plugin

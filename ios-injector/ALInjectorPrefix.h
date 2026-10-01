@@ -7,3 +7,6 @@
 #define ALAudioRing ALInjectedAudioRing
 #define ALStreamClient ALInjectedStreamClient
 #define ALVideoDecoder ALInjectedVideoDecoder
+#define ALMediaPlayer ALInjectedMediaPlayer
+#define ALPreviewView ALInjectedPreviewView
+#define ALPreviewTicker ALInjectedPreviewTicker

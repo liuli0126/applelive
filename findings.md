@@ -1,5 +1,10 @@
 # Findings
 
+## Tested reference feature scope (2026-10-01)
+- Vacm SHA256d718f235c05b50aae52218959c8e0946c1cc9213caf5e33bd26d833add1f0b7c. Defines avformat_open_input, av_read_frame, avcodec_send_packet, avcodec_receive_frame, swr_convert, sws_scale and RTMP protocol objects; also has VideoToolbox imports. Local media, preview and audio features are supported by concrete selectors and linked AV classes.
+- Key extra hooks: vcam_startRunning/stopRunning/addInput, vcam_addSublayer, vcam_setSession, vcam_installOverlayIfNeeded, vcam_setSampleBufferDelegate, vcam_setAudioSampleBufferDelegate and vcam_jpegStillImageNSDataRepresentation. Partial class/string obfuscation prevents exact UI text recovery, so user screenshots are requested.
+- Build FFmpeg from an official pinned release in CI, static linking to avoid extra phone files. Preserve public source/license and relinking material. No third-party plugin implementation is copied or loaded during analysis.
+
 ## Single-file connection profile and OBS download (2026-10-01)
 - Preserve the signed Mach-O bytes and encode IPv4/port in the exported filename. Standalone initialization locates its own image with dladdr using a data anchor; accepts Safari numeric duplicate suffixes and validates the address with the existing parser. A changed exported profile updates app-owned defaults; the same profile retains manual settings.
 - Standalone connection controls now notify inside the target app instead of depending on mediaserverd. LAN HTTP downloads share the sender's port but remain separate from video handshakes; USB mode rejects the download endpoint. The dock's control API remains loopback-only with its existing Origin/token checks.

@@ -35,7 +35,7 @@
 - (CVPixelBufferRef)copyLatestPixelBuffer {
     os_unfair_lock_lock(&_lock);
     CFAbsoluteTime age = CFAbsoluteTimeGetCurrent() - _receivedAt;
-    CVPixelBufferRef result = age >= 0 && age < 0.75 ? _pixelBuffer : NULL;
+    CVPixelBufferRef result = self.holdsFrame || (age >= 0 && age < 0.75) ? _pixelBuffer : NULL;
     if (result) CVPixelBufferRetain(result);
     os_unfair_lock_unlock(&_lock);
     return result;
