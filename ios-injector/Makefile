@@ -13,6 +13,8 @@ AppleLive_FILES = ../ios-tweak/Tweak.xm \
     ../ios-tweak/ALConnection.m \
     ALMediaPlayer.m \
     ALMediaPanel.m \
+    ALCyberTheme.m \
+    ALSourceSettings.m \
     ALPreview.m \
     ALSampleAudio.m \
     ALUSBReceiver.m \

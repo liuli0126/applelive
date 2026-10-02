@@ -275,7 +275,7 @@ static void ALInstallHooks(void) {
         _client = [[ALStreamClient alloc] init];
         _decoder = [[ALVideoDecoder alloc] init];
 #ifdef APPLELIVE_STANDALONE
-        _sourceKind = @"computer";
+        _sourceKind = @"none";
         _unitAudioRing = [ALAudioRing new];
         _mediaPlayer = [ALMediaPlayer new];
         _usbReceiver = [ALUSBReceiver new];

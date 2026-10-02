@@ -4,7 +4,8 @@
 #import "ALVirtualCamera.h"
 #import "ALAudioRing.h"
 #import "ALPreview.h"
-#import "ALBrand.h"
+#import "ALCyberTheme.h"
+#import "ALSourceSettings.h"
 #import <PhotosUI/PhotosUI.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
@@ -15,9 +16,11 @@ static NSURL *ALMediaDirectory(void) {
     [NSFileManager.defaultManager createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:nil];
     return directory;
 }
-static BOOL ALValidStreamURL(NSString *value) {
-    NSURLComponents *url = [NSURLComponents componentsWithString:value];
-    return [@[@"rtmp", @"rtmps", @"rtsp", @"http", @"https"] containsObject:url.scheme.lowercaseString] && url.host.length > 0;
+static NSString *ALDefaultStreamURL(void) {
+    NSDictionary *connection = ALConnectionSettings();
+    NSString *address = [NSString stringWithFormat:@"%@:%@", connection[@"host"], connection[@"port"]];
+    return ALParseComputerAddress(address, NULL, NULL)
+        ? [NSString stringWithFormat:@"rtmp://%@:1935/live/applelive", connection[@"host"]] : @"";
 }
 
 @interface ALPassThroughWindow : UIWindow
@@ -45,8 +48,12 @@ static BOOL ALValidStreamURL(NSString *value) {
 @property(nonatomic) UILabel *sourceLabel;
 @property(nonatomic) UILabel *timeLabel;
 @property(nonatomic) UILabel *audioLabel;
-@property(nonatomic) UIButton *connectButton;
-@property(nonatomic) UIButton *addressButton;
+@property(nonatomic) UILabel *signalLabel;
+@property(nonatomic) UIView *signalDot;
+@property(nonatomic) UIButton *albumButton;
+@property(nonatomic) UIButton *fileButton;
+@property(nonatomic) UIButton *streamButton;
+@property(nonatomic) UIButton *usbButton;
 @property(nonatomic) UIButton *playButton;
 @property(nonatomic) UIButton *rotateButton;
 @property(nonatomic) UISwitch *enabledSwitch;
@@ -74,8 +81,9 @@ static BOOL ALValidStreamURL(NSString *value) {
         if (instance) return;
         instance = [ALFloatingPanel new];
         instance.controls = [ALLoadAppControls() mutableCopy];
-        instance.source = [[NSUserDefaults.standardUserDefaults dictionaryForKey:kALSourceDefaults] mutableCopy]
-            ?: [@{@"kind": @"computer", @"loop": @YES} mutableCopy];
+        instance.source = [ALMigrateMediaSource([NSUserDefaults.standardUserDefaults dictionaryForKey:kALSourceDefaults],
+            ALDefaultStreamURL()) mutableCopy];
+        [NSUserDefaults.standardUserDefaults setObject:instance.source forKey:kALSourceDefaults];
         NSDictionary *position = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"AppleLive.BubblePosition.v1"];
         instance.bubbleFraction = position ? CGPointMake([position[@"x"] doubleValue], [position[@"y"] doubleValue]) : CGPointMake(0, 0.2);
         [NSNotificationCenter.defaultCenter addObserver:instance selector:@selector(refresh) name:UIApplicationDidBecomeActiveNotification object:nil];
@@ -85,41 +93,60 @@ static BOOL ALValidStreamURL(NSString *value) {
     });
 }
 - (ALVirtualCamera *)camera { return ALVirtualCamera.sharedInstance; }
-- (UIColor *)accent { return [UIColor colorWithWhite:0.82 alpha:1]; }
+- (UIColor *)accent { return ALCyberRed(); }
 - (UILabel *)label:(NSString *)text size:(CGFloat)size {
-    UILabel *label = [UILabel new]; label.text = text; label.textColor = UIColor.whiteColor;
-    label.font = [UIFont systemFontOfSize:size weight:UIFontWeightMedium];
+    UILabel *label = [UILabel new]; label.text = text; label.textColor = ALCyberText();
+    label.font = [[UIFontMetrics metricsForTextStyle:UIFontTextStyleBody]
+        scaledFontForFont:[UIFont systemFontOfSize:size weight:UIFontWeightMedium] maximumPointSize:size * 1.5];
+    label.adjustsFontForContentSizeCategory = YES;
     label.numberOfLines = 0;
     return label;
 }
 - (UIButton *)button:(NSString *)title symbol:(NSString *)symbol action:(SEL)action {
-    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+    UIButton *button = [ALInjectedCyberButton buttonWithType:UIButtonTypeCustom];
     [button setTitle:title forState:UIControlStateNormal];
-    if (symbol) [button setImage:[UIImage systemImageNamed:symbol] forState:UIControlStateNormal];
+    if (symbol) [button setImage:[UIImage systemImageNamed:symbol withConfiguration:
+        [UIImageSymbolConfiguration configurationWithPointSize:16 weight:UIImageSymbolWeightMedium]] forState:UIControlStateNormal];
     button.tintColor = self.accent;
-    [button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    button.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
+    [button setTitleColor:ALCyberText() forState:UIControlStateNormal];
+    button.titleLabel.font = [[UIFontMetrics metricsForTextStyle:UIFontTextStyleSubheadline]
+        scaledFontForFont:[UIFont systemFontOfSize:14 weight:UIFontWeightSemibold] maximumPointSize:19];
+    button.titleLabel.adjustsFontForContentSizeCategory = YES;
     button.titleLabel.adjustsFontSizeToFitWidth = YES;
     button.titleLabel.minimumScaleFactor = 0.8;
-    button.layer.cornerRadius = 8;
-    button.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
-    button.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.12].CGColor;
-    button.layer.borderWidth = 1;
     button.accessibilityLabel = title;
-    [button.heightAnchor constraintEqualToConstant:44].active = YES;
+    [button.heightAnchor constraintGreaterThanOrEqualToConstant:48].active = YES;
     [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
     return button;
 }
 - (UISwitch *)toggle:(NSString *)title {
     UISwitch *toggle = [UISwitch new]; toggle.onTintColor = self.accent; toggle.accessibilityLabel = title;
+    toggle.thumbTintColor = ALCyberText();
+    [toggle setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
     [toggle addTarget:self action:@selector(controlsChanged:) forControlEvents:UIControlEventValueChanged];
     return toggle;
 }
 - (UIStackView *)row:(NSArray *)views {
     UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:views];
     row.axis = UILayoutConstraintAxisHorizontal; row.alignment = UIStackViewAlignmentCenter; row.spacing = 8;
-    [row.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
+    NSLayoutConstraint *minimumHeight = [row.heightAnchor constraintGreaterThanOrEqualToConstant:44];
+    minimumHeight.priority = 999; minimumHeight.active = YES;
     return row;
+}
+- (UIView *)section:(NSString *)title views:(NSArray<UIView *> *)views {
+    ALInjectedCyberSurface *surface = [ALInjectedCyberSurface new];
+    UILabel *caption = [self label:title size:10]; caption.textColor = self.accent;
+    caption.font = [UIFont monospacedSystemFontOfSize:10 weight:UIFontWeightSemibold];
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:[@[caption] arrayByAddingObjectsFromArray:views]];
+    stack.axis = UILayoutConstraintAxisVertical; stack.spacing = 8; stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [surface addSubview:stack];
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.topAnchor constraintEqualToAnchor:surface.topAnchor constant:14],
+        [stack.bottomAnchor constraintEqualToAnchor:surface.bottomAnchor constant:-14],
+        [stack.leadingAnchor constraintEqualToAnchor:surface.leadingAnchor constant:14],
+        [stack.trailingAnchor constraintEqualToAnchor:surface.trailingAnchor constant:-14],
+    ]];
+    return surface;
 }
 - (void)buildWindow {
     UIWindowScene *scene = nil;
@@ -133,40 +160,54 @@ static BOOL ALValidStreamURL(NSString *value) {
     self.window.rootViewController = root;
     __weak typeof(self) weakSelf = self;
     root.onLayout = ^{ [weakSelf layoutControls]; };
-    self.bubble = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.bubble.backgroundColor = [UIColor colorWithWhite:0.02 alpha:0.98]; self.bubble.tintColor = UIColor.whiteColor; self.bubble.layer.cornerRadius = 28;
-    self.bubble.layer.borderColor = [UIColor colorWithWhite:0.55 alpha:1].CGColor; self.bubble.layer.borderWidth = 1;
-    [self.bubble setImage:ALBrandMarkImage(CGSizeMake(56, 56)) forState:UIControlStateNormal];
-    self.bubble.accessibilityLabel = @"AppleLive";
+    self.bubble = [ALInjectedBubbleButton buttonWithType:UIButtonTypeCustom];
+    self.bubble.backgroundColor = UIColor.clearColor; self.bubble.tintColor = self.accent;
+    self.bubble.layer.cornerRadius = 28; self.bubble.clipsToBounds = YES;
+    [self.bubble setImage:ALCyberMarkImage(CGSizeMake(56, 56)) forState:UIControlStateNormal];
+    self.bubble.accessibilityLabel = @"打开 AppleLive 控制面板";
+    self.bubble.accessibilityHint = @"双击打开，拖动可移动悬浮按钮";
     [self.bubble addTarget:self action:@selector(togglePanel) forControlEvents:UIControlEventTouchUpInside];
     [self.bubble addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragBubble:)]];
     [root.view addSubview:self.bubble];
-    self.panel = [UIView new]; self.panel.backgroundColor = [UIColor colorWithWhite:0.03 alpha:0.98];
-    self.panel.layer.borderColor = [UIColor colorWithWhite:0.40 alpha:1].CGColor; self.panel.layer.borderWidth = 1;
-    self.panel.layer.cornerRadius = 8; self.panel.clipsToBounds = YES;
+    self.panel = [ALInjectedCyberSurface new]; self.panel.backgroundColor = ALCyberBackground();
+    self.panel.layer.cornerRadius = 16; self.panel.clipsToBounds = YES;
     [root.view addSubview:self.panel];
     UIScrollView *scroll = [UIScrollView new]; scroll.translatesAutoresizingMaskIntoConstraints = NO;
+    scroll.indicatorStyle = UIScrollViewIndicatorStyleWhite;
+    scroll.alwaysBounceVertical = YES;
     [self.panel addSubview:scroll];
     [NSLayoutConstraint activateConstraints:@[
         [scroll.topAnchor constraintEqualToAnchor:self.panel.topAnchor], [scroll.bottomAnchor constraintEqualToAnchor:self.panel.bottomAnchor],
         [scroll.leadingAnchor constraintEqualToAnchor:self.panel.leadingAnchor], [scroll.trailingAnchor constraintEqualToAnchor:self.panel.trailingAnchor],
     ]];
-    UIImageView *brand = [[UIImageView alloc] initWithImage:ALBrandMarkImage(CGSizeMake(32, 32))];
-    [brand.widthAnchor constraintEqualToConstant:32].active = YES;
-    [brand.heightAnchor constraintEqualToConstant:32].active = YES;
-    UILabel *title = [self label:@"AppleLive" size:20];
-    UIButton *close = [self button:@"收起" symbol:@"xmark" action:@selector(togglePanel)];
-    [close.widthAnchor constraintEqualToConstant:66].active = YES;
-    self.statusLabel = [self label:@"等待画面" size:13]; self.statusLabel.textColor = UIColor.secondaryLabelColor;
-    self.sourceLabel = [self label:@"当前：电脑" size:14];
-    UIStackView *sources = [self row:@[
-        [self button:@"相册" symbol:@"photo.on.rectangle" action:@selector(pickAlbum)],
-        [self button:@"文件" symbol:@"folder" action:@selector(pickFile)],
-        [self button:@"检测" symbol:@"network" action:@selector(editStream)],
-    ]]; sources.distribution = UIStackViewDistributionFillEqually;
-    self.connectButton = [self button:@"连接电脑" symbol:@"desktopcomputer" action:@selector(toggleComputer)];
-    self.addressButton = [self button:@"电脑连接" symbol:@"link" action:@selector(editComputer)];
-    UIStackView *computer = [self row:@[self.connectButton, self.addressButton]]; computer.distribution = UIStackViewDistributionFillEqually;
+    UIImageView *brand = [[UIImageView alloc] initWithImage:ALCyberMarkImage(CGSizeMake(40, 40))];
+    [brand.widthAnchor constraintEqualToConstant:40].active = YES;
+    [brand.heightAnchor constraintEqualToConstant:40].active = YES;
+    UILabel *title = [self label:@"AppleLive" size:23]; title.font = [UIFont systemFontOfSize:23 weight:UIFontWeightBold];
+    UILabel *subtitle = [self label:@"SIGNAL / CONTROL" size:9];
+    subtitle.font = [UIFont monospacedSystemFontOfSize:9 weight:UIFontWeightMedium]; subtitle.textColor = self.accent;
+    UIStackView *wordmark = [[UIStackView alloc] initWithArrangedSubviews:@[title, subtitle]];
+    wordmark.axis = UILayoutConstraintAxisVertical; wordmark.spacing = 2;
+    UIButton *close = [self button:@"" symbol:@"xmark" action:@selector(togglePanel)];
+    close.accessibilityLabel = @"收起控制面板";
+    [close.widthAnchor constraintEqualToConstant:48].active = YES;
+    self.statusLabel = [self label:@"等待信号" size:18];
+    self.sourceLabel = [self label:@"点击检测，填写拉流地址" size:12]; self.sourceLabel.textColor = ALCyberMuted();
+    self.signalDot = [UIView new]; self.signalDot.backgroundColor = ALCyberMuted(); self.signalDot.layer.cornerRadius = 3;
+    [self.signalDot.widthAnchor constraintEqualToConstant:6].active = YES;
+    [self.signalDot.heightAnchor constraintEqualToConstant:6].active = YES;
+    self.signalLabel = [self label:@"STANDBY" size:10]; self.signalLabel.textColor = self.accent;
+    self.signalLabel.font = [UIFont monospacedSystemFontOfSize:10 weight:UIFontWeightSemibold];
+    ALInjectedCyberSurface *signal = (id)[self section:@"LIVE FEED / 信号状态" views:@[
+        [self row:@[self.signalDot, self.signalLabel]], self.statusLabel, self.sourceLabel]];
+    signal.illuminated = YES;
+    self.albumButton = [self button:@"相册" symbol:@"photo.on.rectangle" action:@selector(pickAlbum)];
+    self.fileButton = [self button:@"文件" symbol:@"folder" action:@selector(pickFile)];
+    self.streamButton = [self button:@"检测" symbol:@"dot.radiowaves.left.and.right" action:@selector(editStream)];
+    ((ALInjectedCyberButton *)self.streamButton).primary = YES;
+    self.usbButton = [self button:@"USB 数据线" symbol:@"cable.connector" action:@selector(selectUSB)];
+    UIStackView *files = [self row:@[self.albumButton, self.fileButton]]; files.distribution = UIStackViewDistributionFillEqually;
+    UIStackView *inputs = [self row:@[self.streamButton, self.usbButton]]; inputs.distribution = UIStackViewDistributionFillEqually;
     self.enabledSwitch = [self toggle:@"替换画面"];
     self.mirrorSwitch = [self toggle:@"镜像"];
     self.audioSwitch = [self toggle:@"内录"];
@@ -177,24 +218,36 @@ static BOOL ALValidStreamURL(NSString *value) {
     self.playRow = [self row:@[self.playButton, preview]]; self.playRow.distribution = UIStackViewDistributionFillEqually;
     self.loopRow = [self row:@[[self label:@"循环播放" size:15], self.loopSwitch]];
     self.timeline = [UISlider new]; self.timeline.accessibilityLabel = @"播放进度"; self.timeline.tintColor = self.accent;
-    [self.timeline.heightAnchor constraintEqualToConstant:44].active = YES;
+    NSLayoutConstraint *timelineHeight = [self.timeline.heightAnchor constraintEqualToConstant:44];
+    timelineHeight.priority = 999; timelineHeight.active = YES;
     [self.timeline addTarget:self action:@selector(seek:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside];
-    self.timeLabel = [self label:@"00:00 / 00:00" size:12]; self.timeLabel.textAlignment = NSTextAlignmentRight;
+    self.timeLabel = [self label:@"00:00 / 00:00" size:11]; self.timeLabel.textAlignment = NSTextAlignmentRight;
+    self.timeLabel.font = [UIFont monospacedDigitSystemFontOfSize:11 weight:UIFontWeightMedium]; self.timeLabel.textColor = ALCyberMuted();
     self.rotateButton = [self button:@"旋转：0°" symbol:@"rotate.right" action:@selector(rotate)];
     self.fitControl = [[UISegmentedControl alloc] initWithItems:@[@"完整", @"铺满"]];
     [self.fitControl.heightAnchor constraintEqualToConstant:44].active = YES;
     self.fitControl.accessibilityLabel = @"画面比例";
+    self.fitControl.backgroundColor = ALCyberBackground();
+    self.fitControl.selectedSegmentTintColor = [UIColor colorWithRed:0.33 green:0.10 blue:0.16 alpha:1];
+    [self.fitControl setTitleTextAttributes:@{NSForegroundColorAttributeName:ALCyberMuted()} forState:UIControlStateNormal];
+    [self.fitControl setTitleTextAttributes:@{NSForegroundColorAttributeName:ALCyberText()} forState:UIControlStateSelected];
     [self.fitControl addTarget:self action:@selector(controlsChanged:) forControlEvents:UIControlEventValueChanged];
-    self.audioLabel = [self label:@"" size:12]; self.audioLabel.textColor = UIColor.secondaryLabelColor;
-    UIButton *restore = [self button:@"恢复相机" symbol:@"camera" action:@selector(restoreCamera)]; restore.tintColor = UIColor.systemRedColor;
+    self.audioLabel = [self label:@"" size:11]; self.audioLabel.textColor = ALCyberMuted();
+    UIButton *restore = [self button:@"恢复手机相机" symbol:@"camera" action:@selector(restoreCamera)];
+    UIView *imageSection = [self section:@"02 / 画面控制" views:@[
+        [self row:@[[self label:@"替换画面" size:14], self.enabledSwitch]],
+        [self row:@[[self label:@"镜像" size:14], self.mirrorSwitch]], self.rotateButton, self.fitControl]];
+    UIView *audioSection = [self section:@"03 / 声音" views:@[
+        [self row:@[[self label:@"内录" size:14], self.audioSwitch]],
+        [self row:@[[self label:@"静音" size:14], self.muteSwitch]], self.audioLabel]];
+    UILabel *footer = [self label:@"APPLELIVE / BLACK RED EDITION" size:9];
+    footer.textColor = ALCyberMuted(); footer.textAlignment = NSTextAlignmentCenter;
+    footer.font = [UIFont monospacedSystemFontOfSize:9 weight:UIFontWeightMedium];
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[
-        [self row:@[brand, title, close]], self.statusLabel, self.sourceLabel, sources, computer,
-        [self row:@[[self label:@"替换画面" size:15], self.enabledSwitch]],
-        [self row:@[[self label:@"镜像" size:15], self.mirrorSwitch]],
-        [self row:@[[self label:@"内录" size:15], self.audioSwitch]],
-        [self row:@[[self label:@"静音" size:15], self.muteSwitch]], self.audioLabel,
-        self.rotateButton, self.fitControl, self.playRow, self.loopRow, self.timeline, self.timeLabel, restore,
-    ]]; content.axis = UILayoutConstraintAxisVertical; content.spacing = 8; content.translatesAutoresizingMaskIntoConstraints = NO;
+        [self row:@[brand, wordmark, close]], signal,
+        [self section:@"01 / 信号源" views:@[files, inputs]], imageSection, audioSection,
+        [self section:@"04 / 播放" views:@[self.playRow, self.loopRow, self.timeline, self.timeLabel]], restore, footer,
+    ]]; content.axis = UILayoutConstraintAxisVertical; content.spacing = 12; content.translatesAutoresizingMaskIntoConstraints = NO;
     [scroll addSubview:content];
     [NSLayoutConstraint activateConstraints:@[
         [content.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:16],
@@ -213,7 +266,7 @@ static BOOL ALValidStreamURL(NSString *value) {
 }
 - (void)layoutControls {
     CGRect safe = [self safeBounds];
-    CGFloat width = MIN(336, safe.size.width), height = MIN(620, safe.size.height);
+    CGFloat width = MIN(364, safe.size.width), height = MIN(700, safe.size.height);
     self.panel.frame = CGRectMake(CGRectGetMidX(safe) - width / 2, CGRectGetMidY(safe) - height / 2, width, height);
     self.bubble.frame = CGRectMake(safe.origin.x + MAX(0, safe.size.width - 56) * self.bubbleFraction.x,
         safe.origin.y + MAX(0, safe.size.height - 56) * self.bubbleFraction.y, 56, 56);
@@ -231,6 +284,8 @@ static BOOL ALValidStreamURL(NSString *value) {
 - (void)togglePanel { self.expanded = !self.expanded; [self refresh]; }
 - (void)present:(UIViewController *)controller {
     if (self.window.rootViewController.presentedViewController) return;
+    controller.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    controller.view.tintColor = self.accent;
     NSArray *windows = self.window.windowScene.windows;
     if (!windows) {
 #pragma clang diagnostic push
@@ -254,7 +309,10 @@ static BOOL ALValidStreamURL(NSString *value) {
     NSString *kind = self.source[@"kind"];
     NSURL *url = [kind isEqualToString:@"local"] ? [ALMediaDirectory() URLByAppendingPathComponent:self.source[@"file"] ?: @""]
         : [kind isEqualToString:@"network"] ? [NSURL URLWithString:self.source[@"url"] ?: @""] : nil;
-    [self.camera selectSource:kind ?: @"computer" URL:url];
+    if ([kind isEqualToString:@"network"] && !ALValidStreamURL(self.source[@"url"])) {
+        [self.camera selectSource:@"none" URL:nil]; return;
+    }
+    [self.camera selectSource:[kind isEqualToString:@"usb"] ? @"computer" : kind ?: @"none" URL:url];
 }
 - (void)syncControls {
     self.enabledSwitch.on = [self.controls[@"enabled"] boolValue]; self.mirrorSwitch.on = [self.controls[@"mirror"] boolValue];
@@ -285,47 +343,22 @@ static BOOL ALValidStreamURL(NSString *value) {
     [self refresh];
 }
 - (void)seek:(UISlider *)slider { [self.camera seekMedia:slider.value]; }
-- (void)toggleComputer {
-    NSDictionary *status = self.camera.streamStatus;
+- (void)selectUSB {
+    if ([self.source[@"kind"] isEqualToString:@"usb"] && [self.controls[@"enabled"] boolValue]) {
+        [self restoreCamera]; return;
+    }
     NSMutableDictionary *connection = [ALConnectionSettings() mutableCopy];
-    BOOL current = [self.source[@"kind"] isEqualToString:@"computer"] && [self.controls[@"enabled"] boolValue];
-    connection[@"paused"] = @(current && [status[@"connected"] boolValue] && ![connection[@"paused"] boolValue]);
+    connection[@"paused"] = @NO;
     ALPublishConnection(connection);
-    self.source[@"kind"] = @"computer"; [self saveSource]; [self refresh];
-}
-- (void)editComputer {
-    NSDictionary *connection = ALConnectionSettings();
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"电脑连接地址" message:@"用于 AppleLive WebSocket 画面替换，例如 192.168.1.45:8765。它与播放器拉流地址是两条独立通道。" preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        field.text = [NSString stringWithFormat:@"%@:%@", connection[@"host"], connection[@"port"]];
-        field.keyboardType = UIKeyboardTypeNumbersAndPunctuation; field.autocorrectionType = UITextAutocorrectionTypeNo;
-        field.accessibilityLabel = @"电脑 WebSocket 地址";
-        [field addTarget:self action:@selector(validateComputer:) forControlEvents:UIControlEventEditingChanged];
-    }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(id action) { [self restoreKey]; }]];
-    __weak UIAlertController *weakAlert = alert;
-    UIAlertAction *save = [UIAlertAction actionWithTitle:@"连接" style:UIAlertActionStyleDefault handler:^(id action) {
-        NSString *host; NSNumber *port;
-        if (ALParseComputerAddress(weakAlert.textFields.firstObject.text, &host, &port)) {
-            ALPublishConnection(@{@"mode": @"auto", @"host": host, @"port": port, @"paused": @NO});
-            self.source[@"kind"] = @"computer"; [self saveSource];
-        }
-        [self restoreKey];
-    }]; save.enabled = ALParseComputerAddress(alert.textFields.firstObject.text, NULL, NULL); [alert addAction:save]; [self present:alert];
-}
-- (void)validateComputer:(UITextField *)field {
-    UIAlertController *alert = (id)self.window.rootViewController.presentedViewController;
-    alert.actions.lastObject.enabled = ALParseComputerAddress(field.text, NULL, NULL);
+    self.source[@"kind"] = @"usb"; [self saveSource]; [self refresh];
 }
 - (void)editStream {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"播放器拉流地址" message:@"用于 RTMP、RTSP 或 HTTP 播放器拉流，不会替换电脑连接地址。" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"检测 · 网络信号" message:@"粘贴完整拉流地址。支持 RTMP、RTSP 和 HTTP / HTTPS。手机与推流电脑需在同一局域网。" preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        NSDictionary *connection = ALConnectionSettings();
-        NSString *address = [NSString stringWithFormat:@"%@:%@", connection[@"host"], connection[@"port"]];
-        NSString *defaultURL = ALParseComputerAddress(address, NULL, NULL)
-            ? [NSString stringWithFormat:@"rtmp://%@:1935/live/applelive", connection[@"host"]] : @"";
-        field.text = self.source[@"url"] ?: defaultURL;
-        field.placeholder = @"rtmp://电脑IP/live/流名称";
+        field.text = [self.source[@"url"] length] ? self.source[@"url"] : ALDefaultStreamURL();
+        field.placeholder = @"rtmp://电脑IP:1935/live/applelive";
+        field.textColor = ALCyberText(); field.tintColor = self.accent;
+        field.backgroundColor = ALCyberBackground();
         field.keyboardType = UIKeyboardTypeURL; field.autocorrectionType = UITextAutocorrectionTypeNo;
         field.autocapitalizationType = UITextAutocapitalizationTypeNone; field.accessibilityLabel = @"拉流地址";
         [field addTarget:self action:@selector(validateStream:) forControlEvents:UIControlEventEditingChanged];
@@ -334,7 +367,7 @@ static BOOL ALValidStreamURL(NSString *value) {
     if ([self.source[@"kind"] isEqualToString:@"network"])
         [alert addAction:[UIAlertAction actionWithTitle:@"停止拉流" style:UIAlertActionStyleDestructive handler:^(id action) { [self restoreCamera]; [self restoreKey]; }]];
     __weak UIAlertController *weakAlert = alert;
-    UIAlertAction *play = [UIAlertAction actionWithTitle:@"拉流" style:UIAlertActionStyleDefault handler:^(id action) {
+    UIAlertAction *play = [UIAlertAction actionWithTitle:@"开始拉流" style:UIAlertActionStyleDefault handler:^(id action) {
         NSString *value = [weakAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
         if (ALValidStreamURL(value)) { self.source[@"kind"] = @"network"; self.source[@"url"] = value; [self saveSource]; }
         [self restoreKey];
@@ -398,7 +431,7 @@ static BOOL ALValidStreamURL(NSString *value) {
     });
 }
 - (void)showPreview {
-    UIViewController *controller = [UIViewController new]; controller.view.backgroundColor = UIColor.systemBackgroundColor;
+    UIViewController *controller = [UIViewController new]; controller.view.backgroundColor = ALCyberBackground();
     controller.modalPresentationStyle = UIModalPresentationFullScreen;
     ALPreviewView *preview = [ALPreviewView new]; preview.translatesAutoresizingMaskIntoConstraints = NO; [controller.view addSubview:preview];
     UIButton *close = [self button:@"关闭" symbol:@"xmark" action:@selector(closePreview)]; close.translatesAutoresizingMaskIntoConstraints = NO; [controller.view addSubview:close];
@@ -421,24 +454,33 @@ static BOOL ALValidStreamURL(NSString *value) {
     self.window.hidden = NO;
     NSDictionary *status = self.camera.streamStatus, *media = self.camera.mediaStatus;
     NSString *kind = self.source[@"kind"], *state = media[@"state"];
-    BOOL local = [kind isEqualToString:@"local"], computer = [kind isEqualToString:@"computer"];
-    NSString *transport = [status[@"usb"] boolValue] ? @"USB" : @"局域网";
-    self.sourceLabel.text = [NSString stringWithFormat:@"当前：%@", computer ? @"电脑" : local ? self.source[@"name"] ?: @"素材" : @"网络拉流"];
+    BOOL local = [kind isEqualToString:@"local"], usb = [kind isEqualToString:@"usb"];
+    BOOL enabled = [self.controls[@"enabled"] boolValue], video = enabled && [status[@"video"] boolValue];
+    BOOL emptyStream = !local && !usb && !ALValidStreamURL(self.source[@"url"]);
+    self.sourceLabel.text = usb ? @"USB 数据线" : local ? self.source[@"name"] ?: @"本地素材"
+        : emptyStream ? @"点击「检测」填写 RTMP / RTSP 地址" : self.source[@"url"];
+    self.sourceLabel.numberOfLines = 2; self.sourceLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
     if (self.importing) self.statusLabel.text = @"正在导入…";
     else if (![self.controls[@"enabled"] boolValue]) self.statusLabel.text = @"使用手机摄像头";
-    else if (computer) self.statusLabel.text = [status[@"video"] boolValue] ? [transport stringByAppendingString:@" · 已收到画面"] : [ALConnectionSettings()[@"paused"] boolValue] ? @"已断开" : @"等待电脑连接";
+    else if (usb) self.statusLabel.text = video ? @"USB 信号已接入" : @"等待 USB 信号";
+    else if (emptyStream) self.statusLabel.text = @"等待添加信号";
     else if ([state isEqualToString:@"error"]) self.statusLabel.text = [@"读取失败：" stringByAppendingString:media[@"error"] ?: @""];
     else if ([state isEqualToString:@"paused"]) self.statusLabel.text = @"已暂停";
     else if ([state isEqualToString:@"ended"]) self.statusLabel.text = @"播放结束";
     else self.statusLabel.text = [status[@"video"] boolValue] ? (local ? @"素材播放中" : @"拉流成功") : @"正在读取…";
-    BOOL activeComputer = computer && [status[@"connected"] boolValue] && [self.controls[@"enabled"] boolValue];
-    [self.connectButton setTitle:activeComputer ? @"断开电脑" : @"连接电脑" forState:UIControlStateNormal];
-    self.addressButton.hidden = activeComputer && [status[@"usb"] boolValue];
+    self.signalLabel.text = !enabled ? @"CAMERA" : [state isEqualToString:@"error"] ? @"OFFLINE"
+        : [state isEqualToString:@"paused"] ? @"PAUSED" : video ? @"LIVE" : @"STANDBY";
+    self.signalDot.backgroundColor = video ? self.accent : ALCyberMuted();
+    self.streamButton.selected = enabled && !emptyStream && [kind isEqualToString:@"network"];
+    self.usbButton.selected = enabled && usb;
+    [self.usbButton setTitle:enabled && usb ? @"断开 USB" : @"USB 数据线" forState:UIControlStateNormal];
+    self.usbButton.accessibilityLabel = enabled && usb ? @"断开 USB" : @"USB 数据线";
     BOOL seekable = local && [media[@"duration"] doubleValue] > 0;
     self.playButton.hidden = !seekable; self.loopRow.hidden = !seekable;
     self.timeline.hidden = self.timeLabel.hidden = !seekable;
     [self.playButton setTitle:[state isEqualToString:@"paused"] || [state isEqualToString:@"ended"] ? @"播放" : @"暂停" forState:UIControlStateNormal];
-    [self.playButton setImage:[UIImage systemImageNamed:[state isEqualToString:@"paused"] ? @"play.fill" : @"pause.fill"] forState:UIControlStateNormal];
+    [self.playButton setImage:[UIImage systemImageNamed:([state isEqualToString:@"paused"] || [state isEqualToString:@"ended"]) ? @"play.fill" : @"pause.fill"] forState:UIControlStateNormal];
+    self.playButton.accessibilityLabel = [self.playButton titleForState:UIControlStateNormal];
     self.timeline.maximumValue = MAX(1, [media[@"duration"] floatValue]);
     if (!self.timeline.isTracking) self.timeline.value = [media[@"position"] floatValue];
     int position = [media[@"position"] intValue], duration = [media[@"duration"] intValue];

@@ -60,6 +60,13 @@ jobs:
       - name: Compile device interface
         run: make -k -C ios-injector all FINALPACKAGE=1 ARCHS=arm64 TARGET=iphone:clang:16.5:14.0
 
+      - name: Test source migration and single LAN route
+        run: |
+          xcrun clang -fobjc-arc -DAPPLELIVE_STANDALONE=1 -Iios-injector -Iios-tweak \
+            ios-injector/tests/source-settings-test.m ios-injector/ALSourceSettings.m \
+            ios-tweak/ALConnection.m -framework Foundation -o "$RUNNER_TEMP/applelive-source-test"
+          "$RUNNER_TEMP/applelive-source-test"
+
       - name: Test media and microphone replacement
         run: |
           FF=.build/ios-ffmpeg/host
@@ -72,7 +79,7 @@ jobs:
             -o "$RUNNER_TEMP/applelive-media-test"
           "$RUNNER_TEMP/applelive-media-test" ios-injector/tests/fixture.mp4
 
-      - name: Test RTMP source through MediaMTX
+      - name: Test RTMP and RTSP sources through MediaMTX
         run: |
           arch="$(uname -m)"
           case "$arch" in

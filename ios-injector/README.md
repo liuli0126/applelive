@@ -5,12 +5,14 @@ The standalone library is imported into each target application with the user's 
 ## Sources and controls
 
 - Album and Files import an image or video into the target app's own storage. Images retain a static frame; videos loop by default and support play/pause, seek and disabling the loop.
-- Detection opens a separate player stream address. RTMP/RTMPS, RTSP over TCP and HTTP/HTTPS media/HLS inputs are supported by the configured media engine. It accepts SRS and MediaMTX stream URLs.
-- Computer connects the AppleLive WebSocket LAN sender or the USB app listener. This computer address is not the Detection/RTMP address. The OBS side chooses LAN or USB; the phone displays the actual transport.
+- Detection is the only LAN entry. Paste a full stream URL, for example `rtmp://192.168.1.45:1935/live/applelive`. RTMP/RTMPS, RTSP over TCP and HTTP/HTTPS media/HLS inputs are supported. It accepts SRS and MediaMTX stream URLs.
+- USB Cable selects the dedicated USB app listener. The standalone plugin no longer connects to the old WebSocket LAN sender or shows a Computer address/connection button. On upgrade, an old Computer source moves to Detection, preserving an existing stream URL or suggesting RTMP from the saved computer IP.
 - Internal audio replaces microphone input with source sound. Silence is used when the source has no audio or the audio buffer underflows. Mute silences the injected audio. Turning off internal audio restores the app's microphone path.
 - Mirror, rotation, fit/fill, independent preview and Restore Camera apply to the selected source. Settings belong to the injected app.
 
 USB requires the Apple USB device driver and device trust on Windows. The standalone app listener uses usbmux port 8766 and does not require OpenSSH. The legacy deb's SSH route remains available for older deployments.
+
+The phone panel uses a black/red theme with fine cut-corner details, native controls and a circular floating launcher. The launcher is transparent outside its disc, clips to a circle and only accepts touches inside that circle.
 
 ## Build And Relink
 
@@ -22,4 +24,4 @@ The CI artifact includes `AppleLive-relink.tar.gz`: application object files for
 
 ## Verification
 
-CI runs playback, pause, seeking, looping, cancellation, PCM layout and microphone-underflow silence tests, then verifies architectures, deployment versions and absence of external injection framework dependencies. Real-device video, audio, preview and USB results are recorded separately; a compiled binary does not demonstrate app compatibility.
+CI runs source migration, standalone LAN route removal, RTMP/RTSP video and audio, playback, pause, seeking, looping, cancellation, PCM layout and microphone-underflow silence tests, then verifies architectures, deployment versions and absence of external injection framework dependencies. Real-device video, audio, preview and USB results are recorded separately; a compiled binary does not demonstrate app compatibility.

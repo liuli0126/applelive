@@ -46,24 +46,33 @@ done:
     av_packet_free(&packet); avformat_close_input(&input);
     if (output) { avio_closep(&output->pb); avformat_free_context(output); }
 }
+static BOOL testSource(NSString *url) {
+    ALMediaPlayer *player = [ALMediaPlayer new];
+    __block atomic_uint frames, audio;
+    atomic_init(&frames, 0); atomic_init(&audio, 0);
+    player.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) { atomic_fetch_add(&frames, 1); };
+    player.onAudio = ^(const float *pcm, NSUInteger count) { atomic_fetch_add(&audio, (unsigned)count); };
+    player.loop = NO;
+    [player playURL:[NSURL URLWithString:url]];
+    for (int i = 0; i < 240 && (atomic_load(&frames) < 5 || atomic_load(&audio) < 2000); i++) usleep(50000);
+    BOOL passed = atomic_load(&frames) >= 5 && atomic_load(&audio) >= 2000;
+    fprintf(passed ? stdout : stderr, "%s frames=%u audio=%u state=%s\n", url.UTF8String,
+            atomic_load(&frames), atomic_load(&audio), player.status.description.UTF8String);
+    [player stop];
+    return passed;
+}
 int main(int argc, char **argv) {
     @autoreleasepool {
         if (argc != 2) return 2;
-        ALMediaPlayer *player = [ALMediaPlayer new];
-        __block atomic_uint frames, audio;
-        atomic_init(&frames, 0); atomic_init(&audio, 0); atomic_init(&gStopPublisher, false);
-        player.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) { atomic_fetch_add(&frames, 1); };
-        player.onAudio = ^(const float *pcm, NSUInteger count) { atomic_fetch_add(&audio, (unsigned)count); };
+        atomic_init(&gStopPublisher, false);
         dispatch_group_t group = dispatch_group_create();
         dispatch_group_async(group, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{ publishFixture(argv[1]); });
-        usleep(250000); player.loop = NO;
-        [player playURL:[NSURL URLWithString:@"rtmp://127.0.0.1:1935/live/applelive-test"]];
-        for (int i = 0; i < 160 && (atomic_load(&frames) < 5 || atomic_load(&audio) < 2000); i++) usleep(50000);
-        BOOL passed = atomic_load(&frames) >= 5 && atomic_load(&audio) >= 2000;
-        if (!passed) fprintf(stderr, "RTMP frames=%u audio=%u state=%s\n", atomic_load(&frames), atomic_load(&audio), player.status.description.UTF8String);
-        [player stop]; atomic_store(&gStopPublisher, true); dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
-        if (!passed) return 1;
-        puts("RTMP H.264/AAC network source passed");
+        usleep(250000);
+        BOOL rtmp = testSource(@"rtmp://127.0.0.1:1935/live/applelive-test");
+        BOOL rtsp = testSource(@"rtsp://127.0.0.1:8554/live/applelive-test");
+        atomic_store(&gStopPublisher, true); dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+        if (!rtmp || !rtsp) return 1;
+        puts("RTMP and RTSP H.264/AAC network sources passed");
     }
     return 0;
 }
