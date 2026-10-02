@@ -1,5 +1,10 @@
 # Findings
 
+## Mandatory local video looping (2026-10-02)
+- User requested removing the loop switch entirely: videos imported through Album or Files must always repeat. Local images remain still; network streaming, USB, pause and seeking keep their existing behavior.
+- `586e9b1` removes the loop UI, mutable player flag and camera setter. The player now always rewinds local videos at EOF, reopening on seek failure. Migration drops obsolete loop preferences, including saved `NO` values.
+- CI `37003673977` passed both device architectures, old-settings migration, repeated automatic EOF wraps with continuing frame output, pause/seek/cancellation/PCM and RTMP/RTSP integration. The existing HTML preview and PNG were updated in place. Physical phone validation remains outstanding.
+
 ## Mobile UI and LAN source correction (2026-10-02)
 - User clarified the phone dylib must also remove the old Computer connection UI. Standalone LAN now uses Detection URLs only; RTSP and USB remain supported. Legacy deb behavior is outside this change.
 - Applied ui-ux-pro-max guidance to a native UIKit black/red theme: restrained cut-corner edges, consistent SF Symbols, 48pt buttons, readable dark text colors and a circular transparent launcher with circular hit testing.

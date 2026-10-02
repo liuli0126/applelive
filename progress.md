@@ -1,5 +1,13 @@
 # Progress
 
+## 2026-10-02 mandatory local video looping
+
+- `586e9b1` / CI `37003673977`: removed the loop switch and runtime flag; Album/Files videos now always rewind at EOF with reopen fallback. Migration discards saved loop-off preferences. Repeated-loop, pause/seek/cancel/PCM, RTMP/RTSP and both architecture checks passed. This revision has not been tested on a physical phone.
+- Refreshed the existing HTML preview and PNG in place; verified the rendered playback section no longer shows the switch.
+- Replaced `交付文件/AppleLive.dylib` with SHA256 `22371DFB3223118814B058E95490F815C45F5E66112ED405C2F9E81DBC66B94E`. Repository and installed OBS download copies match. Updated the six bundled phone artifacts in the delivery ZIP; each matches the CI artifact, ZIP SHA256 `5BA92EB6ED96C40B454C983FB833A6CB4EC0F2FBB123CDB07B0D2A5BAE5BCF50`.
+
+## 2026-10-02 mobile cyber UI delivery
+
 - 2026-10-02 手机改版完成：`286bcef` / CI `37000248401` 移除单文件插件旧 LAN 电脑连接入口，保留检测 RTMP/RTSP 与 USB；旧来源设置自动迁移。黑红切角面板、圆形透明悬浮图标及圆形触摸范围；迁移/路由、循环/PCM、RTMP/RTSP 与 arm64/arm64e 构建验证全部通过，未声称真机验证。
 - 已交付唯一手机文件 `交付文件/AppleLive.dylib`（10,629,136 字节，SHA256 `18900DBBDD23425D0FB2884D778B5620C853F07ACBF39E8FB87E4B3387CC4347`）。旧 `AppleLive-192.168.1.45-8765.dylib` 移入 `.build/obsolete-delivery-20261002` 可恢复，不再显示在交付目录。
 - 新 dylib、对应重链接材料和许可证同步至仓库/已安装 OBS 的 `phone-plugin`，交付 Windows ZIP 只更新这六个手机附件并逐一验证哈希。ZIP 新 SHA256 `DD0B4B32818C8BD84B0A53FB997D4B1511A4E54EA35B02BA3AC1C46954AED798`。OBS 设置及可执行文件未改动。
