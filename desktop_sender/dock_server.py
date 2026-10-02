@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -29,11 +30,32 @@ def atomic_json(path: Path, value: dict) -> None:
 
 
 def local_addresses() -> list[str]:
+    candidates: set[str] = set()
     try:
-        return sorted({a[4][0] for a in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
-                       if not a[4][0].startswith("127.")})
+        candidates.update(a[4][0] for a in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET))
     except OSError:
-        return []
+        pass
+    # Windows may not publish an adapter address through the hostname lookup.
+    # A UDP route probe discovers the interface selected for another LAN host
+    # without sending a packet or requiring external network access.
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("192.0.2.1", 9))
+        candidates.add(probe.getsockname()[0])
+    except OSError:
+        pass
+    finally:
+        probe.close()
+    valid = []
+    for value in candidates:
+        try:
+            address = ipaddress.IPv4Address(value)
+        except ipaddress.AddressValueError:
+            continue
+        if address.is_loopback or address.is_multicast or address.is_unspecified or value.startswith("169.254."):
+            continue
+        valid.append(str(address))
+    return sorted(set(valid), key=lambda value: (not ipaddress.IPv4Address(value).is_private, value))
 
 
 def validate_command(value: dict) -> dict:
@@ -88,6 +110,22 @@ class DockServer(ThreadingHTTPServer):
                 "addresses": self.addresses, "token": self.token, "pending": bool(pending),
                 "phone_plugin": {"available": plugin_path(self.directory).is_file(), "port": port,
                     "lan_ready": sender.get("connection_mode") == "lan" and sender.get("state") == "running"}}
+
+    def request_firewall_access(self) -> None:
+        if os.name != "nt":
+            raise OSError("Windows firewall setup is only available on Windows")
+        script = self.directory / "setup_lan.ps1"
+        if not script.is_file():
+            raise OSError("Missing setup_lan.ps1")
+        port = int(self.status()["phone_plugin"]["port"])
+        arguments = f'-NoProfile -ExecutionPolicy Bypass -File "{script}" -VideoPort {port}'
+        import ctypes
+        shell_execute = ctypes.windll.shell32.ShellExecuteW
+        shell_execute.restype = ctypes.c_void_p
+        result = shell_execute(
+            None, "runas", "powershell.exe", arguments, str(self.directory), 0)
+        if not result or result <= 32:
+            raise OSError(f"Could not open Windows firewall setup ({result})")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -158,10 +196,18 @@ class Handler(BaseHTTPRequestHandler):
             self.json_reply(500, {"error": "停靠面板文件缺失，请完整解压插件包"})
 
     def do_POST(self):
-        if (not self.valid_host() or self.path != "/api/command"
+        if (not self.valid_host() or self.path not in {"/api/command", "/api/firewall"}
                 or self.headers.get("Origin") != self.server.origin
                 or not secrets.compare_digest(self.headers.get("X-AppleLive-Token", ""), self.server.token)):
             self.json_reply(403, {"error": "Request rejected"})
+            return
+        if self.path == "/api/firewall":
+            try:
+                self.server.request_firewall_access()
+            except (OSError, TypeError, ValueError) as error:
+                self.json_reply(500, {"error": str(error)})
+                return
+            self.json_reply(202, {"status": "requested"})
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))

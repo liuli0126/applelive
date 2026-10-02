@@ -4,6 +4,7 @@
 #import "ALVirtualCamera.h"
 #import "ALAudioRing.h"
 #import "ALPreview.h"
+#import "ALBrand.h"
 #import <PhotosUI/PhotosUI.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
@@ -84,11 +85,10 @@ static BOOL ALValidStreamURL(NSString *value) {
     });
 }
 - (ALVirtualCamera *)camera { return ALVirtualCamera.sharedInstance; }
-- (UIColor *)accent { return [UIColor colorWithRed:0.12 green:0.55 blue:0.42 alpha:1]; }
+- (UIColor *)accent { return [UIColor colorWithWhite:0.82 alpha:1]; }
 - (UILabel *)label:(NSString *)text size:(CGFloat)size {
-    UILabel *label = [UILabel new]; label.text = text;
+    UILabel *label = [UILabel new]; label.text = text; label.textColor = UIColor.whiteColor;
     label.font = [UIFont systemFontOfSize:size weight:UIFontWeightMedium];
-    label.textColor = UIColor.labelColor;
     label.numberOfLines = 0;
     return label;
 }
@@ -97,11 +97,14 @@ static BOOL ALValidStreamURL(NSString *value) {
     [button setTitle:title forState:UIControlStateNormal];
     if (symbol) [button setImage:[UIImage systemImageNamed:symbol] forState:UIControlStateNormal];
     button.tintColor = self.accent;
+    [button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
     button.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
     button.titleLabel.adjustsFontSizeToFitWidth = YES;
     button.titleLabel.minimumScaleFactor = 0.8;
     button.layer.cornerRadius = 8;
-    button.backgroundColor = UIColor.tertiarySystemFillColor;
+    button.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
+    button.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.12].CGColor;
+    button.layer.borderWidth = 1;
     button.accessibilityLabel = title;
     [button.heightAnchor constraintEqualToConstant:44].active = YES;
     [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
@@ -125,18 +128,21 @@ static BOOL ALValidStreamURL(NSString *value) {
     self.window = scene ? [[ALPassThroughWindow alloc] initWithWindowScene:scene] : [[ALPassThroughWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     self.window.windowLevel = UIWindowLevelAlert + 1;
     self.window.backgroundColor = UIColor.clearColor;
+    self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     ALPanelViewController *root = [ALPanelViewController new]; root.view.backgroundColor = UIColor.clearColor;
     self.window.rootViewController = root;
     __weak typeof(self) weakSelf = self;
     root.onLayout = ^{ [weakSelf layoutControls]; };
     self.bubble = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.bubble.backgroundColor = self.accent; self.bubble.tintColor = UIColor.whiteColor; self.bubble.layer.cornerRadius = 28;
-    [self.bubble setImage:[UIImage systemImageNamed:@"video.fill"] forState:UIControlStateNormal];
+    self.bubble.backgroundColor = [UIColor colorWithWhite:0.02 alpha:0.98]; self.bubble.tintColor = UIColor.whiteColor; self.bubble.layer.cornerRadius = 28;
+    self.bubble.layer.borderColor = [UIColor colorWithWhite:0.55 alpha:1].CGColor; self.bubble.layer.borderWidth = 1;
+    [self.bubble setImage:ALBrandMarkImage(CGSizeMake(56, 56)) forState:UIControlStateNormal];
     self.bubble.accessibilityLabel = @"AppleLive";
     [self.bubble addTarget:self action:@selector(togglePanel) forControlEvents:UIControlEventTouchUpInside];
     [self.bubble addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragBubble:)]];
     [root.view addSubview:self.bubble];
-    self.panel = [UIView new]; self.panel.backgroundColor = UIColor.secondarySystemBackgroundColor;
+    self.panel = [UIView new]; self.panel.backgroundColor = [UIColor colorWithWhite:0.03 alpha:0.98];
+    self.panel.layer.borderColor = [UIColor colorWithWhite:0.40 alpha:1].CGColor; self.panel.layer.borderWidth = 1;
     self.panel.layer.cornerRadius = 8; self.panel.clipsToBounds = YES;
     [root.view addSubview:self.panel];
     UIScrollView *scroll = [UIScrollView new]; scroll.translatesAutoresizingMaskIntoConstraints = NO;
@@ -145,6 +151,9 @@ static BOOL ALValidStreamURL(NSString *value) {
         [scroll.topAnchor constraintEqualToAnchor:self.panel.topAnchor], [scroll.bottomAnchor constraintEqualToAnchor:self.panel.bottomAnchor],
         [scroll.leadingAnchor constraintEqualToAnchor:self.panel.leadingAnchor], [scroll.trailingAnchor constraintEqualToAnchor:self.panel.trailingAnchor],
     ]];
+    UIImageView *brand = [[UIImageView alloc] initWithImage:ALBrandMarkImage(CGSizeMake(32, 32))];
+    [brand.widthAnchor constraintEqualToConstant:32].active = YES;
+    [brand.heightAnchor constraintEqualToConstant:32].active = YES;
     UILabel *title = [self label:@"AppleLive" size:20];
     UIButton *close = [self button:@"收起" symbol:@"xmark" action:@selector(togglePanel)];
     [close.widthAnchor constraintEqualToConstant:66].active = YES;
@@ -156,7 +165,7 @@ static BOOL ALValidStreamURL(NSString *value) {
         [self button:@"检测" symbol:@"network" action:@selector(editStream)],
     ]]; sources.distribution = UIStackViewDistributionFillEqually;
     self.connectButton = [self button:@"连接电脑" symbol:@"desktopcomputer" action:@selector(toggleComputer)];
-    self.addressButton = [self button:@"电脑地址" symbol:@"link" action:@selector(editComputer)];
+    self.addressButton = [self button:@"电脑连接" symbol:@"link" action:@selector(editComputer)];
     UIStackView *computer = [self row:@[self.connectButton, self.addressButton]]; computer.distribution = UIStackViewDistributionFillEqually;
     self.enabledSwitch = [self toggle:@"替换画面"];
     self.mirrorSwitch = [self toggle:@"镜像"];
@@ -179,7 +188,7 @@ static BOOL ALValidStreamURL(NSString *value) {
     self.audioLabel = [self label:@"" size:12]; self.audioLabel.textColor = UIColor.secondaryLabelColor;
     UIButton *restore = [self button:@"恢复相机" symbol:@"camera" action:@selector(restoreCamera)]; restore.tintColor = UIColor.systemRedColor;
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[
-        [self row:@[title, close]], self.statusLabel, self.sourceLabel, sources, computer,
+        [self row:@[brand, title, close]], self.statusLabel, self.sourceLabel, sources, computer,
         [self row:@[[self label:@"替换画面" size:15], self.enabledSwitch]],
         [self row:@[[self label:@"镜像" size:15], self.mirrorSwitch]],
         [self row:@[[self label:@"内录" size:15], self.audioSwitch]],
@@ -286,11 +295,11 @@ static BOOL ALValidStreamURL(NSString *value) {
 }
 - (void)editComputer {
     NSDictionary *connection = ALConnectionSettings();
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"电脑地址" message:nil preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"电脑连接地址" message:@"用于 AppleLive WebSocket 画面替换，例如 192.168.1.45:8765。它与播放器拉流地址是两条独立通道。" preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
         field.text = [NSString stringWithFormat:@"%@:%@", connection[@"host"], connection[@"port"]];
         field.keyboardType = UIKeyboardTypeNumbersAndPunctuation; field.autocorrectionType = UITextAutocorrectionTypeNo;
-        field.accessibilityLabel = @"电脑地址";
+        field.accessibilityLabel = @"电脑 WebSocket 地址";
         [field addTarget:self action:@selector(validateComputer:) forControlEvents:UIControlEventEditingChanged];
     }];
     [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(id action) { [self restoreKey]; }]];
@@ -309,7 +318,7 @@ static BOOL ALValidStreamURL(NSString *value) {
     alert.actions.lastObject.enabled = ALParseComputerAddress(field.text, NULL, NULL);
 }
 - (void)editStream {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"拉流地址" message:nil preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"播放器拉流地址" message:@"用于 RTMP、RTSP 或 HTTP 播放器拉流，不会替换电脑连接地址。" preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
         NSDictionary *connection = ALConnectionSettings();
         NSString *address = [NSString stringWithFormat:@"%@:%@", connection[@"host"], connection[@"port"]];
@@ -383,6 +392,7 @@ static BOOL ALValidStreamURL(NSString *value) {
         }
         NSString *oldFile = self.source[@"file"];
         self.source[@"kind"] = @"local"; self.source[@"file"] = filename; self.source[@"name"] = url.lastPathComponent;
+        self.source[@"loop"] = @YES;
         [self saveSource];
         if (oldFile.length && ![oldFile isEqualToString:filename]) [NSFileManager.defaultManager removeItemAtURL:[ALMediaDirectory() URLByAppendingPathComponent:oldFile] error:nil];
     });

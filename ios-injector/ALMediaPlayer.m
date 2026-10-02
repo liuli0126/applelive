@@ -9,6 +9,7 @@
 #include <libswscale/swscale.h>
 #include <unistd.h>
 #include <stdatomic.h>
+#include <math.h>
 
 typedef struct {
     atomic_uint *generation;
@@ -20,6 +21,19 @@ static int ALInterruptMedia(void *opaque) {
     ALMediaInterrupt *state = opaque;
     return atomic_load(state->generation) != state->expected ||
         (state->deadline > 0 && CACurrentMediaTime() > state->deadline);
+}
+
+static BOOL ALRewindMedia(AVFormatContext *input, int videoIndex,
+                          AVCodecContext *video, AVCodecContext *audio) {
+    int64_t start = input->start_time != AV_NOPTS_VALUE ? input->start_time : 0;
+    int result = avformat_seek_file(input, -1, INT64_MIN, start, INT64_MAX, AVSEEK_FLAG_BACKWARD);
+    if (result < 0) result = av_seek_frame(input, -1, start, AVSEEK_FLAG_BACKWARD);
+    if (result < 0 && videoIndex >= 0) result = av_seek_frame(input, videoIndex, 0, AVSEEK_FLAG_BACKWARD);
+    if (result < 0) return NO;
+    avcodec_flush_buffers(video);
+    if (audio) avcodec_flush_buffers(audio);
+    avformat_flush(input);
+    return YES;
 }
 
 static enum AVPixelFormat ALHardwareFormat(AVCodecContext *codec, const enum AVPixelFormat *formats) {
@@ -79,8 +93,12 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     dispatch_async(_worker, ^{
         while (atomic_load(&self->_generation) == generation) {
             @autoreleasepool { [self runURL:url generation:generation]; }
-            if (url.isFileURL || atomic_load(&self->_generation) != generation) break;
-            for (int i = 0; i < 20 && atomic_load(&self->_generation) == generation; i++) usleep(100000);
+            // A few containers refuse an in-place seek after EOF. Reopen the
+            // local file once when looping is enabled so playback still wraps.
+            if (atomic_load(&self->_generation) != generation ||
+                (url.isFileURL && (!self.loop || ![self.status[@"state"] isEqualToString:@"ended"]))) break;
+            int retryDelayTicks = url.isFileURL ? 1 : 20;
+            for (int i = 0; i < retryDelayTicks && atomic_load(&self->_generation) == generation; i++) usleep(100000);
         }
     });
 }
@@ -240,8 +258,8 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
             }
             av_packet_unref(packet);
             if (error == AVERROR_EOF) {
-                if (self.loop && av_seek_frame(input, -1, 0, AVSEEK_FLAG_BACKWARD) >= 0) {
-                    avcodec_flush_buffers(video); if (audio) avcodec_flush_buffers(audio);
+                if (self.loop && ALRewindMedia(input, videoIndex, video, audio)) {
+                    position = 0; discardBefore = -1;
                     swr_free(&resampler); originPTS = NAN;
                     if (self.onReset) self.onReset();
                 } else break;

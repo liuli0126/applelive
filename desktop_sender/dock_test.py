@@ -7,8 +7,9 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
-from dock_server import DockServer, atomic_json
+from dock_server import DockServer, atomic_json, local_addresses
 from phone_plugin import plugin_path
 
 
@@ -43,10 +44,45 @@ class DockTests(unittest.TestCase):
         self.assertEqual(json.loads((self.path / "applelive-command.json").read_text())["id"], result["id"])
         self.assertEqual(self.request({"action": "start"})[0], 409)
 
+    def test_local_addresses_include_route_probe_and_ignore_unusable_interfaces(self):
+        probe = mock.Mock()
+        probe.getsockname.return_value = ("192.168.8.20", 54321)
+        with mock.patch("dock_server.socket.getaddrinfo", return_value=[
+                (2, 1, 6, "", ("127.0.0.1", 0)),
+                (2, 1, 6, "", ("169.254.10.5", 0)),
+                (2, 1, 6, "", ("10.0.0.4", 0)),
+             ]), mock.patch("dock_server.socket.socket", return_value=probe):
+            self.assertEqual(local_addresses(), ["10.0.0.4", "192.168.8.20"])
+        probe.connect.assert_called_once_with(("192.0.2.1", 9))
+        probe.close.assert_called_once_with()
+
     def test_reject_foreign_pages_and_invalid_host(self):
         for headers in [{"Origin": "https://example.com"}, {"X-AppleLive-Token": "wrong"}, {"Host": "attacker.test"}]:
             self.assertEqual(self.request({"action": "stop"}, **headers)[0], 403)
         self.assertFalse((self.path / "applelive-command.json").exists())
+
+    def test_firewall_endpoint_requires_local_authenticated_page(self):
+        for headers in [{"Origin": "https://example.com"}, {"X-AppleLive-Token": "wrong"}, {"Host": "attacker.test"}]:
+            connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=2)
+            base = {"Origin": self.server.origin, "X-AppleLive-Token": self.server.token}
+            base.update(headers)
+            connection.request("POST", "/api/firewall", headers=base)
+            response = connection.getresponse()
+            self.assertEqual(response.status, 403)
+            response.read(); connection.close()
+
+    def test_firewall_endpoint_requests_elevation(self):
+        with mock.patch.object(self.server, "request_firewall_access") as request:
+            connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=2)
+            connection.request("POST", "/api/firewall", headers={
+                "Host": f"127.0.0.1:{self.server.server_port}",
+                "Origin": self.server.origin,
+                "X-AppleLive-Token": self.server.token,
+            })
+            response = connection.getresponse()
+            self.assertEqual(response.status, 202)
+            response.read(); connection.close()
+            request.assert_called_once_with()
 
     def test_reject_unknown_settings(self):
         for settings in [{"ffmpeg_path": "cmd.exe"}, {"quality": "bogus"}, {"computer_audio": "false"}]:

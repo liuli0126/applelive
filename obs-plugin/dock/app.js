@@ -67,6 +67,7 @@ async function refresh() {
     $('mode_hint').textContent = mode === 'usb' ? '仅通过 USB 数据线传输，手机自动跟随。' : '局域网 · 手机自动连接';
     $('address_box').hidden = mode === 'usb';
     $('stream_box').hidden = mode === 'usb' || !s.rtmp_enabled;
+    $('allow_lan').hidden = mode === 'usb';
     $('stream_address').textContent = state.addresses.length ? 'rtmp://' + state.addresses[0] + ':1935/live/applelive' : '';
     $('addresses').textContent = state.addresses.map(a => a + ':' + (b.settings?.port || 8765)).join(' / ') || '请连接路由器后重新加载脚本';
     if (s.state === 'error' && !busy) showError(s.error || '发送器启动失败，请查看插件目录中的日志');
@@ -79,6 +80,17 @@ $('copy_stream').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText($('stream_address').textContent); $('copy_stream').textContent = '已复制'; }
   catch { showError('无法复制，请选中拉流地址复制'); }
   setTimeout(() => { $('copy_stream').textContent = '复制地址'; }, 1500);
+});
+$('allow_lan').addEventListener('click', async () => {
+  const button = $('allow_lan');
+  button.disabled = true;
+  try {
+    const response = await fetch('/api/firewall', {method: 'POST', headers: {'X-AppleLive-Token': token}});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || '无法打开防火墙设置');
+    button.textContent = '请在系统窗口中确认授权';
+  } catch (error) { showError(error.message); button.disabled = false; }
+  setTimeout(() => { button.textContent = '重新授权局域网访问'; button.disabled = false; }, 5000);
 });
 $('phone_plugin').addEventListener('click', () => { pluginKey = ''; $('plugin_dialog').showModal(); refreshPlugin(); });
 $('close_plugin').addEventListener('click', () => $('plugin_dialog').close());

@@ -9,8 +9,9 @@
     <label class="check"><span>传输电脑声音</span><input type="checkbox" id="computer_audio"></label>
   </fieldset></form>
   <p id="mode_hint" class="hint">USB：连接数据线，并在手机上信任此电脑。</p>
-  <div id="address_box" class="address"><span>电脑局域网地址</span><strong id="addresses">正在读取…</strong></div>
-  <div id="stream_box" class="address" hidden><span>标准拉流地址</span><strong id="stream_address"></strong><button id="copy_stream" type="button" class="secondary" title="复制拉流地址">复制地址</button></div>
+  <div id="address_box" class="address"><span>手机连接地址 · WebSocket</span><strong id="addresses">正在读取…</strong></div>
+  <div id="stream_box" class="address" hidden><span>播放器拉流地址 · RTMP</span><strong id="stream_address"></strong><button id="copy_stream" type="button" class="secondary" title="复制播放器拉流地址">复制地址</button></div>
+  <button id="allow_lan" type="button" class="secondary" hidden>授权此电脑的局域网访问</button>
   <p id="error" role="alert" hidden></p>
   <button id="toggle" type="button" disabled>正在准备…</button>
   <p id="settings_hint" class="hint center">设置自动保存</p>
@@ -21,5 +22,5 @@
     <div class="qr_area"><img id="plugin_qr" alt="手机插件下载二维码" width="240" height="240" hidden><p id="plugin_message" role="status"></p></div>
     <a id="download_plugin" class="download_button" download>下载 .dylib</a>
   </dialog>
-  <details><summary>连接和声音帮助</summary><p>局域网：手机与电脑连接同一路由器，可以连接电脑地址或在「检测」中填写拉流地址。</p><p>USB：打开已注入 AppleLive 的直播 App，连接并信任电脑。旧 deb 版使用已配对的 OpenSSH 通道。</p><p>声音：OBS 将声音「监听并输出」至 CABLE Input，电脑开启声音传输，手机打开「内录」。内录关闭手机麦克风，缺少源音频时保持静音。</p></details>
+  <details><summary>连接和声音帮助</summary><p>手机画面替换使用上面的 WebSocket 地址；「检测」中的 RTMP 地址是独立播放器拉流通道，两者不是同一个地址，也不需要同时填写。</p><p>局域网：手机与电脑连接同一路由器，并允许 Windows 防火墙放行 TCP 8765；标准播放器还需要放行 TCP 1935。</p><p>USB：打开已注入 AppleLive 的直播 App，连接并信任电脑。旧 deb 版使用已配对的 OpenSSH 通道。</p><p>声音：OBS 将声音「监听并输出」至 CABLE Input，电脑开启声音传输，手机打开「内录」。内录关闭手机麦克风，缺少源音频时保持静音。</p></details>
 </main><script src="app.js"></script></body></html>

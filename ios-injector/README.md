@@ -4,9 +4,9 @@ The standalone library is imported into each target application with the user's 
 
 ## Sources and controls
 
-- Album and Files import an image or video into the target app's own storage. Images retain a static frame; videos support play/pause, seek and looping.
-- Detection opens the standard network stream address. RTMP/RTMPS, RTSP over TCP and HTTP/HTTPS media/HLS inputs are supported by the configured media engine. It accepts SRS and MediaMTX stream URLs.
-- Computer connects the existing AppleLive LAN sender or the USB app listener. The OBS side chooses LAN or USB; the phone displays the actual transport.
+- Album and Files import an image or video into the target app's own storage. Images retain a static frame; videos loop by default and support play/pause, seek and disabling the loop.
+- Detection opens a separate player stream address. RTMP/RTMPS, RTSP over TCP and HTTP/HTTPS media/HLS inputs are supported by the configured media engine. It accepts SRS and MediaMTX stream URLs.
+- Computer connects the AppleLive WebSocket LAN sender or the USB app listener. This computer address is not the Detection/RTMP address. The OBS side chooses LAN or USB; the phone displays the actual transport.
 - Internal audio replaces microphone input with source sound. Silence is used when the source has no audio or the audio buffer underflows. Mute silences the injected audio. Turning off internal audio restores the app's microphone path.
 - Mirror, rotation, fit/fill, independent preview and Restore Camera apply to the selected source. Settings belong to the injected app.
 

@@ -1,6 +1,7 @@
 #import "ALFloatingPanel.h"
 #import "ALControls.h"
 #import "ALConnection.h"
+#import "ALBrand.h"
 #ifdef APPLELIVE_STANDALONE
 #import "ALVirtualCamera.h"
 #endif
@@ -111,7 +112,9 @@ static NSDictionary *ALPanelStreamStatus(void) {
     [button setTitle:title forState:UIControlStateNormal];
     [button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
     button.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
-    button.backgroundColor = [UIColor colorWithWhite:1 alpha:0.10];
+    button.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
+    button.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.12].CGColor;
+    button.layer.borderWidth = 1;
     button.layer.cornerRadius = 12;
     [button.heightAnchor constraintEqualToConstant:44].active = YES;
     [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
@@ -129,7 +132,7 @@ static NSDictionary *ALPanelStreamStatus(void) {
 
 - (UISwitch *)makeSwitch:(NSString *)label {
     UISwitch *toggle = [UISwitch new];
-    toggle.onTintColor = [UIColor colorWithRed:0.22 green:0.56 blue:1 alpha:1];
+    toggle.onTintColor = [UIColor colorWithWhite:0.82 alpha:1];
     toggle.accessibilityLabel = label;
     [toggle addTarget:self action:@selector(controlsChanged:) forControlEvents:UIControlEventValueChanged];
     return toggle;
@@ -157,14 +160,16 @@ static NSDictionary *ALPanelStreamStatus(void) {
     root.onLayout = ^{ [weakSelf layoutControls]; };
 
     self.bubble = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.bubble.backgroundColor = [UIColor colorWithRed:0.12 green:0.39 blue:0.91 alpha:0.96];
+    self.bubble.backgroundColor = [UIColor colorWithWhite:0.02 alpha:0.98];
     self.bubble.tintColor = UIColor.whiteColor;
     self.bubble.layer.cornerRadius = 28;
+    self.bubble.layer.borderColor = [UIColor colorWithWhite:0.55 alpha:1].CGColor;
+    self.bubble.layer.borderWidth = 1;
     self.bubble.layer.shadowColor = UIColor.blackColor.CGColor;
     self.bubble.layer.shadowOpacity = 0.3;
     self.bubble.layer.shadowRadius = 8;
     self.bubble.layer.shadowOffset = CGSizeMake(0, 3);
-    [self.bubble setImage:[UIImage systemImageNamed:@"video.fill"] forState:UIControlStateNormal];
+    [self.bubble setImage:ALBrandMarkImage(CGSizeMake(56, 56)) forState:UIControlStateNormal];
     self.bubble.accessibilityLabel = @"AppleLive 画面控制，点按打开";
     [self.bubble addTarget:self action:@selector(togglePanel) forControlEvents:UIControlEventTouchUpInside];
     [self.bubble addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragBubble:)]];
@@ -173,7 +178,7 @@ static NSDictionary *ALPanelStreamStatus(void) {
     self.panel = [UIView new];
     self.panel.backgroundColor = [UIColor colorWithRed:0.075 green:0.085 blue:0.11 alpha:0.98];
     self.panel.layer.cornerRadius = 22;
-    self.panel.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.12].CGColor;
+    self.panel.layer.borderColor = [UIColor colorWithWhite:0.40 alpha:1].CGColor;
     self.panel.layer.borderWidth = 1;
     self.panel.clipsToBounds = YES;
     [root.view addSubview:self.panel];
@@ -188,6 +193,9 @@ static NSDictionary *ALPanelStreamStatus(void) {
         [scroll.trailingAnchor constraintEqualToAnchor:self.panel.trailingAnchor],
     ]];
 
+    UIImageView *brand = [[UIImageView alloc] initWithImage:ALBrandMarkImage(CGSizeMake(34, 34))];
+    [brand.widthAnchor constraintEqualToConstant:34].active = YES;
+    [brand.heightAnchor constraintEqualToConstant:34].active = YES;
     UILabel *title = [self label:@"AppleLive" size:22];
     self.statusLabel = [self label:@"正在连接电脑…" size:13];
     self.statusLabel.textColor = UIColor.lightGrayColor;
@@ -199,7 +207,7 @@ static NSDictionary *ALPanelStreamStatus(void) {
     self.enabledSwitch = [self makeSwitch:@"启用插件"];
     self.connectionLabel = [self label:@"自动连接中…" size:15];
     self.connectionLabel.textAlignment = NSTextAlignmentRight;
-    self.connectionLabel.textColor = [UIColor colorWithRed:0.45 green:0.72 blue:1 alpha:1];
+    self.connectionLabel.textColor = [UIColor colorWithWhite:0.78 alpha:1];
     self.addressButton = [self button:@"设置电脑地址" action:@selector(editAddress)];
     self.connectButton = [self button:@"连接电脑" action:@selector(toggleConnection)];
     [self syncConnection];
@@ -212,7 +220,9 @@ static NSDictionary *ALPanelStreamStatus(void) {
                                       [self button:@"右转 90°" action:@selector(rotateRight)]]];
     rotation.distribution = UIStackViewDistributionFillEqually;
     self.fitControl = [[UISegmentedControl alloc] initWithItems:@[@"完整画面", @"铺满画面"]];
-    self.fitControl.selectedSegmentTintColor = [UIColor colorWithRed:0.18 green:0.43 blue:0.87 alpha:1];
+    self.fitControl.selectedSegmentTintColor = [UIColor colorWithWhite:0.86 alpha:1];
+    [self.fitControl setTitleTextAttributes:@{NSForegroundColorAttributeName: UIColor.blackColor} forState:UIControlStateSelected];
+    [self.fitControl setTitleTextAttributes:@{NSForegroundColorAttributeName: UIColor.whiteColor} forState:UIControlStateNormal];
     [self.fitControl.heightAnchor constraintEqualToConstant:44].active = YES;
     self.fitControl.accessibilityLabel = @"画面比例";
     [self.fitControl addTarget:self action:@selector(controlsChanged:) forControlEvents:UIControlEventValueChanged];
@@ -220,7 +230,7 @@ static NSDictionary *ALPanelStreamStatus(void) {
     self.hintLabel.numberOfLines = 0;
     self.hintLabel.textColor = UIColor.lightGrayColor;
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[
-        [self row:@[heading, close]],
+        [self row:@[[self row:@[brand, heading]], close]],
         [self row:@[[self label:@"跟随电脑连接" size:15], self.connectionLabel]], self.connectButton, self.addressButton,
         [self row:@[[self label:@"启用插件" size:16], self.enabledSwitch]],
         [self row:@[self.directionLabel, reset]], rotation,

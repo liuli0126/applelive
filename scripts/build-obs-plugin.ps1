@@ -35,6 +35,8 @@ if ($LASTEXITCODE -ne 0) { throw "Dock build failed" }
 
 Copy-Item -LiteralPath (Join-Path $projectRoot "desktop_sender\usb_forward.ps1") `
   -Destination (Join-Path $output "usb_forward.ps1") -Force
+Copy-Item -LiteralPath (Join-Path $projectRoot "desktop_sender\setup_lan.ps1") `
+  -Destination (Join-Path $output "setup_lan.ps1") -Force
 
 Write-Host "OBS plugin files: $output"
 Write-Host "Load AppleLive.lua from OBS Tools > Scripts. Keep AppleLiveSender.exe next to it."
@@ -50,6 +52,7 @@ Compress-Archive -LiteralPath @(
   (Join-Path $output "phone-plugin"),
   (Join-Path $output "server"),
   (Join-Path $output "usb_forward.ps1"),
+  (Join-Path $output "setup_lan.ps1"),
   (Join-Path $output "README.md")
 ) -DestinationPath $archive -Force
 Write-Host "Portable OBS plugin: $archive"

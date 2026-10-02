@@ -164,8 +164,14 @@ void ALPersistConnection(NSDictionary *settings) {
 
 NSArray<NSString *> *ALConnectionAddresses(NSDictionary *settings) {
     NSMutableArray *addresses = [NSMutableArray array];
+#ifdef APPLELIVE_STANDALONE
+    // The standalone plugin has its own USB transport and must not probe the
+    // legacy loopback WebSocket first. That probe made LAN installs look like
+    // a duplicate address and delayed the real computer connection.
+#else
     [addresses addObject:@"127.0.0.1:8765"];
+#endif
     NSString *address = [NSString stringWithFormat:@"%@:%@", settings[@"host"], settings[@"port"]];
-    if (ALParseComputerAddress(address, NULL, NULL)) [addresses addObject:address];
+    if (ALParseComputerAddress(address, NULL, NULL) && ![addresses containsObject:address]) [addresses addObject:address];
     return addresses;
 }
