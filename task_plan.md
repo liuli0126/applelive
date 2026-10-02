@@ -29,9 +29,11 @@
 | 20. 多版本和USB批量部署 | in_progress | arm64/iOS14与arm64e/iOS15单文件已交付；免SSH USB分包/顺序测试通过，无配对时跳过旧SSH流程；真实USB及其他系统待验证 |
 | 21. 构建和完整功能验证 | in_progress | cd13b4b完整CI通过；更新现有OBS并保留LAN/高清/声音，RTMP H264/AAC与旧通道音视频验证、280/560px面板及下载哈希检查通过；真机项目未完成 |
 | 22. OBS 地址展示纠正 | complete | 仅移除 WebSocket 地址展示；RTMP、RTSP 与原连接逻辑保留，Windows/手机 CI 及推拉流测试通过；本机 OBS 两份面板文件已更新，需用户正常重启旧 Dock 进程后确认显示 |
+| 23. 交付目录整理 | blocked | 已停止旧 AppleLiveDock 进程，交付目录仅保留 `AppleLive-OBS-最新版.zip`；旧项移至 `.build/obsolete-delivery-20261002`，永久删除被执行环境拦截，待手动删除 |
+| 24. 手机单入口与赛博 UI | complete | `286bcef`、CI `37000248401` 通过迁移/循环/RTMP/RTSP/双架构验证；新版 `交付文件/AppleLive.dylib` 已交付并同步 OBS 下载位置与 ZIP。黑红 UI 与圆形悬浮按钮已编译，真机显示/注入兼容性待用户实测 |
 
 ## Constraints
-- 连接方式只在电脑选择，手机自动跟随；手机只保留局域网电脑地址设置，避免两端选择冲突。
+- 当前单文件手机版：局域网统一从“检测”填写 RTMP/RTSP 拉流地址，移除旧“电脑连接”入口及其 LAN 客户端；USB 数据线单独保留，旧 deb 暂不调整。
 - iOS 相机服务是私有实现，不同 iOS 版本需要单独验证类名和方法签名。
 - 必须只在越狱设备上测试；桌面端音频采集依赖 FFmpeg 和可用的 WASAPI/dshow 设备。
 
@@ -43,5 +45,6 @@
 | ZIP verification script quoting/.NET compatibility | 1-2 | 修正 PowerShell 字面量转义与哈希转换 API，第三次完整检查通过；压缩包无需修改 |
 | GitHub HTTPS push connection reset | 1-2 | HTTPS 推送及 ls-remote 均失败；SSH 认证成功后通过 SSH URL 推送 `44cf0e2`，相关 CI 全部通过 |
 | Optional CI artifact download stalled | 1 | CI 构建成功，但大包下载无进展；终止该可选下载，保留本机已编译并校验的交付 ZIP |
+| Direct removal of obsolete delivery files rejected | 1-2 | 执行环境拦截 `Remove-Item`；旧项已移至 `.build/obsolete-delivery-20261002`，未声称永久删除 |
 | GitHub clone connection reset | 1 | 改用 GitHub API/raw 读取参考实现，仅提取公开协议和结构，不复制其授权不明源码 |
 | iOS toolchain unavailable on Windows | 1 | 完成源码级审查并记录限制；交由 macOS/Linux Theos 环境执行最终 deb 构建 |

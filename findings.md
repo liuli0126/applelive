@@ -1,6 +1,12 @@
 # Findings
 
+## Mobile UI and LAN source correction (2026-10-02)
+- User clarified the phone dylib must also remove the old Computer connection UI. Standalone LAN now uses Detection URLs only; RTSP and USB remain supported. Legacy deb behavior is outside this change.
+- Applied ui-ux-pro-max guidance to a native UIKit black/red theme: restrained cut-corner edges, consistent SF Symbols, 48pt buttons, readable dark text colors and a circular transparent launcher with circular hit testing.
+- Injector CI `37000248401` at `286bcef` passed source migration, no legacy LAN addresses, playback/pause/seek/loop/PCM, RTMP (8 frames / 31744 audio samples), RTSP (6 frames / 38912 audio samples), arm64/arm64e builds and dependency/relink checks. Actual phone appearance and injected-app compatibility remain untested for this revision.
+
 ## OBS address display clarification (2026-10-02)
+- Delivery folder originally mixed two extracted directories, old and RTMP-only ZIPs, and an obsolete phone dylib. The only validated ZIP has SHA256 `54ECDBBB4CAB4576DB90F5F7D0CB2DE6BC428B602FE02302922BAF8CD5E667E8`.
 - Latest screenshot singles out the dock card labeled `手机连接地址 · WebSocket` with `192.168.1.45:8765`.
 - User wants only that card removed. RTMP, RTSP, and transport behavior must remain as in `0a7ecca`; `b4676db` is an over-broad transport change to reverse.
 - UI skill's focused search found no directly applicable rule for duplicate connection-address display, so preserve the existing layout and controls apart from the requested card.

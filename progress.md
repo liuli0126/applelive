@@ -1,5 +1,15 @@
 # Progress
 
+- 2026-10-02 手机改版完成：`286bcef` / CI `37000248401` 移除单文件插件旧 LAN 电脑连接入口，保留检测 RTMP/RTSP 与 USB；旧来源设置自动迁移。黑红切角面板、圆形透明悬浮图标及圆形触摸范围；迁移/路由、循环/PCM、RTMP/RTSP 与 arm64/arm64e 构建验证全部通过，未声称真机验证。
+- 已交付唯一手机文件 `交付文件/AppleLive.dylib`（10,629,136 字节，SHA256 `18900DBBDD23425D0FB2884D778B5620C853F07ACBF39E8FB87E4B3387CC4347`）。旧 `AppleLive-192.168.1.45-8765.dylib` 移入 `.build/obsolete-delivery-20261002` 可恢复，不再显示在交付目录。
+- 新 dylib、对应重链接材料和许可证同步至仓库/已安装 OBS 的 `phone-plugin`，交付 Windows ZIP 只更新这六个手机附件并逐一验证哈希。ZIP 新 SHA256 `DD0B4B32818C8BD84B0A53FB997D4B1511A4E54EA35B02BA3AC1C46954AED798`。OBS 设置及可执行文件未改动。
+- GitHub CLI 下载停滞，停止该下载进程后改为并行 HTTP Range 下载；完整 artifact SHA256 与 GitHub digest 一致，dylib 与 CI SHA256 文件一致，实际二进制包含新圆形/主题类且不含旧连接电脑/电脑地址标签。
+
+## 2026-10-02 delivery-folder cleanup
+
+- User requested a single unambiguous package and authorized stopping idle AppleLive processes and deleting obsolete deliveries. Stopped four verified `AppleLiveDock.exe` processes; no OBS process was running.
+- Direct deletion was rejected by execution policy. Moved seven obsolete delivery entries to `.build/obsolete-delivery-20261002` without overwriting, and renamed the sole validated archive to `交付文件/AppleLive-OBS-最新版.zip`. Its SHA256 remains `54ECDBBB4CAB4576DB90F5F7D0CB2DE6BC428B602FE02302922BAF8CD5E667E8`. The old files were not permanently deleted.
+
 ## 2026-10-02 address display correction
 
 - Confirmed screenshot refers only to the WebSocket address card in the OBS dock. Work in progress: reverse `b4676db`, remove the card, then verify and package without changing RTMP/RTSP behavior.
