@@ -7,6 +7,11 @@
 - Default-port MediaMTX smoke test timed out because the still-running user delivery has no RTSP listener; leaving that process untouched and validating on separate ports.
 - An isolated-port PowerShell smoke command was rejected before execution by policy. No server process was changed; CI on a clean runner will cover the existing RTMP/RTSP test.
 - Rebuilt both Windows executables, restored the `0a7ecca` iOS 14+ dylib (SHA256 `F92309D7FA1FF90CB77194648A66709D12EF4A8E5ADE1F0D8F214B5BE32D55E1`), and wrote a newly named delivery ZIP without touching running installations. ZIP checks passed for no WebSocket card, RTMP card present, RTSP/RTMP enabled, and phone bytes matching the verified build.
+- Committed correction as `44cf0e2`. First GitHub push failed with connection reset; checking connectivity before a compatible retry.
+- HTTPS Git push failed twice, but SSH authentication worked. Pushed `44cf0e2` through the SSH URL without changing the configured remote; waiting for GitHub CI.
+- GitHub run `36994322792` succeeded. Its Windows log confirms RTMP H.264/AAC publish and RTSP pull, plus H.264 tee/audible AAC; iOS 14+ injector and the other triggered workflows succeeded too.
+- The custom local OBS directory was updated only in `dock/index.html` and `dock/app.js` after backing up those two files to `.build/obs-dock-backup-20261002-ui-only`. Existing LAN/high/computer-audio settings and RTSP config remained unchanged. The active 18765 endpoint still serves the old delivery-directory page, so its visible reload is pending a normal user restart; no running process was terminated.
+- Optional CI artifact download stalled and was canceled. Final local delivery remains `交付文件/AppleLive-OBS-Windows-仅移除WebSocket地址.zip`, already verified against the requested UI, both protocols, and the restored phone-library hash.
 
 ## 2026-10-01 final MediaMTX and internal-audio delivery
 

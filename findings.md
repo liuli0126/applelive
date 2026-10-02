@@ -4,6 +4,7 @@
 - Latest screenshot singles out the dock card labeled `手机连接地址 · WebSocket` with `192.168.1.45:8765`.
 - User wants only that card removed. RTMP, RTSP, and transport behavior must remain as in `0a7ecca`; `b4676db` is an over-broad transport change to reverse.
 - UI skill's focused search found no directly applicable rule for duplicate connection-address display, so preserve the existing layout and controls apart from the requested card.
+- The installed custom OBS directory had the exact `0a7ecca` dock files and `rtsp: true`; only its `index.html` and `app.js` were patched. The active loopback dock endpoint still serves the stale `交付文件/AppleLive-OBS-Windows` page despite those installed files, so visible confirmation requires the user's normal OBS/old-helper restart rather than force-stopping their processes.
 
 ## Tested reference feature scope (2026-10-01)
 - Vacm SHA256d718f235c05b50aae52218959c8e0946c1cc9213caf5e33bd26d833add1f0b7c. Defines avformat_open_input, av_read_frame, avcodec_send_packet, avcodec_receive_frame, swr_convert, sws_scale and RTMP protocol objects; also has VideoToolbox imports. Local media, preview and audio features are supported by concrete selectors and linked AV classes.
