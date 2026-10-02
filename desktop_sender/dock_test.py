@@ -119,7 +119,7 @@ class DockTests(unittest.TestCase):
             response = connection.getresponse()
             self.assertEqual(response.status, expected)
             if expected == 200:
-                self.assertIn("AppleLive-192.168.1.45-1935.dylib", response.getheader("Content-Disposition"))
+                self.assertIn("AppleLive-192.168.1.45-8765.dylib", response.getheader("Content-Disposition"))
                 self.assertEqual(response.read(), body)
             else:
                 response.read()
@@ -148,7 +148,7 @@ class DockTests(unittest.TestCase):
         path.parent.mkdir()
         path.write_bytes(b"library")
         atomic_json(self.path / "applelive-status.json", {
-            "state": "running", "connection_mode": "lan", "rtmp_enabled": True, "updated_at": time.time()})
+            "state": "running", "connection_mode": "lan", "updated_at": time.time()})
         connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=2)
         connection.request("GET", "/api/phone-qr?host=192.168.1.45")
         response = connection.getresponse()

@@ -30,12 +30,12 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_lan_rejects_usb_tunnel_before_upgrade(self):
         await self.check_mode("lan", "127.0.0.1", False)
 
-    async def test_lan_rejects_websocket_video_and_usb_rejects_network(self):
+    async def test_lan_accepts_network_and_usb_rejects_it(self):
         addresses = {a[4][0] for a in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)}
         host = next((a for a in addresses if not a.startswith("127.")), None)
         if not host:
             self.skipTest("No non-loopback network interface")
-        await self.check_mode("lan", host, False)
+        await self.check_mode("lan", host, True)
         await self.check_mode("usb", host, False)
 
 

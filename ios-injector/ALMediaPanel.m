@@ -15,6 +15,11 @@ static NSURL *ALMediaDirectory(void) {
     [NSFileManager.defaultManager createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:nil];
     return directory;
 }
+static BOOL ALValidStreamURL(NSString *value) {
+    NSURLComponents *url = [NSURLComponents componentsWithString:value];
+    return [@[@"rtmp", @"rtmps", @"rtsp", @"http", @"https"] containsObject:url.scheme.lowercaseString] && url.host.length > 0;
+}
+
 @interface ALPassThroughWindow : UIWindow
 @end
 @implementation ALPassThroughWindow
@@ -71,21 +76,6 @@ static NSURL *ALMediaDirectory(void) {
         instance.controls = [ALLoadAppControls() mutableCopy];
         instance.source = [[NSUserDefaults.standardUserDefaults dictionaryForKey:kALSourceDefaults] mutableCopy]
             ?: [@{@"kind": @"computer", @"loop": @YES} mutableCopy];
-        NSString *savedStream = instance.source[@"url"];
-        NSString *savedHost;
-        if ([instance.source[@"kind"] isEqualToString:@"network"] &&
-            ALParseRTMPStreamURL(savedStream, &savedHost) &&
-            [[NSURLComponents componentsWithString:savedStream].path isEqualToString:@"/live/applelive"]) {
-            NSMutableDictionary *connection = [ALConnectionSettings() mutableCopy];
-            if ([connection[@"host"] isEqualToString:savedHost] || !ALRTMPStreamURL(connection)) {
-                connection[@"host"] = savedHost;
-                connection[@"streamURL"] = savedStream;
-                connection[@"paused"] = @NO;
-                ALPublishConnection(connection);
-            }
-            instance.source[@"kind"] = @"computer";
-            [NSUserDefaults.standardUserDefaults setObject:instance.source forKey:kALSourceDefaults];
-        }
         NSDictionary *position = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"AppleLive.BubblePosition.v1"];
         instance.bubbleFraction = position ? CGPointMake([position[@"x"] doubleValue], [position[@"y"] doubleValue]) : CGPointMake(0, 0.2);
         [NSNotificationCenter.defaultCenter addObserver:instance selector:@selector(refresh) name:UIApplicationDidBecomeActiveNotification object:nil];
@@ -172,9 +162,10 @@ static NSURL *ALMediaDirectory(void) {
     UIStackView *sources = [self row:@[
         [self button:@"相册" symbol:@"photo.on.rectangle" action:@selector(pickAlbum)],
         [self button:@"文件" symbol:@"folder" action:@selector(pickFile)],
+        [self button:@"检测" symbol:@"network" action:@selector(editStream)],
     ]]; sources.distribution = UIStackViewDistributionFillEqually;
     self.connectButton = [self button:@"连接电脑" symbol:@"desktopcomputer" action:@selector(toggleComputer)];
-    self.addressButton = [self button:@"RTMP 地址" symbol:@"link" action:@selector(editComputer)];
+    self.addressButton = [self button:@"电脑连接" symbol:@"link" action:@selector(editComputer)];
     UIStackView *computer = [self row:@[self.connectButton, self.addressButton]]; computer.distribution = UIStackViewDistributionFillEqually;
     self.enabledSwitch = [self toggle:@"替换画面"];
     self.mirrorSwitch = [self toggle:@"镜像"];
@@ -304,31 +295,54 @@ static NSURL *ALMediaDirectory(void) {
 }
 - (void)editComputer {
     NSDictionary *connection = ALConnectionSettings();
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"电脑 RTMP 地址" message:@"填写电脑面板显示的完整地址，用于局域网画面替换。" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"电脑连接地址" message:@"用于 AppleLive WebSocket 画面替换，例如 192.168.1.45:8765。它与播放器拉流地址是两条独立通道。" preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        field.text = ALRTMPStreamURL(connection);
-        field.placeholder = @"rtmp://电脑IP:1935/live/applelive";
-        field.keyboardType = UIKeyboardTypeURL; field.autocorrectionType = UITextAutocorrectionTypeNo;
-        field.autocapitalizationType = UITextAutocapitalizationTypeNone;
-        field.accessibilityLabel = @"电脑 RTMP 地址";
+        field.text = [NSString stringWithFormat:@"%@:%@", connection[@"host"], connection[@"port"]];
+        field.keyboardType = UIKeyboardTypeNumbersAndPunctuation; field.autocorrectionType = UITextAutocorrectionTypeNo;
+        field.accessibilityLabel = @"电脑 WebSocket 地址";
         [field addTarget:self action:@selector(validateComputer:) forControlEvents:UIControlEventEditingChanged];
     }];
     [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(id action) { [self restoreKey]; }]];
     __weak UIAlertController *weakAlert = alert;
     UIAlertAction *save = [UIAlertAction actionWithTitle:@"连接" style:UIAlertActionStyleDefault handler:^(id action) {
-        NSString *host;
-        NSString *stream = [weakAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-        if (ALParseRTMPStreamURL(stream, &host)) {
-            ALPublishConnection(@{@"mode": @"auto", @"host": host, @"port": @8765,
-                                  @"streamURL": stream, @"paused": @NO});
+        NSString *host; NSNumber *port;
+        if (ALParseComputerAddress(weakAlert.textFields.firstObject.text, &host, &port)) {
+            ALPublishConnection(@{@"mode": @"auto", @"host": host, @"port": port, @"paused": @NO});
             self.source[@"kind"] = @"computer"; [self saveSource];
         }
         [self restoreKey];
-    }]; save.enabled = ALParseRTMPStreamURL(alert.textFields.firstObject.text, NULL); [alert addAction:save]; [self present:alert];
+    }]; save.enabled = ALParseComputerAddress(alert.textFields.firstObject.text, NULL, NULL); [alert addAction:save]; [self present:alert];
 }
 - (void)validateComputer:(UITextField *)field {
     UIAlertController *alert = (id)self.window.rootViewController.presentedViewController;
-    alert.actions.lastObject.enabled = ALParseRTMPStreamURL(field.text, NULL);
+    alert.actions.lastObject.enabled = ALParseComputerAddress(field.text, NULL, NULL);
+}
+- (void)editStream {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"播放器拉流地址" message:@"用于 RTMP、RTSP 或 HTTP 播放器拉流，不会替换电脑连接地址。" preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        NSDictionary *connection = ALConnectionSettings();
+        NSString *address = [NSString stringWithFormat:@"%@:%@", connection[@"host"], connection[@"port"]];
+        NSString *defaultURL = ALParseComputerAddress(address, NULL, NULL)
+            ? [NSString stringWithFormat:@"rtmp://%@:1935/live/applelive", connection[@"host"]] : @"";
+        field.text = self.source[@"url"] ?: defaultURL;
+        field.placeholder = @"rtmp://电脑IP/live/流名称";
+        field.keyboardType = UIKeyboardTypeURL; field.autocorrectionType = UITextAutocorrectionTypeNo;
+        field.autocapitalizationType = UITextAutocapitalizationTypeNone; field.accessibilityLabel = @"拉流地址";
+        [field addTarget:self action:@selector(validateStream:) forControlEvents:UIControlEventEditingChanged];
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(id action) { [self restoreKey]; }]];
+    if ([self.source[@"kind"] isEqualToString:@"network"])
+        [alert addAction:[UIAlertAction actionWithTitle:@"停止拉流" style:UIAlertActionStyleDestructive handler:^(id action) { [self restoreCamera]; [self restoreKey]; }]];
+    __weak UIAlertController *weakAlert = alert;
+    UIAlertAction *play = [UIAlertAction actionWithTitle:@"拉流" style:UIAlertActionStyleDefault handler:^(id action) {
+        NSString *value = [weakAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if (ALValidStreamURL(value)) { self.source[@"kind"] = @"network"; self.source[@"url"] = value; [self saveSource]; }
+        [self restoreKey];
+    }]; play.enabled = ALValidStreamURL(alert.textFields.firstObject.text); [alert addAction:play]; [self present:alert];
+}
+- (void)validateStream:(UITextField *)field {
+    UIAlertController *alert = (id)self.window.rootViewController.presentedViewController;
+    alert.actions.lastObject.enabled = ALValidStreamURL([field.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]);
 }
 - (void)pickAlbum {
     if (self.importing) return;
@@ -412,7 +426,7 @@ static NSURL *ALMediaDirectory(void) {
     self.sourceLabel.text = [NSString stringWithFormat:@"当前：%@", computer ? @"电脑" : local ? self.source[@"name"] ?: @"素材" : @"网络拉流"];
     if (self.importing) self.statusLabel.text = @"正在导入…";
     else if (![self.controls[@"enabled"] boolValue]) self.statusLabel.text = @"使用手机摄像头";
-    else if (computer) self.statusLabel.text = [status[@"video"] boolValue] ? [transport stringByAppendingString:@" · 已收到画面"] : [ALConnectionSettings()[@"paused"] boolValue] ? @"已断开" : [state isEqualToString:@"error"] ? [@"拉流失败：" stringByAppendingString:media[@"error"] ?: @""] : @"等待电脑推流";
+    else if (computer) self.statusLabel.text = [status[@"video"] boolValue] ? [transport stringByAppendingString:@" · 已收到画面"] : [ALConnectionSettings()[@"paused"] boolValue] ? @"已断开" : @"等待电脑连接";
     else if ([state isEqualToString:@"error"]) self.statusLabel.text = [@"读取失败：" stringByAppendingString:media[@"error"] ?: @""];
     else if ([state isEqualToString:@"paused"]) self.statusLabel.text = @"已暂停";
     else if ([state isEqualToString:@"ended"]) self.statusLabel.text = @"播放结束";

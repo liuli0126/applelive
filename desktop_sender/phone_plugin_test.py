@@ -50,7 +50,7 @@ class PhonePluginTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(status, expected)
                     if expected == 200:
                         self.assertEqual(body, original)
-                        self.assertIn(download_name(host, 1935), disposition)
+                        self.assertIn(download_name(host, port), disposition)
                         path.unlink()
                         self.assertEqual((await asyncio.to_thread(get, port))[0], 404)
 

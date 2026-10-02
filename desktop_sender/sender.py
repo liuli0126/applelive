@@ -406,7 +406,7 @@ def connection_filter(mode: str, directory: Path | None = None):
                 return connection.respond(HTTPStatus.FORBIDDEN, "Select LAN on the computer to download the phone plugin.\n")
             try:
                 host, port = connection.local_address[:2]
-                name = download_name(host, 1935)
+                name = download_name(host, port)
                 body = plugin_path(directory or plugin_directory()).read_bytes()
             except ValueError:
                 return connection.respond(HTTPStatus.FORBIDDEN, "Use the computer's LAN IPv4 address.\n")
@@ -422,10 +422,8 @@ def connection_filter(mode: str, directory: Path | None = None):
             loopback = bool(peer) and ipaddress.ip_address(peer[0]).is_loopback
         except ValueError:
             loopback = False
-        if mode == "lan":
-            return connection.respond(HTTPStatus.FORBIDDEN, "LAN video uses RTMP; use the stream URL shown in OBS.\n")
-        if mode == "usb" and not loopback:
-            return connection.respond(HTTPStatus.FORBIDDEN, "USB mode only accepts the local tunnel.\n")
+        if (mode == "usb" and not loopback) or (mode == "lan" and loopback):
+            return connection.respond(HTTPStatus.FORBIDDEN, f"AppleLive is set to {mode}; select the matching mode on your phone.\n")
         return None
     return check
 
@@ -458,9 +456,7 @@ async def main(args: argparse.Namespace) -> None:
         LOG.info("AppleLive %s server listening on ws://%s:%d", args.connection_mode, bind_host, args.port)
         write_status(args.status_file, "starting", connection_mode=args.connection_mode)
         try:
-            if args.connection_mode == "lan":
-                if not stream_server.start():
-                    raise RuntimeError("RTMP server is missing; install the complete OBS plugin package")
+            if args.connection_mode == "lan" and stream_server.start():
                 args.rtmp_url = RTMP_URL
             video_process = run_ffmpeg(video_command(args))
             processes.append(video_process)

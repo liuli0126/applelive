@@ -45,8 +45,8 @@ def main():
             if process.poll() is not None: raise RuntimeError('Encoder exited')
             time.sleep(0.1)
         else: raise RuntimeError('Encoder did not publish a stream')
-        audio = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-i",
-            args.rtmp_url, "-t", "0.5", "-map", "0:a:0", "-ac", "1", "-ar", "48000", "-f", "f32le", "pipe:1"],
+        audio = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp", "-i",
+            f"rtsp://127.0.0.1:8554/{stream_path}", "-t", "0.5", "-map", "0:a:0", "-ac", "1", "-ar", "48000", "-f", "f32le", "pipe:1"],
             capture_output=True, timeout=12, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if audio.returncode: raise RuntimeError(audio.stderr.decode("utf-8", "replace"))
         samples = struct.unpack('<' + 'f' * (len(audio.stdout) // 4), audio.stdout)

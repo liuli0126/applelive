@@ -5,12 +5,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $rules = @(
-  @{ Name = 'AppleLive LAN plugin download'; Ports = "$VideoPort" },
-  @{ Name = 'AppleLive LAN RTMP'; Ports = '1935' }
+  @{ Name = 'AppleLive LAN video'; Ports = "$VideoPort" },
+  @{ Name = 'AppleLive LAN RTMP'; Ports = '1935' },
+  @{ Name = 'AppleLive LAN RTSP'; Ports = '8554' }
 )
-
-Get-NetFirewallRule -DisplayName 'AppleLive LAN video', 'AppleLive LAN RTSP' -ErrorAction SilentlyContinue |
-  Remove-NetFirewallRule
 
 foreach ($rule in $rules) {
   Get-NetFirewallRule -DisplayName $rule.Name -ErrorAction SilentlyContinue |

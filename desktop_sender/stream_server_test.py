@@ -1,4 +1,4 @@
-"""Real MediaMTX smoke test with H.264/AAC publish and RTMP pull."""
+"""Real MediaMTX smoke test with H.264/AAC publish and RTSP pull."""
 import json
 import os
 from pathlib import Path
@@ -35,12 +35,12 @@ def main():
         else: raise RuntimeError("Publisher did not become ready")
         if publisher.poll() is not None:
             raise RuntimeError(publisher.stderr.read().decode("utf-8", "replace"))
-        pulled = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-i",
-            rtmp_url, "-t", "1", "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "-"],
+        pulled = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp", "-i",
+            f"rtsp://127.0.0.1:8554/{stream_path}", "-t", "1", "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "-"],
             capture_output=True, timeout=12, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if pulled.returncode:
             raise RuntimeError(pulled.stderr.decode("utf-8", "replace"))
-        print("MediaMTX H.264/AAC RTMP publish and pull passed")
+        print("MediaMTX H.264/AAC RTMP publish and RTSP pull passed")
     finally:
         if publisher:
             stop_process_tree(publisher)

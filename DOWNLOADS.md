@@ -61,7 +61,7 @@ LordVCAM 标注的多个系统范围不等于一个 tweak 二进制可以无差�
 
 - Python 3.10 或更新版本。
 - FFmpeg Windows full build，要求包含 `gdigrab` 和 `dshow`。
-- Windows 防火墙允许 TCP 1935 入站（RTMP 局域网画面）；扫码下载插件另需 TCP 8765。
+- Windows 防火墙允许 TCP 8765 入站（LAN 模式）。
 
 安装命令：
 

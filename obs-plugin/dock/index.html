@@ -9,7 +9,7 @@
     <label class="check"><span>传输电脑声音</span><input type="checkbox" id="computer_audio"></label>
   </fieldset></form>
   <p id="mode_hint" class="hint">USB：连接数据线，并在手机上信任此电脑。</p>
-  <div id="stream_box" class="address" hidden><span>手机连接地址 · RTMP</span><label id="stream_host_wrap" for="stream_host" hidden>电脑局域网 IP<select id="stream_host"></select></label><strong id="stream_address"></strong><button id="copy_stream" type="button" class="secondary" title="复制手机 RTMP 地址">复制地址</button></div>
+  <div id="stream_box" class="address" hidden><span>播放器拉流地址 · RTMP</span><strong id="stream_address"></strong><button id="copy_stream" type="button" class="secondary" title="复制播放器拉流地址">复制地址</button></div>
   <button id="allow_lan" type="button" class="secondary" hidden>授权此电脑的局域网访问</button>
   <p id="error" role="alert" hidden></p>
   <button id="toggle" type="button" disabled>正在准备…</button>
@@ -17,8 +17,9 @@
   <button id="phone_plugin" type="button" class="secondary" disabled>安装手机插件</button>
   <dialog id="plugin_dialog" aria-labelledby="plugin_title">
     <div class="dialog_head"><h2 id="plugin_title">手机插件</h2><button id="close_plugin" type="button" aria-label="关闭" title="关闭">&#215;</button></div>
+    <label for="plugin_host" id="plugin_host_label">电脑地址</label><select id="plugin_host"></select>
     <div class="qr_area"><img id="plugin_qr" alt="手机插件下载二维码" width="240" height="240" hidden><p id="plugin_message" role="status"></p></div>
     <a id="download_plugin" class="download_button" download>下载 .dylib</a>
   </dialog>
-  <details><summary>连接和声音帮助</summary><p>局域网：手机与电脑连接同一路由器，在手机插件的「RTMP 地址」中填写上面的完整地址。Windows 防火墙需放行 TCP 1935；扫码下载插件另用 TCP 8765。</p><p>USB：打开已注入 AppleLive 的直播 App，连接并信任电脑。旧 deb 版使用已配对的 OpenSSH 通道。</p><p>声音：OBS 将声音「监听并输出」至 CABLE Input，电脑开启声音传输，手机打开「内录」。内录关闭手机麦克风，缺少源音频时保持静音。</p></details>
+  <details><summary>连接和声音帮助</summary><p>手机画面替换会自动连接电脑；「检测」中的 RTMP 地址仅用于独立播放器拉流。</p><p>局域网：手机与电脑连接同一路由器，并允许 Windows 防火墙放行 TCP 8765；标准播放器还需要放行 TCP 1935。</p><p>USB：打开已注入 AppleLive 的直播 App，连接并信任电脑。旧 deb 版使用已配对的 OpenSSH 通道。</p><p>声音：OBS 将声音「监听并输出」至 CABLE Input，电脑开启声音传输，手机打开「内录」。内录关闭手机麦克风，缺少源音频时保持静音。</p></details>
 </main><script src="app.js"></script></body></html>

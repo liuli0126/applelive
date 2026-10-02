@@ -28,6 +28,7 @@
 | 19. 预览与照片适配 | in_progress | 相机预览层、独立预览和JPEG/AVCapturePhoto替换双架构编译通过，待真机验证 |
 | 20. 多版本和USB批量部署 | in_progress | arm64/iOS14与arm64e/iOS15单文件已交付；免SSH USB分包/顺序测试通过，无配对时跳过旧SSH流程；真实USB及其他系统待验证 |
 | 21. 构建和完整功能验证 | in_progress | cd13b4b完整CI通过；更新现有OBS并保留LAN/高清/声音，RTMP H264/AAC与旧通道音视频验证、280/560px面板及下载哈希检查通过；真机项目未完成 |
+| 22. OBS 地址展示纠正 | in_progress | 已撤销误改的纯 RTMP 传输，仅移除 WebSocket 地址展示；RTMP、RTSP 与原连接逻辑保留，正在独立端口验证和交付 |
 
 ## Constraints
 - 连接方式只在电脑选择，手机自动跟随；手机只保留局域网电脑地址设置，避免两端选择冲突。
@@ -37,5 +38,8 @@
 ## Errors Encountered
 | Error | Attempt | Resolution |
 |---|---|---|
+| RTSP integration timeout with default ports | 1 | 当前用户运行中的 MediaMTX 只监听 1935、未监听 8554；改用独立端口验证，不终止用户进程 |
+| Isolated-port smoke command rejected by execution policy | 1 | 命令未执行；保留用户进程，改由 GitHub 干净环境运行现有 RTMP/RTSP 集成测试 |
+| ZIP verification script quoting/.NET compatibility | 1-2 | 修正 PowerShell 字面量转义与哈希转换 API，第三次完整检查通过；压缩包无需修改 |
 | GitHub clone connection reset | 1 | 改用 GitHub API/raw 读取参考实现，仅提取公开协议和结构，不复制其授权不明源码 |
 | iOS toolchain unavailable on Windows | 1 | 完成源码级审查并记录限制；交由 macOS/Linux Theos 环境执行最终 deb 构建 |
