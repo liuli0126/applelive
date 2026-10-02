@@ -109,7 +109,8 @@ class DockServer(ThreadingHTTPServer):
         return {"ready": ready, "sender": sender, "bridge": bridge,
                 "addresses": self.addresses, "token": self.token, "pending": bool(pending),
                 "phone_plugin": {"available": plugin_path(self.directory).is_file(), "port": port,
-                    "lan_ready": sender.get("connection_mode") == "lan" and sender.get("state") == "running"}}
+                    "lan_ready": sender.get("connection_mode") == "lan" and sender.get("state") == "running"
+                                 and sender.get("rtmp_enabled", False)}}
 
     def request_firewall_access(self) -> None:
         if os.name != "nt":
@@ -165,7 +166,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             status = self.server.status()
             try:
-                name = download_name(host, int(status["phone_plugin"]["port"]))
+                name = download_name(host, 1935)
                 body = plugin_path(self.server.directory).read_bytes()
             except (ValueError, TypeError):
                 self.json_reply(400, {"error": "电脑地址或端口无效"})

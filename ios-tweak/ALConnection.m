@@ -37,6 +37,29 @@ BOOL ALParseComputerAddress(NSString *address, NSString **host, NSNumber **port)
     return YES;
 }
 
+BOOL ALParseRTMPStreamURL(NSString *address, NSString **host) {
+    if (![address isKindOfClass:NSString.class]) return NO;
+    NSURLComponents *url = [NSURLComponents componentsWithString:
+        [address stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]];
+    if (![url.scheme.lowercaseString isEqualToString:@"rtmp"] || !url.host.length ||
+        !url.port || url.port.integerValue < 1 || url.port.integerValue > 65535 ||
+        url.path.length < 2 || url.user || url.password || url.query || url.fragment) return NO;
+    NSString *validHost;
+    if (!ALParseComputerAddress([NSString stringWithFormat:@"%@:%@", url.host, url.port], &validHost, NULL)) return NO;
+    if (host) *host = validHost;
+    return YES;
+}
+
+NSString *ALRTMPStreamURL(NSDictionary *settings) {
+    NSString *saved = settings[@"streamURL"];
+    if (ALParseRTMPStreamURL(saved, NULL))
+        return [saved stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSString *host = settings[@"host"];
+    if (![host isKindOfClass:NSString.class] ||
+        !ALParseComputerAddress([NSString stringWithFormat:@"%@:8765", host], NULL, NULL)) return nil;
+    return [NSString stringWithFormat:@"rtmp://%@:1935/live/applelive", host];
+}
+
 static NSDictionary *ALDecodeConnection(uint64_t value) {
     uint64_t magic = value & UINT64_C(0xfffc000000000000);
     if (magic != kMagic && magic != kLegacyMagic) return nil;
@@ -125,6 +148,7 @@ BOOL ALPublishConnection(NSDictionary *settings) {
     if (![host isKindOfClass:NSString.class] ||
         inet_pton(AF_INET, host.UTF8String, &ip) != 1 || port < 1 || port > 65535) return NO;
 #ifdef APPLELIVE_STANDALONE
+    if (settings[@"streamURL"] && !ALParseRTMPStreamURL(settings[@"streamURL"], NULL)) return NO;
     // App injection owns its settings even if Darwin notification access is restricted.
     ALPersistConnection(settings);
     [[NSNotificationCenter defaultCenter] postNotificationName:@"AppleLive.InjectorConnection" object:settings];
@@ -163,15 +187,14 @@ void ALPersistConnection(NSDictionary *settings) {
 }
 
 NSArray<NSString *> *ALConnectionAddresses(NSDictionary *settings) {
-    NSMutableArray *addresses = [NSMutableArray array];
 #ifdef APPLELIVE_STANDALONE
-    // The standalone plugin has its own USB transport and must not probe the
-    // legacy loopback WebSocket first. That probe made LAN installs look like
-    // a duplicate address and delayed the real computer connection.
+    (void)settings;
+    return @[];
 #else
+    NSMutableArray *addresses = [NSMutableArray array];
     [addresses addObject:@"127.0.0.1:8765"];
-#endif
     NSString *address = [NSString stringWithFormat:@"%@:%@", settings[@"host"], settings[@"port"]];
     if (ALParseComputerAddress(address, NULL, NULL) && ![addresses containsObject:address]) [addresses addObject:address];
     return addresses;
+#endif
 }

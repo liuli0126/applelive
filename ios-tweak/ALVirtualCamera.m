@@ -313,23 +313,25 @@ static void ALInstallHooks(void) {
         };
 #ifdef APPLELIVE_STANDALONE
         _mediaPlayer.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) {
-            if ([weakSelf.sourceKind isEqualToString:@"computer"]) return;
+            if ([weakSelf.sourceKind isEqualToString:@"computer"] && (weakSelf.directUSB || weakSelf.connectionPaused)) return;
             weakSelf.sourceRotation = rotation;
             [weakSelf.frameStore storePixelBuffer:frame sequence:weakSelf.frameStore.latestSequence + 1];
             weakSelf.lastVideoTime = CFAbsoluteTimeGetCurrent();
         };
         _mediaPlayer.onAudio = ^(const float *samples, NSUInteger frames) {
-            if ([weakSelf.sourceKind isEqualToString:@"computer"]) return;
+            if ([weakSelf.sourceKind isEqualToString:@"computer"] && (weakSelf.directUSB || weakSelf.connectionPaused)) return;
             [weakSelf pushAudioSamples:samples count:frames channels:2 sampleRate:48000];
             weakSelf.lastAudioTime = CFAbsoluteTimeGetCurrent();
         };
         _mediaPlayer.onReset = ^{
-            if ([weakSelf.sourceKind isEqualToString:@"computer"]) return;
+            if ([weakSelf.sourceKind isEqualToString:@"computer"] && weakSelf.directUSB) return;
             [weakSelf clearAudioSamples];
-            if ([weakSelf.sourceKind isEqualToString:@"network"]) [weakSelf.frameStore clear];
+            if ([weakSelf.sourceKind isEqualToString:@"network"] ||
+                [weakSelf.sourceKind isEqualToString:@"computer"]) [weakSelf.frameStore clear];
         };
         _usbReceiver.onConnected = ^{
             weakSelf.directUSB = YES;
+            [weakSelf.mediaPlayer stop]; weakSelf.sourceURL = nil;
             [weakSelf.client disconnect];
             [weakSelf.decoder reset]; [weakSelf.frameStore clear]; [weakSelf clearAudioSamples];
         };
@@ -410,26 +412,44 @@ static void ALInstallHooks(void) {
 - (void)applyConnection:(NSDictionary *)settings {
 #ifdef APPLELIVE_STANDALONE
     if (![self.sourceKind isEqualToString:@"computer"]) return;
-#endif
+    self.connectionPaused = [settings[@"paused"] boolValue];
+    [self configureAudioBridge];
+    if (self.connectionPaused) [self.usbReceiver stop];
+    else [self.usbReceiver start];
+    NSString *stream = ALRTMPStreamURL(settings);
+    if (self.connectionPaused || self.directUSB || !self.enabled || !stream.length) {
+        [self.mediaPlayer stop]; self.sourceURL = nil;
+        self.lastVideoTime = self.lastAudioTime = 0;
+        [self.frameStore clear]; [self clearAudioSamples];
+        return;
+    }
+    if (![self.sourceURL.absoluteString isEqualToString:stream] ||
+        [self.mediaPlayer.status[@"state"] isEqualToString:@"stopped"]) {
+        self.sourceURL = [NSURL URLWithString:stream];
+        [self.mediaPlayer playURL:self.sourceURL];
+    }
+    os_log(OS_LOG_DEFAULT, "[AppleLive] LAN RTMP stream=%{public}@", stream);
+#else
     NSArray *addresses = ALConnectionAddresses(settings);
     if ([NSProcessInfo.processInfo.processName isEqualToString:@"mediaserverd"]) ALPersistConnection(settings);
     self.connectionPaused = [settings[@"paused"] boolValue];
     self.connectionAddresses = addresses;
-#ifdef APPLELIVE_STANDALONE
-    [self configureAudioBridge];
-    if (self.connectionPaused) [self.usbReceiver stop];
-    else [self.usbReceiver start];
-    if (self.directUSB && !self.connectionPaused) return;
-#endif
     if (self.enabled && !self.connectionPaused && addresses.count) [self.client connectToAddresses:addresses];
     else [self.client disconnect];
     os_log(OS_LOG_DEFAULT, "[AppleLive] connection mode=%{public}@ addresses=%{public}@", settings[@"mode"], addresses);
+#endif
 }
 
 - (NSDictionary *)streamStatus {
 #ifdef APPLELIVE_STANDALONE
     if (self.directUSB) return @{@"connected": @YES, @"usb": @YES,
         @"video": @(CFAbsoluteTimeGetCurrent() - self.lastVideoTime < 2), @"audio": @(CFAbsoluteTimeGetCurrent() - self.lastAudioTime < 2)};
+    if ([self.sourceKind isEqualToString:@"computer"]) {
+        CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+        BOOL video = !self.connectionPaused && now - self.lastVideoTime < 2;
+        return @{@"connected": @(video), @"video": @(video), @"usb": @NO,
+                 @"audio": @(now - self.lastAudioTime < 2)};
+    }
     if (![self.sourceKind isEqualToString:@"computer"]) {
         CVPixelBufferRef frame = [self.frameStore copyLatestPixelBuffer];
         BOOL hasFrame = frame != NULL;

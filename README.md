@@ -1,6 +1,6 @@
 # AppleLive 越狱虚拟摄像头
 
-这是一个面向越狱 iPhone 的桌面画面/声音输入方案：Windows 端用 FFmpeg 采集桌面并编码为 H.264，iOS tweak 通过 WebSocket 接收，在 VideoToolbox 解码后替换相机帧；音频使用 float32 PCM ring buffer 替换音频采集帧。
+这是一个面向越狱 iPhone 的桌面画面/声音输入方案：Windows 端用 FFmpeg 采集并编码 OBS 画面，iOS 14+ 单文件插件在局域网通过 RTMP 拉流并替换相机帧；USB 仍使用独立的数据连接。音频可替换手机麦克风输入。
 
 完整下载和环境准备清单见 [DOWNLOADS.md](E:\1\applelive\DOWNLOADS.md)。
 
@@ -17,12 +17,12 @@
 ```text
 OBS program or Windows desktop + audio device
           |
-          | FFmpeg H.264 / float32 PCM
+          | FFmpeg H.264 / AAC
           v
-   WebSocket :8765
-       | LAN
+    RTMP :1935
+       | LAN (iOS 14+ single-file plugin)
        v
-iOS tweak -> VideoToolbox -> latest CVPixelBuffer
+iOS plugin -> FFmpeg decoder -> latest CVPixelBuffer
        |                         |
        +-> mediaserverd BWNodeOutput hook
        +-> AVCapture delegate fallback
@@ -83,7 +83,7 @@ python sender.py --host 0.0.0.0 --port 8765 --audio-device "CABLE Output"
 
 ## 标准拉流与本地素材
 
-OBS 局域网模式自动启动随包的 MediaMTX 1.18.1，并将同一次 H.264 编码同时用于旧 WebSocket 通道和标准 RTMP 发布。用户提供的 `E:/服务器` 也是这个服务器。手机悬浮窗的「检测」接受 `rtmp://电脑IP:1935/live/applelive`，也支持 SRS 地址；RTSP 为 `rtsp://电脑IP:8554/live/applelive`。
+OBS 局域网模式自动启动随包的 MediaMTX 1.18.1，并发布 `rtmp://电脑IP:1935/live/applelive`。这个完整 URL 同时是电脑面板显示的手机连接地址，以及 iOS 14+ 单文件插件悬浮窗里填写的 RTMP 地址。
 
 独立 `.dylib` 静态包含 FFmpeg，提供相册/文件图片与视频、网络拉流、暂停/拖动/循环、内录/静音、镜像/旋转、完整/铺满、独立预览与恢复相机。源码测试和编译检查通过，真实直播 App 的采集、内录及不同系统版本须分别验证。
 
@@ -91,11 +91,11 @@ OBS 局域网模式自动启动随包的 MediaMTX 1.18.1，并将同一次 H.264
 
 新独立插件通过 usbmux 连接目标 App 的回环端口 8766，接收 H.264 和 PCM，不需要手机 OpenSSH 或逐台配对 SSH 密钥。Windows 仍需 Apple USB 驱动、手机信任电脑，并打开已注入的 App。协议分包、握手和清理测试通过，尚需真机 USB 验证。
 
-旧 deb 保留 `pymobiledevice3` 转发到手机 OpenSSH 和 SSH 反向隧道方案，旧 iOS 13.3 测试手机的 USB 视频替换与 LAN 接收已实测。连接方式在 OBS 停靠面板选择，手机显示实际通道。
+旧 deb 保留 `pymobiledevice3` 转发到手机 OpenSSH 和 SSH 反向隧道方案。iOS 13 deb 没有内置 RTMP 解码器，不能使用当前 Windows 包的 RTMP 局域网模式。
 
 ## 限制
 
-- 电脑直连协议使用 H.264 Annex-B；独立插件的 FFmpeg 媒体引擎还可解码 H.265 文件和网络流。
+- USB 直连协议使用 H.264 Annex-B；独立插件的 FFmpeg 媒体引擎解码局域网 RTMP 和本地视频。
 - `BWNodeOutput` 是 Apple 私有类，不同 iOS 版本可能改名或改变方法签名；未找到该类时会自动保留原始相机帧。
 - `AppleLive.plist` 的 UIKit bundle 过滤器用于让 delegate 回退 hook 有机会进入直播 App，但具体 Substrate 版本对 bundle 过滤的匹配方式需要在目标设备验证。
 - 独立插件提供 `AVCaptureAudioDataOutput` 和 RemoteIO/VoiceProcessingIO 输入替换；使用其他音频采集管线的 App 仍需要适配。

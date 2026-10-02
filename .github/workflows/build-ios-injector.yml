@@ -72,6 +72,13 @@ jobs:
             -o "$RUNNER_TEMP/applelive-media-test"
           "$RUNNER_TEMP/applelive-media-test" ios-injector/tests/fixture.mp4
 
+      - name: Test RTMP computer address
+        run: |
+          xcrun clang -fobjc-arc -DAPPLELIVE_STANDALONE=1 -Iios-tweak \
+            ios-injector/tests/connection-test.m ios-tweak/ALConnection.m \
+            -framework Foundation -o "$RUNNER_TEMP/applelive-connection-test"
+          "$RUNNER_TEMP/applelive-connection-test"
+
       - name: Test RTMP source through MediaMTX
         run: |
           arch="$(uname -m)"
