@@ -10,14 +10,19 @@ int main(void) {
         NSString *rtmp = @"rtmp://192.168.1.45:1935/live/applelive";
         NSString *rtsp = @"rtsp://192.168.1.45:8554/live/applelive";
         NSDictionary *migrated = ALMigrateMediaSource(@{@"kind": @"computer"}, rtmp);
-        check([migrated[@"kind"] isEqual:@"network"] && [migrated[@"url"] isEqual:rtmp] &&
-              [migrated[@"loop"] boolValue], @"Old computer source must migrate to Detection with looping enabled");
+        check([migrated[@"kind"] isEqual:@"network"] && [migrated[@"url"] isEqual:rtmp],
+              @"Old computer source must migrate to Detection");
         migrated = ALMigrateMediaSource(@{@"kind": @"computer", @"url": rtsp, @"loop": @NO}, rtmp);
-        check([migrated[@"url"] isEqual:rtsp] && ![migrated[@"loop"] boolValue], @"Migration must preserve RTSP and explicit loop preference");
+        check([migrated[@"url"] isEqual:rtsp], @"Migration must preserve RTSP");
+        NSDictionary *oldLocal = @{@"kind": @"local", @"file": @"clip.mp4", @"loop": @NO};
+        migrated = ALMigrateMediaSource(oldLocal, rtmp);
+        check([migrated isEqual:@{@"kind": @"local", @"file": @"clip.mp4"}],
+              @"Old loop-off settings must be discarded while preserving the local video");
+        check(oldLocal[@"loop"] != nil, @"Migration must not mutate the saved input");
         for (NSDictionary *saved in @[
-            @{@"kind": @"local", @"file": @"clip.mp4", @"loop": @NO},
-            @{@"kind": @"network", @"url": rtsp, @"loop": @YES},
-            @{@"kind": @"usb", @"loop": @YES}
+            @{@"kind": @"local", @"file": @"clip.mp4"},
+            @{@"kind": @"network", @"url": rtsp},
+            @{@"kind": @"usb"}
         ]) check([ALMigrateMediaSource(saved, rtmp) isEqual:saved], @"Existing local, network and USB sources must remain intact");
         migrated = ALMigrateMediaSource(nil, @"");
         check([migrated[@"kind"] isEqual:@"network"] && [migrated[@"url"] isEqual:@""], @"A fresh install without a host must wait for a stream URL");

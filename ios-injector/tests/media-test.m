@@ -59,8 +59,9 @@ int main(int argc, char **argv) {
     @autoreleasepool {
         require(argc == 2, "fixture path required"); testAudio();
         ALMediaPlayer *player = [ALMediaPlayer new];
-        __block atomic_uint frames, audioFrames;
-        atomic_init(&frames, 0); atomic_init(&audioFrames, 0);
+        __block atomic_uint frames, audioFrames, resets;
+        atomic_init(&frames, 0); atomic_init(&audioFrames, 0); atomic_init(&resets, 0);
+        player.onReset = ^{ atomic_fetch_add(&resets, 1); };
         player.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) {
             require(CVPixelBufferGetWidth(frame) == 320 && CVPixelBufferGetHeight(frame) == 240, "decoded video dimensions");
             atomic_fetch_add(&frames, 1);
@@ -80,8 +81,12 @@ int main(int argc, char **argv) {
         require([player.status[@"position"] doubleValue] >= 1.18 && [player.status[@"state"] isEqualToString:@"paused"], "seek updates paused preview");
         player.paused = NO; [player seek:1.2]; usleep(450000);
         require([player.status[@"position"] doubleValue] >= 1.2, "seek honors target");
-        usleep(1700000);
-        require([player.status[@"state"] isEqualToString:@"playing"], "local loop continues");
+        unsigned beforeLoops = atomic_load(&resets), beforeFrames = atomic_load(&frames);
+        for (int i = 0; i < 120 && atomic_load(&resets) < beforeLoops + 2; i++) usleep(50000);
+        require(atomic_load(&resets) >= beforeLoops + 2, "local video automatically wraps through repeated EOFs");
+        usleep(250000);
+        require([player.status[@"state"] isEqualToString:@"playing"] && atomic_load(&frames) > beforeFrames,
+                "local video keeps producing frames after repeated loops");
         require(atomic_load(&audioFrames) > 10000, "AAC audio decodes");
         [player stop]; usleep(100000); count = atomic_load(&frames); usleep(150000);
         require(atomic_load(&frames) == count, "cancel stops decoder");

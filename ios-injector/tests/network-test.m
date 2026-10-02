@@ -52,7 +52,6 @@ static BOOL testSource(NSString *url) {
     atomic_init(&frames, 0); atomic_init(&audio, 0);
     player.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) { atomic_fetch_add(&frames, 1); };
     player.onAudio = ^(const float *pcm, NSUInteger count) { atomic_fetch_add(&audio, (unsigned)count); };
-    player.loop = NO;
     [player playURL:[NSURL URLWithString:url]];
     for (int i = 0; i < 240 && (atomic_load(&frames) < 5 || atomic_load(&audio) < 2000); i++) usleep(50000);
     BOOL passed = atomic_load(&frames) >= 5 && atomic_load(&audio) >= 2000;

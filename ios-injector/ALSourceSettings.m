@@ -8,7 +8,9 @@ BOOL ALValidStreamURL(NSString *value) {
 
 NSDictionary *ALMigrateMediaSource(NSDictionary *saved, NSString *defaultURL) {
     NSMutableDictionary *source = [saved mutableCopy] ?: [NSMutableDictionary dictionary];
-    if (!source[@"loop"]) source[@"loop"] = @YES;
+    // Local video looping is mandatory; discard the obsolete user preference,
+    // including a previously saved NO, when upgrading existing app settings.
+    [source removeObjectForKey:@"loop"];
     NSString *kind = source[@"kind"];
     // The former computer source was the second LAN path. Upgrade it to Detection,
     // retaining a previously entered stream URL (including RTSP) when available.

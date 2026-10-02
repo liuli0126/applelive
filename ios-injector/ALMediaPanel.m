@@ -60,11 +60,9 @@ static NSString *ALDefaultStreamURL(void) {
 @property(nonatomic) UISwitch *mirrorSwitch;
 @property(nonatomic) UISwitch *audioSwitch;
 @property(nonatomic) UISwitch *muteSwitch;
-@property(nonatomic) UISwitch *loopSwitch;
 @property(nonatomic) UISegmentedControl *fitControl;
 @property(nonatomic) UISlider *timeline;
 @property(nonatomic) UIStackView *playRow;
-@property(nonatomic) UIStackView *loopRow;
 @property(nonatomic) NSMutableDictionary *controls;
 @property(nonatomic) NSMutableDictionary *source;
 @property(nonatomic, weak) UIWindow *previousKeyWindow;
@@ -212,11 +210,9 @@ static NSString *ALDefaultStreamURL(void) {
     self.mirrorSwitch = [self toggle:@"镜像"];
     self.audioSwitch = [self toggle:@"内录"];
     self.muteSwitch = [self toggle:@"静音"];
-    self.loopSwitch = [self toggle:@"循环"];
     self.playButton = [self button:@"暂停" symbol:@"pause.fill" action:@selector(togglePlayback)];
     UIButton *preview = [self button:@"预览" symbol:@"eye" action:@selector(showPreview)];
     self.playRow = [self row:@[self.playButton, preview]]; self.playRow.distribution = UIStackViewDistributionFillEqually;
-    self.loopRow = [self row:@[[self label:@"循环播放" size:15], self.loopSwitch]];
     self.timeline = [UISlider new]; self.timeline.accessibilityLabel = @"播放进度"; self.timeline.tintColor = self.accent;
     NSLayoutConstraint *timelineHeight = [self.timeline.heightAnchor constraintEqualToConstant:44];
     timelineHeight.priority = 999; timelineHeight.active = YES;
@@ -246,7 +242,7 @@ static NSString *ALDefaultStreamURL(void) {
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[
         [self row:@[brand, wordmark, close]], signal,
         [self section:@"01 / 信号源" views:@[files, inputs]], imageSection, audioSection,
-        [self section:@"04 / 播放" views:@[self.playRow, self.loopRow, self.timeline, self.timeLabel]], restore, footer,
+        [self section:@"04 / 播放" views:@[self.playRow, self.timeline, self.timeLabel]], restore, footer,
     ]]; content.axis = UILayoutConstraintAxisVertical; content.spacing = 12; content.translatesAutoresizingMaskIntoConstraints = NO;
     [scroll addSubview:content];
     [NSLayoutConstraint activateConstraints:@[
@@ -304,7 +300,6 @@ static NSString *ALDefaultStreamURL(void) {
     self.controls[@"enabled"] = @YES; [self saveControls]; [self applySource];
 }
 - (void)applySource {
-    [self.camera setMediaLoop:[self.source[@"loop"] boolValue]];
     if (![self.controls[@"enabled"] boolValue]) { [self.camera selectSource:@"none" URL:nil]; return; }
     NSString *kind = self.source[@"kind"];
     NSURL *url = [kind isEqualToString:@"local"] ? [ALMediaDirectory() URLByAppendingPathComponent:self.source[@"file"] ?: @""]
@@ -317,7 +312,6 @@ static NSString *ALDefaultStreamURL(void) {
 - (void)syncControls {
     self.enabledSwitch.on = [self.controls[@"enabled"] boolValue]; self.mirrorSwitch.on = [self.controls[@"mirror"] boolValue];
     self.audioSwitch.on = [self.controls[@"audio"] boolValue]; self.muteSwitch.on = [self.controls[@"muted"] boolValue];
-    self.loopSwitch.on = [self.source[@"loop"] boolValue];
     self.fitControl.selectedSegmentIndex = [self.controls[@"fill"] boolValue] ? 1 : 0;
     NSString *rotation = [NSString stringWithFormat:@"旋转：%ld°", (long)[self.controls[@"rotation"] integerValue] * 90];
     [self.rotateButton setTitle:rotation forState:UIControlStateNormal];
@@ -327,9 +321,8 @@ static NSString *ALDefaultStreamURL(void) {
     BOOL previous = [self.controls[@"enabled"] boolValue];
     self.controls[@"enabled"] = @(self.enabledSwitch.on); self.controls[@"mirror"] = @(self.mirrorSwitch.on);
     self.controls[@"audio"] = @(self.audioSwitch.on); self.controls[@"muted"] = @(self.muteSwitch.on);
-    self.controls[@"fill"] = @(self.fitControl.selectedSegmentIndex == 1); self.source[@"loop"] = @(self.loopSwitch.on);
-    [self.camera setMediaLoop:self.loopSwitch.on];
-    [NSUserDefaults.standardUserDefaults setObject:self.source forKey:kALSourceDefaults]; [self saveControls];
+    self.controls[@"fill"] = @(self.fitControl.selectedSegmentIndex == 1);
+    [self saveControls];
     if (previous != self.enabledSwitch.on) [self applySource];
     if (sender == self.audioSwitch) [self.camera.audioRing clear];
     [self refresh];
@@ -425,7 +418,6 @@ static NSString *ALDefaultStreamURL(void) {
         }
         NSString *oldFile = self.source[@"file"];
         self.source[@"kind"] = @"local"; self.source[@"file"] = filename; self.source[@"name"] = url.lastPathComponent;
-        self.source[@"loop"] = @YES;
         [self saveSource];
         if (oldFile.length && ![oldFile isEqualToString:filename]) [NSFileManager.defaultManager removeItemAtURL:[ALMediaDirectory() URLByAppendingPathComponent:oldFile] error:nil];
     });
@@ -476,7 +468,7 @@ static NSString *ALDefaultStreamURL(void) {
     [self.usbButton setTitle:enabled && usb ? @"断开 USB" : @"USB 数据线" forState:UIControlStateNormal];
     self.usbButton.accessibilityLabel = enabled && usb ? @"断开 USB" : @"USB 数据线";
     BOOL seekable = local && [media[@"duration"] doubleValue] > 0;
-    self.playButton.hidden = !seekable; self.loopRow.hidden = !seekable;
+    self.playButton.hidden = !seekable;
     self.timeline.hidden = self.timeLabel.hidden = !seekable;
     [self.playButton setTitle:[state isEqualToString:@"paused"] || [state isEqualToString:@"ended"] ? @"播放" : @"暂停" forState:UIControlStateNormal];
     [self.playButton setImage:[UIImage systemImageNamed:([state isEqualToString:@"paused"] || [state isEqualToString:@"ended"]) ? @"play.fill" : @"pause.fill"] forState:UIControlStateNormal];

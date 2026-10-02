@@ -71,7 +71,6 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
         _worker = dispatch_queue_create("com.applelive.media", DISPATCH_QUEUE_SERIAL);
         atomic_init(&_generation, 0);
         _requestedSeek = -1;
-        _loop = YES;
         _status = @{@"state": @"stopped", @"position": @0, @"duration": @0};
         static dispatch_once_t once;
         dispatch_once(&once, ^{ avformat_network_init(); av_log_set_level(AV_LOG_ERROR); });
@@ -93,10 +92,10 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     dispatch_async(_worker, ^{
         while (atomic_load(&self->_generation) == generation) {
             @autoreleasepool { [self runURL:url generation:generation]; }
-            // A few containers refuse an in-place seek after EOF. Reopen the
-            // local file once when looping is enabled so playback still wraps.
+            // Local videos always loop. If a container refuses an in-place
+            // seek after EOF, reopen it so playback still wraps.
             if (atomic_load(&self->_generation) != generation ||
-                (url.isFileURL && (!self.loop || ![self.status[@"state"] isEqualToString:@"ended"]))) break;
+                (url.isFileURL && ![self.status[@"state"] isEqualToString:@"ended"])) break;
             int retryDelayTicks = url.isFileURL ? 1 : 20;
             for (int i = 0; i < retryDelayTicks && atomic_load(&self->_generation) == generation; i++) usleep(100000);
         }
@@ -258,7 +257,7 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
             }
             av_packet_unref(packet);
             if (error == AVERROR_EOF) {
-                if (self.loop && ALRewindMedia(input, videoIndex, video, audio)) {
+                if (local && ALRewindMedia(input, videoIndex, video, audio)) {
                     position = 0; discardBefore = -1;
                     swr_free(&resampler); originPTS = NAN;
                     if (self.onReset) self.onReset();

@@ -655,7 +655,6 @@ static void ALInstallHooks(void) {
     self.mediaPlayer.paused = paused;
     [self clearAudioSamples];
 }
-- (void)setMediaLoop:(BOOL)loop { self.mediaPlayer.loop = loop; }
 - (void)seekMedia:(NSTimeInterval)seconds { [self.mediaPlayer seek:seconds]; }
 - (CVPixelBufferRef)copyPreviewPixelBuffer:(CGSize)size {
     if (!self.enabled || self.connectionPaused || ![self.controls[@"enabled"] boolValue]) return NULL;
