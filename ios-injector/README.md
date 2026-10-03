@@ -4,7 +4,7 @@ The standalone library is imported into each target application with the user's 
 
 ## Sources and controls
 
-- Album and Files import an image or video into the target app's own storage. Images retain a static frame; local videos always loop and support play/pause and seeking. There is no loop switch, and an old saved loop-off setting is discarded on upgrade.
+- Album and Files import an image or video into the target app's own storage. Images retain a static frame; local videos always loop and support play/pause. There is no loop switch, and an old saved loop-off setting is discarded on upgrade.
 - Detection is the only LAN entry. Paste a full stream URL, for example `rtmp://192.168.1.45:1935/live/applelive`. RTMP/RTMPS, RTSP over TCP and HTTP/HTTPS media/HLS inputs are supported. It accepts SRS and MediaMTX stream URLs.
 - USB Cable selects the dedicated USB app listener. The standalone plugin no longer connects to the old WebSocket LAN sender or shows a Computer address/connection button. On upgrade, an old Computer source moves to Detection, preserving an existing stream URL or suggesting RTMP from the saved computer IP.
 - Internal audio replaces microphone input with source sound. Silence is used when the source has no audio or the audio buffer underflows. Mute silences the injected audio. Turning off internal audio restores the app's microphone path.
