@@ -64,8 +64,10 @@ static BOOL testSource(NSString *url) {
     BOOL passed = !sawError && middleFrames >= 20 && finalFrames - middleFrames >= 20 &&
         middleAudio >= 20000 && finalAudio - middleAudio >= 20000 &&
         [player.status[@"state"] isEqualToString:@"playing"];
-    fprintf(passed ? stdout : stderr, "%s frames=%u audio=%u state=%s\n", url.UTF8String,
-            finalFrames, finalAudio, player.status.description.UTF8String);
+    fprintf(passed ? stdout : stderr,
+            "%s passed=%d sawError=%d middleFrames=%u finalFrames=%u middleAudio=%u finalAudio=%u state=%s\n",
+            url.UTF8String, passed, sawError, middleFrames, finalFrames, middleAudio, finalAudio,
+            player.status.description.UTF8String);
     [player stop];
     return passed;
 }
