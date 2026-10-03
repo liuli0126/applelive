@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-10-03 mobile panel simplification
+
+- Removed the Preview button, removed Mute, forced standalone audio controls to Internal Audio only, removed the vertical scroll view and compacted all sections into one screen. The preview HTML/PNG now shows a single complete panel with Pause + Restore Camera and the time readout beside the timeline.
+- Successful CI `37089891485` (commit `9b8874a`) passed and its verified dylib replaced `交付文件/AppleLive.dylib`; SHA256 `3CA99F68D7705BFB7539DC3FF15398143DD90779897F42179AAC4365ADD08604`. Delivery ZIP was refreshed and all bundled hashes match.
+- Follow-up source commit `3b1f6fa` only improves playback row placement. CI `37090276595` was blocked before starting by GitHub account billing/spending limit, including one retry; the successful artifact remains the delivered phone file until CI billing is available.
+
 ## 2026-10-02 mandatory local video looping
 
 - `586e9b1` / CI `37003673977`: removed the loop switch and runtime flag; Album/Files videos now always rewind at EOF with reopen fallback. Migration discards saved loop-off preferences. Repeated-loop, pause/seek/cancel/PCM, RTMP/RTSP and both architecture checks passed. This revision has not been tested on a physical phone.

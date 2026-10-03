@@ -1,5 +1,11 @@
 # Findings
 
+## Single-screen mobile panel (2026-10-03)
+- User requested three UI changes: remove the Preview button, show the whole panel without vertical scrolling, and keep only Internal Audio without a Mute switch.
+- `9b8874a` removes the preview action and preview controller, removes the Mute control, forces standalone saved mute state to `NO`, removes the `UIScrollView`, and compresses the sections into one panel. The successful CI run `37089891485` passed the existing source, media, RTMP/RTSP, architecture and dependency checks.
+- `3b1f6fa` further places Restore Camera beside Pause and places the time readout beside the timeline. Its CI run `37090276595` and one retry were not started because GitHub reports failed account payments/spending limit. The delivery therefore uses the last successful `9b8874a` artifact, which already contains the three requested removals and single-screen layout; the source has the additional pending spacing refinement.
+- The only phone binary in `交付文件` is now the successful artifact SHA256 `3CA99F68D7705BFB7539DC3FF15398143DD90779897F42179AAC4365ADD08604`. Binary scan confirms no Preview, Mute or UIScrollView strings. Delivery and ZIP timestamps were set to local `2026-10-03 10:40:31` so Explorer shows the replacement time.
+
 ## Mandatory local video looping (2026-10-02)
 - User requested removing the loop switch entirely: videos imported through Album or Files must always repeat. Local images remain still; network streaming, USB, pause and seeking keep their existing behavior.
 - `586e9b1` removes the loop UI, mutable player flag and camera setter. The player now always rewinds local videos at EOF, reopening on seek failure. Migration drops obsolete loop preferences, including saved `NO` values.
