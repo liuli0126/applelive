@@ -113,7 +113,7 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     int poolWidth = 0, poolHeight = 0;
     // Keep source switching responsive on a LAN. Opening a dead address must
     // not hold the camera replacement on the previous source for ten seconds.
-    ALMediaInterrupt interrupt = {&_generation, generation, CACurrentMediaTime() + 4};
+    ALMediaInterrupt interrupt = {&_generation, generation, 0};
     int error = AVERROR(ENOMEM);
     double duration = 0, position = 0, originPTS = NAN, originClock = 0;
     double lastStatus = 0;
@@ -125,6 +125,7 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     input->interrupt_callback = (AVIOInterruptCB){ALInterruptMedia, &interrupt};
     scheme = url.scheme.lowercaseString;
     rtmp = [scheme isEqualToString:@"rtmp"] || [scheme isEqualToString:@"rtmps"];
+    BOOL rtsp = [scheme isEqualToString:@"rtsp"];
     if (!local) { input->flags |= AVFMT_FLAG_NOBUFFER; input->max_delay = 100000; }
     AVDictionary *options = NULL;
     if (!local) {
@@ -147,10 +148,16 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
         }
         av_dict_set(&options, "rtmp_live", "live", 0);
     }
+    // Both opening the socket and probing stream metadata can block when a
+    // RTSP path exists but has no publisher. Bound each phase separately so
+    // the panel leaves "正在读取" with a useful error instead of hanging.
+    if (!local) interrupt.deadline = CACurrentMediaTime() + (rtsp ? 8 : 5);
     error = avformat_open_input(&input, local ? url.path.UTF8String : url.absoluteString.UTF8String, NULL, &options);
     av_dict_free(&options);
     if (error < 0) goto cleanup;
+    if (!local) interrupt.deadline = CACurrentMediaTime() + (rtsp ? 8 : 5);
     error = avformat_find_stream_info(input, NULL);
+    interrupt.deadline = 0;
     if (error < 0) goto cleanup;
     int videoIndex = av_find_best_stream(input, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
     int audioIndex = av_find_best_stream(input, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
