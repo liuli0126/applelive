@@ -12,7 +12,7 @@ The standalone library is imported into each target application with the user's 
 
 USB requires the Apple USB device driver and device trust on Windows. The standalone app listener uses usbmux port 8766 and does not require OpenSSH. The legacy deb's SSH route remains available for older deployments.
 
-The phone panel uses a black/red theme with fine cut-corner details, native controls and a circular floating launcher. The launcher is transparent outside its disc, clips to a circle and only accepts touches inside that circle.
+The phone panel uses an ice white/blue theme with soft rounded borders, native controls and a circular floating launcher. The `替换画面` switch applies to every source: USB cable, RTMP/RTSP/HTTP stream, Album and Files. The launcher is transparent outside its disc, clips to a circle and only accepts touches inside that circle.
 
 ## Build And Relink
 

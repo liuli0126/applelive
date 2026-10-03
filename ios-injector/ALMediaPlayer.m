@@ -111,7 +111,9 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     struct SwsContext *scaler = NULL;
     CVPixelBufferPoolRef pool = NULL;
     int poolWidth = 0, poolHeight = 0;
-    ALMediaInterrupt interrupt = {&_generation, generation, CACurrentMediaTime() + 10};
+    // Keep source switching responsive on a LAN. Opening a dead address must
+    // not hold the camera replacement on the previous source for ten seconds.
+    ALMediaInterrupt interrupt = {&_generation, generation, CACurrentMediaTime() + 4};
     int error = AVERROR(ENOMEM);
     double duration = 0, position = 0, originPTS = NAN, originClock = 0;
     double lastStatus = 0;
@@ -119,13 +121,21 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     BOOL local = url.isFileURL;
     if (!input || !packet || !frame) goto cleanup;
     input->interrupt_callback = (AVIOInterruptCB){ALInterruptMedia, &interrupt};
-    if (!local) { input->flags |= AVFMT_FLAG_NOBUFFER; input->max_delay = 100000; }
+    if (!local) { input->flags |= AVFMT_FLAG_NOBUFFER; input->max_delay = 0; }
     AVDictionary *options = NULL;
     if (!local) {
-        av_dict_set(&options, "rw_timeout", "5000000", 0);
+        // OBS/MediaMTX normally emits a keyframe within a few hundred ms.
+        // Short probes and disabled demux buffering let the first decoded
+        // frame reach the replacement path as soon as that keyframe arrives.
+        av_dict_set(&options, "rw_timeout", "3000000", 0);
         av_dict_set(&options, "rtsp_transport", "tcp", 0);
-        av_dict_set(&options, "probesize", "262144", 0);
-        av_dict_set(&options, "analyzeduration", "1000000", 0);
+        av_dict_set(&options, "rtsp_flags", "prefer_tcp", 0);
+        av_dict_set(&options, "probesize", "131072", 0);
+        av_dict_set(&options, "analyzeduration", "500000", 0);
+        av_dict_set(&options, "fpsprobesize", "2", 0);
+        av_dict_set(&options, "fflags", "nobuffer", 0);
+        av_dict_set(&options, "flags", "low_delay", 0);
+        av_dict_set(&options, "max_delay", "0", 0);
         av_dict_set(&options, "rtmp_live", "live", 0);
     }
     error = avformat_open_input(&input, local ? url.path.UTF8String : url.absoluteString.UTF8String, NULL, &options);
