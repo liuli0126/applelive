@@ -119,10 +119,12 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     double lastStatus = 0;
     double discardBefore = -1;
     BOOL local = url.isFileURL;
+    NSString *scheme = nil;
+    BOOL rtmp = NO;
     if (!input || !packet || !frame) goto cleanup;
     input->interrupt_callback = (AVIOInterruptCB){ALInterruptMedia, &interrupt};
-    NSString *scheme = url.scheme.lowercaseString;
-    BOOL rtmp = [scheme isEqualToString:@"rtmp"] || [scheme isEqualToString:@"rtmps"];
+    scheme = url.scheme.lowercaseString;
+    rtmp = [scheme isEqualToString:@"rtmp"] || [scheme isEqualToString:@"rtmps"];
     if (!local) { input->flags |= AVFMT_FLAG_NOBUFFER; input->max_delay = 100000; }
     AVDictionary *options = NULL;
     if (!local) {
