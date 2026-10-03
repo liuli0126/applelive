@@ -120,6 +120,8 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     double lastStatus = 0, lastVideoOutput = 0;
     double discardBefore = -1;
     BOOL videoTimedOut = NO;
+    BOOL hardwareVideo = NO;
+    int transientReadErrors = 0, videoDecodeFailures = 0;
     BOOL local = url.isFileURL;
     NSString *scheme = nil;
     BOOL rtmp = NO;
@@ -169,6 +171,7 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     if (videoIndex < 0) { error = videoIndex; goto cleanup; }
     video = ALOpenMediaCodec(input->streams[videoIndex], YES);
     if (!video) { error = AVERROR_DECODER_NOT_FOUND; goto cleanup; }
+    hardwareVideo = video->hw_device_ctx != NULL;
     if (audioIndex >= 0) audio = ALOpenMediaCodec(input->streams[audioIndex], NO);
     duration = input->duration > 0 ? (double)input->duration / AV_TIME_BASE : 0;
     size_t matrixSize = 0;
@@ -200,25 +203,42 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
                     if (self.onReset) self.onReset();
                 }
             }
-            interrupt.deadline = local ? 0 : CACurrentMediaTime() + 5;
+            double now = CACurrentMediaTime();
+            if (!local && hardwareVideo &&
+                ((firstVideoDeadline > 0 && now > firstVideoDeadline - 5) ||
+                 (lastVideoOutput > 0 && now - lastVideoOutput > 2))) {
+                AVCodecContext *software = ALOpenMediaCodec(input->streams[videoIndex], NO);
+                if (software) {
+                    avcodec_free_context(&video); video = software; hardwareVideo = NO;
+                    videoDecodeFailures = 0; firstVideoDeadline = now + 8;
+                    lastVideoOutput = 0; originPTS = NAN;
+                }
+            }
+            interrupt.deadline = local ? 0 : now + 5;
             error = av_read_frame(input, packet);
             interrupt.deadline = 0;
-            if (error >= 0 && firstVideoDeadline > 0 && CACurrentMediaTime() > firstVideoDeadline) {
+            if (firstVideoDeadline > 0 && CACurrentMediaTime() > firstVideoDeadline) {
                 videoTimedOut = YES; error = AVERROR(ETIMEDOUT);
                 av_packet_unref(packet);
                 break;
             }
             if (error < 0) {
+                if (!local && (error == AVERROR(EAGAIN) || error == AVERROR_INVALIDDATA) &&
+                    ++transientReadErrors < 50) {
+                    av_packet_unref(packet); usleep(10000); continue;
+                }
                 // Drain delayed video frames before ending or looping a local file.
                 if (error == AVERROR_EOF && local) avcodec_send_packet(video, NULL);
                 else break;
-            }
+            } else transientReadErrors = 0;
             BOOL isVideo = error < 0 || packet->stream_index == videoIndex;
             AVCodecContext *codec = isVideo ? video : packet->stream_index == audioIndex ? audio : NULL;
             AVStream *stream = input->streams[isVideo ? videoIndex : MAX(audioIndex, 0)];
             if (codec) {
                 int sent = error < 0 ? 0 : avcodec_send_packet(codec, packet);
-                if (sent >= 0) while (avcodec_receive_frame(codec, frame) == 0) {
+                int received = AVERROR(EAGAIN);
+                BOOL producedVideo = NO, unusableVideoFrame = NO;
+                if (sent >= 0 || sent == AVERROR(EAGAIN)) while ((received = avcodec_receive_frame(codec, frame)) == 0) {
                     double pts = frame->best_effort_timestamp == AV_NOPTS_VALUE ? position :
                         frame->best_effort_timestamp * av_q2d(stream->time_base);
                     if (input->start_time != AV_NOPTS_VALUE) pts -= (double)input->start_time / AV_TIME_BASE;
@@ -269,8 +289,9 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
                                 if (atomic_load(&_generation) == generation && self.onFrame) self.onFrame(pixel, rotation);
                             }
                             if (!local) { firstVideoDeadline = 0; lastVideoOutput = CACurrentMediaTime(); }
+                            producedVideo = YES;
                             CVPixelBufferRelease(pixel);
-                        }
+                        } else unusableVideoFrame = YES;
                         position = MAX(0, pts);
                     } else {
                         if (!resampler) {
@@ -295,6 +316,22 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
                         (local || firstVideoDeadline == 0) && CACurrentMediaTime() - lastStatus > 0.2) {
                         lastStatus = CACurrentMediaTime();
                         self.status = @{@"state": @"playing", @"position": @(position), @"duration": @(duration), @"audio": @(audio != NULL)};
+                    }
+                }
+                BOOL decoderError = (sent < 0 && sent != AVERROR(EAGAIN) && sent != AVERROR_INVALIDDATA) ||
+                    (received < 0 && received != AVERROR(EAGAIN) && received != AVERROR_EOF &&
+                     received != AVERROR_INVALIDDATA);
+                if (isVideo) {
+                    if (producedVideo) videoDecodeFailures = 0;
+                    else if (decoderError || unusableVideoFrame || sent == AVERROR_INVALIDDATA || received == AVERROR_INVALIDDATA)
+                        videoDecodeFailures++;
+                    if (hardwareVideo && videoDecodeFailures >= 3) {
+                        AVCodecContext *software = ALOpenMediaCodec(input->streams[videoIndex], NO);
+                        if (software) {
+                            avcodec_free_context(&video); video = software; hardwareVideo = NO;
+                            videoDecodeFailures = 0; firstVideoDeadline = CACurrentMediaTime() + 8;
+                            lastVideoOutput = 0; originPTS = NAN;
+                        }
                     }
                 }
             }
