@@ -53,10 +53,19 @@ static BOOL testSource(NSString *url) {
     player.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) { atomic_fetch_add(&frames, 1); };
     player.onAudio = ^(const float *pcm, NSUInteger count) { atomic_fetch_add(&audio, (unsigned)count); };
     [player playURL:[NSURL URLWithString:url]];
-    for (int i = 0; i < 240 && (atomic_load(&frames) < 5 || atomic_load(&audio) < 2000); i++) usleep(50000);
-    BOOL passed = atomic_load(&frames) >= 5 && atomic_load(&audio) >= 2000;
+    BOOL sawError = NO;
+    unsigned middleFrames = 0, middleAudio = 0;
+    for (int i = 0; i < 120; i++) {
+        usleep(50000);
+        if ([player.status[@"state"] isEqualToString:@"error"]) sawError = YES;
+        if (i == 59) { middleFrames = atomic_load(&frames); middleAudio = atomic_load(&audio); }
+    }
+    unsigned finalFrames = atomic_load(&frames), finalAudio = atomic_load(&audio);
+    BOOL passed = !sawError && middleFrames >= 20 && finalFrames - middleFrames >= 20 &&
+        middleAudio >= 20000 && finalAudio - middleAudio >= 20000 &&
+        [player.status[@"state"] isEqualToString:@"playing"];
     fprintf(passed ? stdout : stderr, "%s frames=%u audio=%u state=%s\n", url.UTF8String,
-            atomic_load(&frames), atomic_load(&audio), player.status.description.UTF8String);
+            finalFrames, finalAudio, player.status.description.UTF8String);
     [player stop];
     return passed;
 }

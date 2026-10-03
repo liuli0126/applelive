@@ -245,19 +245,12 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
                     if (discardBefore >= 0 && pts < discardBefore - 0.02) { av_frame_unref(frame); continue; }
                     if (!isVideo && local && self.paused) { av_frame_unref(frame); continue; }
                     if (isVideo) discardBefore = -1;
-                    if (!isfinite(originPTS)) { originPTS = pts; originClock = CACurrentMediaTime(); }
-                    double target = originClock + pts - originPTS;
-                    double now = CACurrentMediaTime();
-                    if (!local && isVideo &&
-                        (firstVideoDeadline > 0 || (lastVideoOutput > 0 && now - lastVideoOutput > 1))) {
-                        originPTS = pts; originClock = now; target = now;
+                    if (local) {
+                        if (!isfinite(originPTS)) { originPTS = pts; originClock = CACurrentMediaTime(); }
+                        double target = originClock + pts - originPTS;
+                        while (target > CACurrentMediaTime() && atomic_load(&_generation) == generation &&
+                               !(self.paused || self.requestedSeek >= 0)) usleep(3000);
                     }
-                    if (!local && fabs(now - target) > 2) {
-                        originClock = now; originPTS = pts; target = now;
-                    }
-                    if (!local && now - target > (isVideo ? 0.12 : 0.2)) { av_frame_unref(frame); continue; }
-                    while (target > CACurrentMediaTime() && atomic_load(&_generation) == generation &&
-                           !(local && (self.paused || self.requestedSeek >= 0))) usleep(3000);
                     if (atomic_load(&_generation) != generation) { av_frame_unref(frame); break; }
                     if (isVideo) {
                         CVPixelBufferRef pixel = NULL;
