@@ -150,7 +150,7 @@ static NSString *ALDefaultStreamURL(void) {
     self.window = scene ? [[ALPassThroughWindow alloc] initWithWindowScene:scene] : [[ALPassThroughWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     self.window.windowLevel = UIWindowLevelAlert + 1;
     self.window.backgroundColor = UIColor.clearColor;
-    self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
     ALPanelViewController *root = [ALPanelViewController new]; root.view.backgroundColor = UIColor.clearColor;
     self.window.rootViewController = root;
     __weak typeof(self) weakSelf = self;
@@ -217,7 +217,7 @@ static NSString *ALDefaultStreamURL(void) {
     [self.fitControl.heightAnchor constraintEqualToConstant:40].active = YES;
     self.fitControl.accessibilityLabel = @"画面比例";
     self.fitControl.backgroundColor = ALCyberBackground();
-    self.fitControl.selectedSegmentTintColor = [UIColor colorWithRed:0.33 green:0.10 blue:0.16 alpha:1];
+    self.fitControl.selectedSegmentTintColor = [UIColor colorWithRed:0.84 green:0.93 blue:0.98 alpha:1];
     [self.fitControl setTitleTextAttributes:@{NSForegroundColorAttributeName:ALCyberMuted()} forState:UIControlStateNormal];
     [self.fitControl setTitleTextAttributes:@{NSForegroundColorAttributeName:ALCyberText()} forState:UIControlStateSelected];
     [self.fitControl addTarget:self action:@selector(controlsChanged:) forControlEvents:UIControlEventValueChanged];
@@ -229,7 +229,7 @@ static NSString *ALDefaultStreamURL(void) {
     visualToggleRow.spacing = 8;
     UIStackView *formatRow = [self row:@[self.rotateButton, self.fitControl]];
     formatRow.distribution = UIStackViewDistributionFillEqually;
-    UIView *imageSection = [self section:@"02 / 画面控制" views:@[visualToggleRow, formatRow]];
+    UIView *imageSection = [self section:@"02 / 画面控制 · 全部来源" views:@[visualToggleRow, formatRow]];
     UIView *audioSection = [self section:@"03 / 声音" views:@[
         [self row:@[[self label:@"内录" size:14], self.audioSwitch]], self.audioLabel]];
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[
@@ -272,7 +272,7 @@ static NSString *ALDefaultStreamURL(void) {
 - (void)togglePanel { self.expanded = !self.expanded; [self refresh]; }
 - (void)present:(UIViewController *)controller {
     if (self.window.rootViewController.presentedViewController) return;
-    controller.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    controller.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
     controller.view.tintColor = self.accent;
     NSArray *windows = self.window.windowScene.windows;
     if (!windows) {
