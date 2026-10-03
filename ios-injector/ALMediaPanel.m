@@ -202,13 +202,16 @@ static NSString *ALDefaultStreamURL(void) {
     self.mirrorSwitch = [self toggle:@"镜像"];
     self.audioSwitch = [self toggle:@"内录"];
     self.playButton = [self button:@"暂停" symbol:@"pause.fill" action:@selector(togglePlayback)];
-    self.playRow = [self row:@[self.playButton]];
+    UIButton *restore = [self button:@"恢复手机相机" symbol:@"camera" action:@selector(restoreCamera)];
+    self.playRow = [self row:@[self.playButton, restore]]; self.playRow.distribution = UIStackViewDistributionFillEqually;
     self.timeline = [UISlider new]; self.timeline.accessibilityLabel = @"播放进度"; self.timeline.tintColor = self.accent;
     NSLayoutConstraint *timelineHeight = [self.timeline.heightAnchor constraintEqualToConstant:32];
     timelineHeight.priority = 999; timelineHeight.active = YES;
     [self.timeline addTarget:self action:@selector(seek:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside];
     self.timeLabel = [self label:@"00:00 / 00:00" size:11]; self.timeLabel.textAlignment = NSTextAlignmentRight;
     self.timeLabel.font = [UIFont monospacedDigitSystemFontOfSize:11 weight:UIFontWeightMedium]; self.timeLabel.textColor = ALCyberMuted();
+    [self.timeLabel.widthAnchor constraintEqualToConstant:82].active = YES;
+    UIStackView *timelineRow = [self row:@[self.timeline, self.timeLabel]];
     self.rotateButton = [self button:@"旋转：0°" symbol:@"rotate.right" action:@selector(rotate)];
     self.fitControl = [[UISegmentedControl alloc] initWithItems:@[@"完整", @"铺满"]];
     [self.fitControl.heightAnchor constraintEqualToConstant:40].active = YES;
@@ -219,7 +222,6 @@ static NSString *ALDefaultStreamURL(void) {
     [self.fitControl setTitleTextAttributes:@{NSForegroundColorAttributeName:ALCyberText()} forState:UIControlStateSelected];
     [self.fitControl addTarget:self action:@selector(controlsChanged:) forControlEvents:UIControlEventValueChanged];
     self.audioLabel = [self label:@"" size:10]; self.audioLabel.textColor = ALCyberMuted();
-    UIButton *restore = [self button:@"恢复手机相机" symbol:@"camera" action:@selector(restoreCamera)];
     UIStackView *visualToggleRow = [self row:@[
         [self row:@[[self label:@"替换画面" size:13], self.enabledSwitch]],
         [self row:@[[self label:@"镜像" size:13], self.mirrorSwitch]]]];
@@ -230,13 +232,10 @@ static NSString *ALDefaultStreamURL(void) {
     UIView *imageSection = [self section:@"02 / 画面控制" views:@[visualToggleRow, formatRow]];
     UIView *audioSection = [self section:@"03 / 声音" views:@[
         [self row:@[[self label:@"内录" size:14], self.audioSwitch]], self.audioLabel]];
-    UILabel *footer = [self label:@"APPLELIVE / BLACK RED EDITION" size:9];
-    footer.textColor = ALCyberMuted(); footer.textAlignment = NSTextAlignmentCenter;
-    footer.font = [UIFont monospacedSystemFontOfSize:9 weight:UIFontWeightMedium];
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[
         [self row:@[brand, wordmark, close]], signal,
         [self section:@"01 / 信号源" views:@[files, inputs]], imageSection, audioSection,
-        [self section:@"04 / 播放" views:@[self.playRow, self.timeline, self.timeLabel]], restore, footer,
+        [self section:@"04 / 播放" views:@[self.playRow, timelineRow]],
     ]]; content.axis = UILayoutConstraintAxisVertical; content.spacing = 4; content.translatesAutoresizingMaskIntoConstraints = NO;
     [self.panel addSubview:content];
     [NSLayoutConstraint activateConstraints:@[
