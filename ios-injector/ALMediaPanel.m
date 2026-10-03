@@ -3,7 +3,6 @@
 #import "ALConnection.h"
 #import "ALVirtualCamera.h"
 #import "ALAudioRing.h"
-#import "ALPreview.h"
 #import "ALCyberTheme.h"
 #import "ALSourceSettings.h"
 #import <PhotosUI/PhotosUI.h>
@@ -59,14 +58,12 @@ static NSString *ALDefaultStreamURL(void) {
 @property(nonatomic) UISwitch *enabledSwitch;
 @property(nonatomic) UISwitch *mirrorSwitch;
 @property(nonatomic) UISwitch *audioSwitch;
-@property(nonatomic) UISwitch *muteSwitch;
 @property(nonatomic) UISegmentedControl *fitControl;
 @property(nonatomic) UISlider *timeline;
 @property(nonatomic) UIStackView *playRow;
 @property(nonatomic) NSMutableDictionary *controls;
 @property(nonatomic) NSMutableDictionary *source;
 @property(nonatomic, weak) UIWindow *previousKeyWindow;
-@property(nonatomic, weak) UILabel *previewStatus;
 @property(nonatomic) BOOL expanded;
 @property(nonatomic) BOOL importing;
 @property(nonatomic) CGPoint bubbleFraction;
@@ -113,7 +110,7 @@ static NSString *ALDefaultStreamURL(void) {
     button.titleLabel.adjustsFontSizeToFitWidth = YES;
     button.titleLabel.minimumScaleFactor = 0.8;
     button.accessibilityLabel = title;
-    [button.heightAnchor constraintGreaterThanOrEqualToConstant:48].active = YES;
+    [button.heightAnchor constraintGreaterThanOrEqualToConstant:42].active = YES;
     [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
     return button;
 }
@@ -126,8 +123,8 @@ static NSString *ALDefaultStreamURL(void) {
 }
 - (UIStackView *)row:(NSArray *)views {
     UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:views];
-    row.axis = UILayoutConstraintAxisHorizontal; row.alignment = UIStackViewAlignmentCenter; row.spacing = 8;
-    NSLayoutConstraint *minimumHeight = [row.heightAnchor constraintGreaterThanOrEqualToConstant:44];
+    row.axis = UILayoutConstraintAxisHorizontal; row.alignment = UIStackViewAlignmentCenter; row.spacing = 6;
+    NSLayoutConstraint *minimumHeight = [row.heightAnchor constraintGreaterThanOrEqualToConstant:38];
     minimumHeight.priority = 999; minimumHeight.active = YES;
     return row;
 }
@@ -136,13 +133,13 @@ static NSString *ALDefaultStreamURL(void) {
     UILabel *caption = [self label:title size:10]; caption.textColor = self.accent;
     caption.font = [UIFont monospacedSystemFontOfSize:10 weight:UIFontWeightSemibold];
     UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:[@[caption] arrayByAddingObjectsFromArray:views]];
-    stack.axis = UILayoutConstraintAxisVertical; stack.spacing = 8; stack.translatesAutoresizingMaskIntoConstraints = NO;
+    stack.axis = UILayoutConstraintAxisVertical; stack.spacing = 4; stack.translatesAutoresizingMaskIntoConstraints = NO;
     [surface addSubview:stack];
     [NSLayoutConstraint activateConstraints:@[
-        [stack.topAnchor constraintEqualToAnchor:surface.topAnchor constant:14],
-        [stack.bottomAnchor constraintEqualToAnchor:surface.bottomAnchor constant:-14],
-        [stack.leadingAnchor constraintEqualToAnchor:surface.leadingAnchor constant:14],
-        [stack.trailingAnchor constraintEqualToAnchor:surface.trailingAnchor constant:-14],
+        [stack.topAnchor constraintEqualToAnchor:surface.topAnchor constant:8],
+        [stack.bottomAnchor constraintEqualToAnchor:surface.bottomAnchor constant:-8],
+        [stack.leadingAnchor constraintEqualToAnchor:surface.leadingAnchor constant:8],
+        [stack.trailingAnchor constraintEqualToAnchor:surface.trailingAnchor constant:-8],
     ]];
     return surface;
 }
@@ -170,14 +167,6 @@ static NSString *ALDefaultStreamURL(void) {
     self.panel = [ALInjectedCyberSurface new]; self.panel.backgroundColor = ALCyberBackground();
     self.panel.layer.cornerRadius = 16; self.panel.clipsToBounds = YES;
     [root.view addSubview:self.panel];
-    UIScrollView *scroll = [UIScrollView new]; scroll.translatesAutoresizingMaskIntoConstraints = NO;
-    scroll.indicatorStyle = UIScrollViewIndicatorStyleWhite;
-    scroll.alwaysBounceVertical = YES;
-    [self.panel addSubview:scroll];
-    [NSLayoutConstraint activateConstraints:@[
-        [scroll.topAnchor constraintEqualToAnchor:self.panel.topAnchor], [scroll.bottomAnchor constraintEqualToAnchor:self.panel.bottomAnchor],
-        [scroll.leadingAnchor constraintEqualToAnchor:self.panel.leadingAnchor], [scroll.trailingAnchor constraintEqualToAnchor:self.panel.trailingAnchor],
-    ]];
     UIImageView *brand = [[UIImageView alloc] initWithImage:ALCyberMarkImage(CGSizeMake(40, 40))];
     [brand.widthAnchor constraintEqualToConstant:40].active = YES;
     [brand.heightAnchor constraintEqualToConstant:40].active = YES;
@@ -196,8 +185,11 @@ static NSString *ALDefaultStreamURL(void) {
     [self.signalDot.heightAnchor constraintEqualToConstant:6].active = YES;
     self.signalLabel = [self label:@"STANDBY" size:10]; self.signalLabel.textColor = self.accent;
     self.signalLabel.font = [UIFont monospacedSystemFontOfSize:10 weight:UIFontWeightSemibold];
+    self.sourceLabel.numberOfLines = 1;
+    self.sourceLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
+    [self.sourceLabel setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
     ALInjectedCyberSurface *signal = (id)[self section:@"LIVE FEED / 信号状态" views:@[
-        [self row:@[self.signalDot, self.signalLabel]], self.statusLabel, self.sourceLabel]];
+        [self row:@[self.signalDot, self.signalLabel, self.statusLabel, self.sourceLabel]]]];
     signal.illuminated = YES;
     self.albumButton = [self button:@"相册" symbol:@"photo.on.rectangle" action:@selector(pickAlbum)];
     self.fileButton = [self button:@"文件" symbol:@"folder" action:@selector(pickFile)];
@@ -209,33 +201,35 @@ static NSString *ALDefaultStreamURL(void) {
     self.enabledSwitch = [self toggle:@"替换画面"];
     self.mirrorSwitch = [self toggle:@"镜像"];
     self.audioSwitch = [self toggle:@"内录"];
-    self.muteSwitch = [self toggle:@"静音"];
     self.playButton = [self button:@"暂停" symbol:@"pause.fill" action:@selector(togglePlayback)];
-    UIButton *preview = [self button:@"预览" symbol:@"eye" action:@selector(showPreview)];
-    self.playRow = [self row:@[self.playButton, preview]]; self.playRow.distribution = UIStackViewDistributionFillEqually;
+    self.playRow = [self row:@[self.playButton]];
     self.timeline = [UISlider new]; self.timeline.accessibilityLabel = @"播放进度"; self.timeline.tintColor = self.accent;
-    NSLayoutConstraint *timelineHeight = [self.timeline.heightAnchor constraintEqualToConstant:44];
+    NSLayoutConstraint *timelineHeight = [self.timeline.heightAnchor constraintEqualToConstant:32];
     timelineHeight.priority = 999; timelineHeight.active = YES;
     [self.timeline addTarget:self action:@selector(seek:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside];
     self.timeLabel = [self label:@"00:00 / 00:00" size:11]; self.timeLabel.textAlignment = NSTextAlignmentRight;
     self.timeLabel.font = [UIFont monospacedDigitSystemFontOfSize:11 weight:UIFontWeightMedium]; self.timeLabel.textColor = ALCyberMuted();
     self.rotateButton = [self button:@"旋转：0°" symbol:@"rotate.right" action:@selector(rotate)];
     self.fitControl = [[UISegmentedControl alloc] initWithItems:@[@"完整", @"铺满"]];
-    [self.fitControl.heightAnchor constraintEqualToConstant:44].active = YES;
+    [self.fitControl.heightAnchor constraintEqualToConstant:40].active = YES;
     self.fitControl.accessibilityLabel = @"画面比例";
     self.fitControl.backgroundColor = ALCyberBackground();
     self.fitControl.selectedSegmentTintColor = [UIColor colorWithRed:0.33 green:0.10 blue:0.16 alpha:1];
     [self.fitControl setTitleTextAttributes:@{NSForegroundColorAttributeName:ALCyberMuted()} forState:UIControlStateNormal];
     [self.fitControl setTitleTextAttributes:@{NSForegroundColorAttributeName:ALCyberText()} forState:UIControlStateSelected];
     [self.fitControl addTarget:self action:@selector(controlsChanged:) forControlEvents:UIControlEventValueChanged];
-    self.audioLabel = [self label:@"" size:11]; self.audioLabel.textColor = ALCyberMuted();
+    self.audioLabel = [self label:@"" size:10]; self.audioLabel.textColor = ALCyberMuted();
     UIButton *restore = [self button:@"恢复手机相机" symbol:@"camera" action:@selector(restoreCamera)];
-    UIView *imageSection = [self section:@"02 / 画面控制" views:@[
-        [self row:@[[self label:@"替换画面" size:14], self.enabledSwitch]],
-        [self row:@[[self label:@"镜像" size:14], self.mirrorSwitch]], self.rotateButton, self.fitControl]];
+    UIStackView *visualToggleRow = [self row:@[
+        [self row:@[[self label:@"替换画面" size:13], self.enabledSwitch]],
+        [self row:@[[self label:@"镜像" size:13], self.mirrorSwitch]]]];
+    visualToggleRow.distribution = UIStackViewDistributionFillEqually;
+    visualToggleRow.spacing = 8;
+    UIStackView *formatRow = [self row:@[self.rotateButton, self.fitControl]];
+    formatRow.distribution = UIStackViewDistributionFillEqually;
+    UIView *imageSection = [self section:@"02 / 画面控制" views:@[visualToggleRow, formatRow]];
     UIView *audioSection = [self section:@"03 / 声音" views:@[
-        [self row:@[[self label:@"内录" size:14], self.audioSwitch]],
-        [self row:@[[self label:@"静音" size:14], self.muteSwitch]], self.audioLabel]];
+        [self row:@[[self label:@"内录" size:14], self.audioSwitch]], self.audioLabel]];
     UILabel *footer = [self label:@"APPLELIVE / BLACK RED EDITION" size:9];
     footer.textColor = ALCyberMuted(); footer.textAlignment = NSTextAlignmentCenter;
     footer.font = [UIFont monospacedSystemFontOfSize:9 weight:UIFontWeightMedium];
@@ -243,14 +237,13 @@ static NSString *ALDefaultStreamURL(void) {
         [self row:@[brand, wordmark, close]], signal,
         [self section:@"01 / 信号源" views:@[files, inputs]], imageSection, audioSection,
         [self section:@"04 / 播放" views:@[self.playRow, self.timeline, self.timeLabel]], restore, footer,
-    ]]; content.axis = UILayoutConstraintAxisVertical; content.spacing = 12; content.translatesAutoresizingMaskIntoConstraints = NO;
-    [scroll addSubview:content];
+    ]]; content.axis = UILayoutConstraintAxisVertical; content.spacing = 4; content.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.panel addSubview:content];
     [NSLayoutConstraint activateConstraints:@[
-        [content.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:16],
-        [content.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-16],
-        [content.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:16],
-        [content.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-16],
-        [content.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-32],
+        [content.topAnchor constraintEqualToAnchor:self.panel.topAnchor constant:8],
+        [content.bottomAnchor constraintEqualToAnchor:self.panel.bottomAnchor constant:-8],
+        [content.leadingAnchor constraintEqualToAnchor:self.panel.leadingAnchor constant:8],
+        [content.trailingAnchor constraintEqualToAnchor:self.panel.trailingAnchor constant:-8],
     ]];
     [self syncControls]; self.window.hidden = NO; [self layoutControls];
 }
@@ -311,16 +304,16 @@ static NSString *ALDefaultStreamURL(void) {
 }
 - (void)syncControls {
     self.enabledSwitch.on = [self.controls[@"enabled"] boolValue]; self.mirrorSwitch.on = [self.controls[@"mirror"] boolValue];
-    self.audioSwitch.on = [self.controls[@"audio"] boolValue]; self.muteSwitch.on = [self.controls[@"muted"] boolValue];
+    self.audioSwitch.on = [self.controls[@"audio"] boolValue];
     self.fitControl.selectedSegmentIndex = [self.controls[@"fill"] boolValue] ? 1 : 0;
     NSString *rotation = [NSString stringWithFormat:@"旋转：%ld°", (long)[self.controls[@"rotation"] integerValue] * 90];
     [self.rotateButton setTitle:rotation forState:UIControlStateNormal];
 }
-- (void)saveControls { ALSaveAndPublishControls(self.controls); [self syncControls]; }
+- (void)saveControls { self.controls[@"muted"] = @NO; ALSaveAndPublishControls(self.controls); [self syncControls]; }
 - (void)controlsChanged:(id)sender {
     BOOL previous = [self.controls[@"enabled"] boolValue];
     self.controls[@"enabled"] = @(self.enabledSwitch.on); self.controls[@"mirror"] = @(self.mirrorSwitch.on);
-    self.controls[@"audio"] = @(self.audioSwitch.on); self.controls[@"muted"] = @(self.muteSwitch.on);
+    self.controls[@"audio"] = @(self.audioSwitch.on); self.controls[@"muted"] = @NO;
     self.controls[@"fill"] = @(self.fitControl.selectedSegmentIndex == 1);
     [self saveControls];
     if (previous != self.enabledSwitch.on) [self applySource];
@@ -422,22 +415,6 @@ static NSString *ALDefaultStreamURL(void) {
         if (oldFile.length && ![oldFile isEqualToString:filename]) [NSFileManager.defaultManager removeItemAtURL:[ALMediaDirectory() URLByAppendingPathComponent:oldFile] error:nil];
     });
 }
-- (void)showPreview {
-    UIViewController *controller = [UIViewController new]; controller.view.backgroundColor = ALCyberBackground();
-    controller.modalPresentationStyle = UIModalPresentationFullScreen;
-    ALPreviewView *preview = [ALPreviewView new]; preview.translatesAutoresizingMaskIntoConstraints = NO; [controller.view addSubview:preview];
-    UIButton *close = [self button:@"关闭" symbol:@"xmark" action:@selector(closePreview)]; close.translatesAutoresizingMaskIntoConstraints = NO; [controller.view addSubview:close];
-    UILabel *status = [self label:self.statusLabel.text size:14]; status.translatesAutoresizingMaskIntoConstraints = NO; self.previewStatus = status; [controller.view addSubview:status];
-    UILayoutGuide *safe = controller.view.safeAreaLayoutGuide;
-    [NSLayoutConstraint activateConstraints:@[
-        [close.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16], [close.topAnchor constraintEqualToAnchor:safe.topAnchor constant:8],
-        [close.widthAnchor constraintEqualToConstant:72], [status.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
-        [status.trailingAnchor constraintLessThanOrEqualToAnchor:close.leadingAnchor constant:-8], [status.centerYAnchor constraintEqualToAnchor:close.centerYAnchor],
-        [preview.topAnchor constraintEqualToAnchor:close.bottomAnchor constant:8], [preview.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor constant:-8],
-        [preview.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor], [preview.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
-    ]]; [self present:controller];
-}
-- (void)closePreview { [self.window.rootViewController dismissViewControllerAnimated:YES completion:^{ [self restoreKey]; }]; }
 - (void)background { self.window.hidden = YES; [self restoreKey]; [self.camera selectSource:@"none" URL:nil]; }
 - (void)refresh {
     if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) { self.window.hidden = YES; return; }
@@ -451,7 +428,7 @@ static NSString *ALDefaultStreamURL(void) {
     BOOL emptyStream = !local && !usb && !ALValidStreamURL(self.source[@"url"]);
     self.sourceLabel.text = usb ? @"USB 数据线" : local ? self.source[@"name"] ?: @"本地素材"
         : emptyStream ? @"点击「检测」填写 RTMP / RTSP 地址" : self.source[@"url"];
-    self.sourceLabel.numberOfLines = 2; self.sourceLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
+    self.sourceLabel.numberOfLines = 1; self.sourceLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
     if (self.importing) self.statusLabel.text = @"正在导入…";
     else if (![self.controls[@"enabled"] boolValue]) self.statusLabel.text = @"使用手机摄像头";
     else if (usb) self.statusLabel.text = video ? @"USB 信号已接入" : @"等待 USB 信号";
@@ -478,7 +455,7 @@ static NSString *ALDefaultStreamURL(void) {
     int position = [media[@"position"] intValue], duration = [media[@"duration"] intValue];
     self.timeLabel.text = [NSString stringWithFormat:@"%02d:%02d / %02d:%02d", position / 60, position % 60, duration / 60, duration % 60];
     self.audioLabel.hidden = ![self.controls[@"audio"] boolValue];
-    self.audioLabel.text = [self.controls[@"muted"] boolValue] ? @"已静音 · 手机麦克风已关闭" : [status[@"audio"] boolValue] ? @"内录中 · 手机麦克风已关闭" : @"等待源音频 · 手机麦克风已关闭";
-    self.previewStatus.text = self.statusLabel.text; [self layoutControls];
+    self.audioLabel.text = [status[@"audio"] boolValue] ? @"内录中 · 手机麦克风已关闭" : @"等待源音频 · 手机麦克风已关闭";
+    [self layoutControls];
 }
 @end

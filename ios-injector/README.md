@@ -8,7 +8,7 @@ The standalone library is imported into each target application with the user's 
 - Detection is the only LAN entry. Paste a full stream URL, for example `rtmp://192.168.1.45:1935/live/applelive`. RTMP/RTMPS, RTSP over TCP and HTTP/HTTPS media/HLS inputs are supported. It accepts SRS and MediaMTX stream URLs.
 - USB Cable selects the dedicated USB app listener. The standalone plugin no longer connects to the old WebSocket LAN sender or shows a Computer address/connection button. On upgrade, an old Computer source moves to Detection, preserving an existing stream URL or suggesting RTMP from the saved computer IP.
 - Internal audio replaces microphone input with source sound. Silence is used when the source has no audio or the audio buffer underflows. Mute silences the injected audio. Turning off internal audio restores the app's microphone path.
-- Mirror, rotation, fit/fill, independent preview and Restore Camera apply to the selected source. Settings belong to the injected app.
+- Mirror, rotation, fit/fill and Restore Camera apply to the selected source. The compact panel shows all controls on one screen without vertical scrolling. Internal audio is the only audio option; it replaces the microphone when enabled.
 
 USB requires the Apple USB device driver and device trust on Windows. The standalone app listener uses usbmux port 8766 and does not require OpenSSH. The legacy deb's SSH route remains available for older deployments.
 
@@ -24,4 +24,4 @@ The CI artifact includes `AppleLive-relink.tar.gz`: application object files for
 
 ## Verification
 
-CI runs source migration, standalone LAN route removal, RTMP/RTSP video and audio, playback, pause, seeking, looping, cancellation, PCM layout and microphone-underflow silence tests, then verifies architectures, deployment versions and absence of external injection framework dependencies. Real-device video, audio, preview and USB results are recorded separately; a compiled binary does not demonstrate app compatibility.
+CI runs source migration, standalone LAN route removal, RTMP/RTSP video and audio, playback, pause, seeking, looping, cancellation, PCM layout and microphone-underflow silence tests, then verifies architectures, deployment versions and absence of external injection framework dependencies. Real-device video, audio and USB results are recorded separately; a compiled binary does not demonstrate app compatibility.

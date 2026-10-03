@@ -59,6 +59,9 @@ NSDictionary *ALLoadAppControls(void) {
         if ([saved[key] isKindOfClass:NSNumber.class]) controls[key] = saved[key];
     }
 #ifdef APPLELIVE_STANDALONE
+    // The standalone panel has one audio mode: internal recording. Keep old
+    // saved mute state from silencing the new UI after an upgrade.
+    controls[@"muted"] = @NO;
     return controls;
 #else
     return ALDecodeControls(ALEncodeControls(controls));
