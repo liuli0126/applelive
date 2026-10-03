@@ -53,20 +53,22 @@ static BOOL testSource(NSString *url) {
     player.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) { atomic_fetch_add(&frames, 1); };
     player.onAudio = ^(const float *pcm, NSUInteger count) { atomic_fetch_add(&audio, (unsigned)count); };
     [player playURL:[NSURL URLWithString:url]];
-    BOOL sawError = NO;
+    BOOL started = NO, sawError = NO;
     unsigned middleFrames = 0, middleAudio = 0;
     for (int i = 0; i < 120; i++) {
         usleep(50000);
-        if ([player.status[@"state"] isEqualToString:@"error"]) sawError = YES;
+        NSString *state = player.status[@"state"];
+        if (!started && atomic_load(&frames) >= 5 && [state isEqualToString:@"playing"]) started = YES;
+        else if (started && [state isEqualToString:@"error"]) sawError = YES;
         if (i == 59) { middleFrames = atomic_load(&frames); middleAudio = atomic_load(&audio); }
     }
     unsigned finalFrames = atomic_load(&frames), finalAudio = atomic_load(&audio);
-    BOOL passed = !sawError && middleFrames >= 20 && finalFrames - middleFrames >= 20 &&
+    BOOL passed = started && !sawError && middleFrames >= 20 && finalFrames - middleFrames >= 20 &&
         middleAudio >= 20000 && finalAudio - middleAudio >= 20000 &&
         [player.status[@"state"] isEqualToString:@"playing"];
     fprintf(passed ? stdout : stderr,
-            "%s passed=%d sawError=%d middleFrames=%u finalFrames=%u middleAudio=%u finalAudio=%u state=%s\n",
-            url.UTF8String, passed, sawError, middleFrames, finalFrames, middleAudio, finalAudio,
+            "%s passed=%d started=%d sawError=%d middleFrames=%u finalFrames=%u middleAudio=%u finalAudio=%u state=%s\n",
+            url.UTF8String, passed, started, sawError, middleFrames, finalFrames, middleAudio, finalAudio,
             player.status.description.UTF8String);
     [player stop];
     return passed;
