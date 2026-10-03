@@ -198,6 +198,12 @@ static NSString *ALDefaultStreamURL(void) {
     self.usbButton = [self button:@"USB 数据线" symbol:@"cable.connector" action:@selector(selectUSB)];
     UIStackView *files = [self row:@[self.albumButton, self.fileButton]]; files.distribution = UIStackViewDistributionFillEqually;
     UIStackView *inputs = [self row:@[self.streamButton, self.usbButton]]; inputs.distribution = UIStackViewDistributionFillEqually;
+    UIView *sourceSection = [self section:@"01 / 信号源" views:@[files, inputs]];
+    // The panel has a fixed height. Keep the source selector at its intrinsic
+    // size so the vertical stack cannot stretch it into an empty block.
+    [sourceSection.heightAnchor constraintEqualToConstant:120].active = YES;
+    [sourceSection setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisVertical];
+    [sourceSection setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisVertical];
     self.enabledSwitch = [self toggle:@"替换画面"];
     self.mirrorSwitch = [self toggle:@"镜像"];
     self.audioSwitch = [self toggle:@"内录"];
@@ -226,7 +232,7 @@ static NSString *ALDefaultStreamURL(void) {
         [self row:@[[self label:@"内录" size:14], self.audioSwitch]], self.audioLabel]];
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[
         header, signal,
-        [self section:@"01 / 信号源" views:@[files, inputs]], imageSection, audioSection,
+        sourceSection, imageSection, audioSection,
         [self section:@"04 / 播放" views:@[self.playRow]],
     ]]; content.axis = UILayoutConstraintAxisVertical; content.spacing = 3; content.translatesAutoresizingMaskIntoConstraints = NO;
     [self.panel addSubview:content];
