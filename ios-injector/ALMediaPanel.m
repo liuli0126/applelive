@@ -176,6 +176,8 @@ static NSString *ALDefaultStreamURL(void) {
     UIButton *close = [self button:@"" symbol:@"xmark" action:@selector(togglePanel)];
     close.accessibilityLabel = @"收起控制面板";
     [close.widthAnchor constraintEqualToConstant:48].active = YES;
+    UIStackView *header = [self row:@[brand, wordmark, close]];
+    [header.heightAnchor constraintEqualToConstant:40].active = YES;
     self.statusLabel = [self label:@"等待信号" size:18];
     self.sourceLabel = [self label:@"点击检测，填写拉流地址" size:12]; self.sourceLabel.textColor = ALCyberMuted();
     self.signalDot = [UIView new]; self.signalDot.backgroundColor = ALCyberMuted(); self.signalDot.layer.cornerRadius = 3;
@@ -223,7 +225,7 @@ static NSString *ALDefaultStreamURL(void) {
     UIView *audioSection = [self section:@"03 / 声音" views:@[
         [self row:@[[self label:@"内录" size:14], self.audioSwitch]], self.audioLabel]];
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[
-        [self row:@[brand, wordmark, close]], signal,
+        header, signal,
         [self section:@"01 / 信号源" views:@[files, inputs]], imageSection, audioSection,
         [self section:@"04 / 播放" views:@[self.playRow]],
     ]]; content.axis = UILayoutConstraintAxisVertical; content.spacing = 3; content.translatesAutoresizingMaskIntoConstraints = NO;
