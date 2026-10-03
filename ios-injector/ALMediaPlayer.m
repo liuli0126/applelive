@@ -9,6 +9,7 @@
 #include <libswscale/swscale.h>
 #include <unistd.h>
 #include <stdatomic.h>
+#include <errno.h>
 #include <math.h>
 
 typedef struct {
@@ -116,8 +117,9 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     ALMediaInterrupt interrupt = {&_generation, generation, 0};
     int error = AVERROR(ENOMEM);
     double duration = 0, position = 0, originPTS = NAN, originClock = 0;
-    double lastStatus = 0;
+    double lastStatus = 0, lastVideoOutput = 0;
     double discardBefore = -1;
+    BOOL videoTimedOut = NO;
     BOOL local = url.isFileURL;
     NSString *scheme = nil;
     BOOL rtmp = NO;
@@ -126,17 +128,20 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     scheme = url.scheme.lowercaseString;
     rtmp = [scheme isEqualToString:@"rtmp"] || [scheme isEqualToString:@"rtmps"];
     BOOL rtsp = [scheme isEqualToString:@"rtsp"];
-    if (!local) { input->flags |= AVFMT_FLAG_NOBUFFER; input->max_delay = 100000; }
+    if (!local && !rtsp) { input->flags |= AVFMT_FLAG_NOBUFFER; input->max_delay = 100000; }
     AVDictionary *options = NULL;
     if (!local) {
-        // OBS/MediaMTX normally emits a keyframe within a few hundred ms.
-        // Short probes and disabled demux buffering let the first decoded
-        // frame reach the replacement path as soon as that keyframe arrives.
+        // RTSP needs its probe packets retained so the decoder can see the
+        // first keyframe. RTMP keeps the shorter low-latency probe below.
         av_dict_set(&options, "rw_timeout", "3000000", 0);
-        av_dict_set(&options, "rtsp_transport", "tcp", 0);
-        av_dict_set(&options, "rtsp_flags", "prefer_tcp", 0);
-        av_dict_set(&options, "probesize", "262144", 0);
-        av_dict_set(&options, "analyzeduration", "750000", 0);
+        if (rtsp) {
+            av_dict_set(&options, "rtsp_transport", "tcp", 0);
+            av_dict_set(&options, "probesize", "1048576", 0);
+            av_dict_set(&options, "analyzeduration", "1500000", 0);
+        } else {
+            av_dict_set(&options, "probesize", "262144", 0);
+            av_dict_set(&options, "analyzeduration", "750000", 0);
+        }
         if (rtmp) {
             // RTMP from OBS benefits from a short probe and no demux queue;
             // RTSP keeps the more conservative probe settings for decoder
@@ -146,7 +151,7 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
             av_dict_set(&options, "flags", "low_delay", 0);
             av_dict_set(&options, "max_delay", "0", 0);
         }
-        av_dict_set(&options, "rtmp_live", "live", 0);
+        if (rtmp) av_dict_set(&options, "rtmp_live", "live", 0);
     }
     // Both opening the socket and probing stream metadata can block when a
     // RTSP path exists but has no publisher. Bound each phase separately so
@@ -175,6 +180,7 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     NSInteger rotation = isfinite(angle) ? (NSInteger)llround(-angle / 90.0) : 0;
     rotation = (rotation % 4 + 4) % 4;
     interrupt.deadline = 0;
+    double firstVideoDeadline = local ? 0 : CACurrentMediaTime() + 8;
     while (atomic_load(&_generation) == generation) {
         @autoreleasepool {
             if (local && self.paused && self.requestedSeek < 0 && discardBefore < 0) {
@@ -197,6 +203,11 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
             interrupt.deadline = local ? 0 : CACurrentMediaTime() + 5;
             error = av_read_frame(input, packet);
             interrupt.deadline = 0;
+            if (error >= 0 && firstVideoDeadline > 0 && CACurrentMediaTime() > firstVideoDeadline) {
+                videoTimedOut = YES; error = AVERROR(ETIMEDOUT);
+                av_packet_unref(packet);
+                break;
+            }
             if (error < 0) {
                 // Drain delayed video frames before ending or looping a local file.
                 if (error == AVERROR_EOF && local) avcodec_send_packet(video, NULL);
@@ -217,6 +228,10 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
                     if (!isfinite(originPTS)) { originPTS = pts; originClock = CACurrentMediaTime(); }
                     double target = originClock + pts - originPTS;
                     double now = CACurrentMediaTime();
+                    if (!local && isVideo &&
+                        (firstVideoDeadline > 0 || (lastVideoOutput > 0 && now - lastVideoOutput > 1))) {
+                        originPTS = pts; originClock = now; target = now;
+                    }
                     if (!local && fabs(now - target) > 2) {
                         originClock = now; originPTS = pts; target = now;
                     }
@@ -253,6 +268,7 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
                             @synchronized (self) {
                                 if (atomic_load(&_generation) == generation && self.onFrame) self.onFrame(pixel, rotation);
                             }
+                            if (!local) { firstVideoDeadline = 0; lastVideoOutput = CACurrentMediaTime(); }
                             CVPixelBufferRelease(pixel);
                         }
                         position = MAX(0, pts);
@@ -275,7 +291,8 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
                         }
                     }
                     av_frame_unref(frame);
-                    if (atomic_load(&_generation) == generation && CACurrentMediaTime() - lastStatus > 0.2) {
+                    if (atomic_load(&_generation) == generation &&
+                        (local || firstVideoDeadline == 0) && CACurrentMediaTime() - lastStatus > 0.2) {
                         lastStatus = CACurrentMediaTime();
                         self.status = @{@"state": @"playing", @"position": @(position), @"duration": @(duration), @"audio": @(audio != NULL)};
                     }
@@ -300,7 +317,8 @@ cleanup:
     if (atomic_load(&_generation) == generation) {
         char message[AV_ERROR_MAX_STRING_SIZE] = {0}; av_strerror(error, message, sizeof(message));
         BOOL ended = error == AVERROR_EOF && local;
-        self.status = @{@"state": ended ? @"ended" : @"error", @"error": ended ? @"" : [NSString stringWithUTF8String:message],
+        NSString *detail = videoTimedOut ? @"已连接，但未解码出视频画面" : [NSString stringWithUTF8String:message];
+        self.status = @{@"state": ended ? @"ended" : @"error", @"error": ended ? @"" : detail,
                         @"position": @(position), @"duration": @(duration)};
         if (!local && self.onReset) self.onReset();
     }
