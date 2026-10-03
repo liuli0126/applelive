@@ -624,7 +624,10 @@ static void ALInstallHooks(void) {
     [self.frameStore clear];
     [self clearAudioSamples];
     self.lastVideoTime = self.lastAudioTime = 0;
-    self.frameStore.holdsFrame = [kind isEqualToString:@"local"];
+    // Live demuxers can deliver decoded frames in short bursts. Keep the last
+    // network frame visible across that jitter; onReset clears it on a real
+    // disconnect or failed reconnect.
+    self.frameStore.holdsFrame = [kind isEqualToString:@"local"] || [kind isEqualToString:@"network"];
     if ([kind isEqualToString:@"computer"]) [self applyConnection:ALConnectionSettings()];
     else if (url) {
         UIImage *still = url.isFileURL ? [UIImage imageWithContentsOfFile:url.path] : nil;
