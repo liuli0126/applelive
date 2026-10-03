@@ -429,7 +429,12 @@ static NSString *ALDefaultStreamURL(void) {
     else if (![self.controls[@"enabled"] boolValue]) self.statusLabel.text = @"使用手机摄像头";
     else if (usb) self.statusLabel.text = video ? @"USB 信号已接入" : @"等待 USB 信号";
     else if (emptyStream) self.statusLabel.text = @"等待添加信号";
-    else if ([state isEqualToString:@"error"]) self.statusLabel.text = [@"读取失败：" stringByAppendingString:media[@"error"] ?: @""];
+    else if ([state isEqualToString:@"error"]) {
+        NSString *error = media[@"error"] ?: @"";
+        if ([error rangeOfString:@"Immediate exit requested" options:NSCaseInsensitiveSearch].location != NSNotFound)
+            error = @"连接超时：推流端未响应";
+        self.statusLabel.text = [@"读取失败：" stringByAppendingString:error];
+    }
     else if ([state isEqualToString:@"paused"]) self.statusLabel.text = @"已暂停";
     else if ([state isEqualToString:@"ended"]) self.statusLabel.text = @"播放结束";
     else self.statusLabel.text = [status[@"video"] boolValue] ? (local ? @"素材播放中" : @"拉流成功") : @"正在读取…";
