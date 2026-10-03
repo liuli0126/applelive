@@ -121,7 +121,9 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
     BOOL local = url.isFileURL;
     if (!input || !packet || !frame) goto cleanup;
     input->interrupt_callback = (AVIOInterruptCB){ALInterruptMedia, &interrupt};
-    if (!local) { input->flags |= AVFMT_FLAG_NOBUFFER; input->max_delay = 0; }
+    NSString *scheme = url.scheme.lowercaseString;
+    BOOL rtmp = [scheme isEqualToString:@"rtmp"] || [scheme isEqualToString:@"rtmps"];
+    if (!local) { input->flags |= AVFMT_FLAG_NOBUFFER; input->max_delay = 100000; }
     AVDictionary *options = NULL;
     if (!local) {
         // OBS/MediaMTX normally emits a keyframe within a few hundred ms.
@@ -130,12 +132,17 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
         av_dict_set(&options, "rw_timeout", "3000000", 0);
         av_dict_set(&options, "rtsp_transport", "tcp", 0);
         av_dict_set(&options, "rtsp_flags", "prefer_tcp", 0);
-        av_dict_set(&options, "probesize", "131072", 0);
-        av_dict_set(&options, "analyzeduration", "500000", 0);
-        av_dict_set(&options, "fpsprobesize", "2", 0);
-        av_dict_set(&options, "fflags", "nobuffer", 0);
-        av_dict_set(&options, "flags", "low_delay", 0);
-        av_dict_set(&options, "max_delay", "0", 0);
+        av_dict_set(&options, "probesize", "262144", 0);
+        av_dict_set(&options, "analyzeduration", "750000", 0);
+        if (rtmp) {
+            // RTMP from OBS benefits from a short probe and no demux queue;
+            // RTSP keeps the more conservative probe settings for decoder
+            // compatibility with cameras and MediaMTX.
+            av_dict_set(&options, "fpsprobesize", "2", 0);
+            av_dict_set(&options, "fflags", "nobuffer", 0);
+            av_dict_set(&options, "flags", "low_delay", 0);
+            av_dict_set(&options, "max_delay", "0", 0);
+        }
         av_dict_set(&options, "rtmp_live", "live", 0);
     }
     error = avformat_open_input(&input, local ? url.path.UTF8String : url.absoluteString.UTF8String, NULL, &options);
