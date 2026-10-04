@@ -54,6 +54,7 @@ int main(void) {
         int dark = output[2 * outputStride + 2];
         int bright = output[12 * outputStride + 2];
         CVPixelBufferUnlockBaseAddress(target, kCVPixelBufferLock_ReadOnly);
+        fprintf(stderr, "video-range luma input=64,192 output=%d,%d\n", dark, bright);
         require(abs(dark - 64) <= 4, "video-range dark luma preserved");
         require(abs(bright - 192) <= 4, "video-range bright luma preserved");
         CVPixelBufferRelease(target); CVPixelBufferRelease(source);
