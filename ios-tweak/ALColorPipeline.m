@@ -10,6 +10,33 @@ CGColorSpaceRef ALBT709ColorSpace(void) {
     return colorSpace;
 }
 
+static CGColorSpaceRef ALSRGBColorSpace(void) {
+    static CGColorSpaceRef colorSpace;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB); });
+    return colorSpace;
+}
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+static CFTypeRef ALVideoColorAttachment(CVPixelBufferRef pixelBuffer, CFStringRef key) {
+    return CVBufferGetAttachment(pixelBuffer, key, NULL);
+}
+#pragma clang diagnostic pop
+
+CIImage *ALVideoImageFromPixelBuffer(CVPixelBufferRef pixelBuffer) {
+    if (!pixelBuffer) return nil;
+    CFTypeRef transfer = ALVideoColorAttachment(pixelBuffer, kCVImageBufferTransferFunctionKey);
+    OSType format = CVPixelBufferGetPixelFormatType(pixelBuffer);
+    BOOL bgraWithoutMetadata = format == kCVPixelFormatType_32BGRA && !transfer;
+    CGColorSpaceRef sourceColorSpace = bgraWithoutMetadata ||
+        (transfer && CFEqual(transfer, kCVImageBufferTransferFunction_sRGB))
+        ? ALSRGBColorSpace() : ALBT709ColorSpace();
+    return [CIImage imageWithCVPixelBuffer:pixelBuffer options:@{
+        kCIImageColorSpace: (__bridge id)sourceColorSpace,
+    }];
+}
+
 CIContext *ALCreateVideoRenderContext(void) {
     CGColorSpaceRef colorSpace = ALBT709ColorSpace();
     return [CIContext contextWithOptions:@{
@@ -43,12 +70,12 @@ void ALSetDefaultVideoColorAttachments(CVPixelBufferRef pixelBuffer) {
                                : kCVImageBufferColorPrimaries_SMPTE_C;
     CFStringRef matrix = hd ? kCVImageBufferYCbCrMatrix_ITU_R_709_2
                             : kCVImageBufferYCbCrMatrix_ITU_R_601_4;
-    if (!CVBufferGetAttachment(pixelBuffer, kCVImageBufferColorPrimariesKey, NULL))
+    if (!ALVideoColorAttachment(pixelBuffer, kCVImageBufferColorPrimariesKey))
         ALSetAttachmentIfPresent(pixelBuffer, kCVImageBufferColorPrimariesKey, primaries);
-    if (!CVBufferGetAttachment(pixelBuffer, kCVImageBufferTransferFunctionKey, NULL))
+    if (!ALVideoColorAttachment(pixelBuffer, kCVImageBufferTransferFunctionKey))
         ALSetAttachmentIfPresent(pixelBuffer, kCVImageBufferTransferFunctionKey,
                                  kCVImageBufferTransferFunction_ITU_R_709_2);
-    if (!CVBufferGetAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey, NULL))
+    if (!ALVideoColorAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey))
         ALSetAttachmentIfPresent(pixelBuffer, kCVImageBufferYCbCrMatrixKey, matrix);
 }
 

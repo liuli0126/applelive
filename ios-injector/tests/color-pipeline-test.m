@@ -39,7 +39,7 @@ int main(void) {
             kCVImageBufferYCbCrMatrix_ITU_R_709_2);
 
         CIContext *context = ALCreateVideoRenderContext();
-        CIImage *image = [CIImage imageWithCVPixelBuffer:source];
+        CIImage *image = ALVideoImageFromPixelBuffer(source);
         ALRenderVideoImage(context, image, target, CGRectMake(0, 0, 16, 16));
 
         require(CFEqual(CVBufferGetAttachment(target, kCVImageBufferColorPrimariesKey, NULL),

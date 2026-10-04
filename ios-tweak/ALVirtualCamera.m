@@ -484,7 +484,7 @@ static void ALInstallHooks(void) {
         }
         CGFloat width = CVPixelBufferGetWidth(target);
         CGFloat height = CVPixelBufferGetHeight(target);
-        CIImage *image = [CIImage imageWithCVPixelBuffer:incoming];
+        CIImage *image = ALVideoImageFromPixelBuffer(incoming);
 #ifdef APPLELIVE_STANDALONE
         if (self.sourceRotation) image = [image imageByApplyingTransform:CGAffineTransformMakeRotation(-(CGFloat)self.sourceRotation * M_PI_2)];
 #endif
@@ -683,7 +683,7 @@ static void ALInstallHooks(void) {
 - (NSData *)sourceJPEG {
     CVPixelBufferRef frame = [self copyPreviewPixelBuffer:CGSizeZero];
     if (!frame) return nil;
-    CIImage *image = [CIImage imageWithCVPixelBuffer:frame];
+    CIImage *image = ALVideoImageFromPixelBuffer(frame);
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
     NSData *jpeg = [self.renderContext JPEGRepresentationOfImage:image colorSpace:colorSpace
         options:@{(id)kCGImageDestinationLossyCompressionQuality: @0.95}];

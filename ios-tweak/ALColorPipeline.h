@@ -3,6 +3,7 @@
 
 CGColorSpaceRef ALBT709ColorSpace(void);
 CIContext *ALCreateVideoRenderContext(void);
+CIImage *ALVideoImageFromPixelBuffer(CVPixelBufferRef pixelBuffer);
 void ALSetVideoColorAttachments(CVPixelBufferRef pixelBuffer,
                                 CFStringRef primaries,
                                 CFStringRef transferFunction,
