@@ -22,6 +22,22 @@ static NSString *ALDefaultStreamURL(void) {
         ? [NSString stringWithFormat:@"rtmp://%@:1935/live/applelive", connection[@"host"]] : @"";
 }
 
+static NSString *ALFriendlyStreamError(NSString *error) {
+    NSString *value = error ?: @"";
+    if ([value rangeOfString:@"No route to host" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+        [value rangeOfString:@"Network is unreachable" options:NSCaseInsensitiveSearch].location != NSNotFound)
+        return @"电脑不可达：连接同一 Wi-Fi，并在系统设置 → 隐私 → 本地网络中允许当前 App";
+    if ([value rangeOfString:@"Connection refused" options:NSCaseInsensitiveSearch].location != NSNotFound)
+        return @"电脑未启动接收：请在 OBS 点击“获取推流码”，再点击“开播”";
+    if ([value rangeOfString:@"Immediate exit requested" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+        [value rangeOfString:@"timed out" options:NSCaseInsensitiveSearch].location != NSNotFound)
+        return @"连接超时：检查电脑 IP、Wi-Fi 和 Windows 防火墙授权";
+    if ([value rangeOfString:@"not found" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+        [value rangeOfString:@"404" options:NSCaseInsensitiveSearch].location != NSNotFound)
+        return @"没有找到这条流：请核对地址末尾 /live/applelive";
+    return value.length ? value : @"未知网络错误";
+}
+
 @interface ALPassThroughWindow : UIWindow
 @end
 @implementation ALPassThroughWindow
@@ -51,7 +67,6 @@ static NSString *ALDefaultStreamURL(void) {
 @property(nonatomic) UIButton *albumButton;
 @property(nonatomic) UIButton *fileButton;
 @property(nonatomic) UIButton *streamButton;
-@property(nonatomic) UIButton *usbButton;
 @property(nonatomic) UIButton *playButton;
 @property(nonatomic) UIButton *rotateButton;
 @property(nonatomic) UISwitch *enabledSwitch;
@@ -195,9 +210,8 @@ static NSString *ALDefaultStreamURL(void) {
     self.fileButton = [self button:@"文件" symbol:@"folder" action:@selector(pickFile)];
     self.streamButton = [self button:@"检测" symbol:@"dot.radiowaves.left.and.right" action:@selector(editStream)];
     ((ALInjectedCyberButton *)self.streamButton).primary = YES;
-    self.usbButton = [self button:@"USB 数据线" symbol:@"cable.connector" action:@selector(selectUSB)];
     UIStackView *files = [self row:@[self.albumButton, self.fileButton]]; files.distribution = UIStackViewDistributionFillEqually;
-    UIStackView *inputs = [self row:@[self.streamButton, self.usbButton]]; inputs.distribution = UIStackViewDistributionFillEqually;
+    UIStackView *inputs = [self row:@[self.streamButton]]; inputs.distribution = UIStackViewDistributionFillEqually;
     UIView *sourceSection = [self section:@"01 / 信号源" views:@[files, inputs]];
     // The panel has a fixed height. Keep the source selector at its intrinsic
     // size so the vertical stack cannot stretch it into an empty block.
@@ -297,7 +311,7 @@ static NSString *ALDefaultStreamURL(void) {
     if ([kind isEqualToString:@"network"] && !ALValidStreamURL(self.source[@"url"])) {
         [self.camera selectSource:@"none" URL:nil]; return;
     }
-    [self.camera selectSource:[kind isEqualToString:@"usb"] ? @"computer" : kind ?: @"none" URL:url];
+    [self.camera selectSource:kind ?: @"none" URL:url];
 }
 - (void)syncControls {
     self.enabledSwitch.on = [self.controls[@"enabled"] boolValue]; self.mirrorSwitch.on = [self.controls[@"mirror"] boolValue];
@@ -325,17 +339,8 @@ static NSString *ALDefaultStreamURL(void) {
     else [self.camera setMediaPaused:!paused];
     [self refresh];
 }
-- (void)selectUSB {
-    if ([self.source[@"kind"] isEqualToString:@"usb"] && [self.controls[@"enabled"] boolValue]) {
-        [self restoreCamera]; return;
-    }
-    NSMutableDictionary *connection = [ALConnectionSettings() mutableCopy];
-    connection[@"paused"] = @NO;
-    ALPublishConnection(connection);
-    self.source[@"kind"] = @"usb"; [self saveSource]; [self refresh];
-}
 - (void)editStream {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"检测 · 网络信号" message:@"粘贴完整拉流地址。支持 RTMP、RTSP 和 HTTP / HTTPS。手机与推流电脑需在同一局域网。" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"检测 · 网络信号" message:@"粘贴完整 RTMP 或 RTSP 地址。手机与推流电脑必须连接同一 Wi-Fi；USB 数据线不代替局域网。" preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
         field.text = [self.source[@"url"] length] ? self.source[@"url"] : ALDefaultStreamURL();
         field.placeholder = @"rtmp://电脑IP:1935/live/applelive";
@@ -419,21 +424,17 @@ static NSString *ALDefaultStreamURL(void) {
     self.window.hidden = NO;
     NSDictionary *status = self.camera.streamStatus, *media = self.camera.mediaStatus;
     NSString *kind = self.source[@"kind"], *state = media[@"state"];
-    BOOL local = [kind isEqualToString:@"local"], usb = [kind isEqualToString:@"usb"];
+    BOOL local = [kind isEqualToString:@"local"];
     BOOL enabled = [self.controls[@"enabled"] boolValue], video = enabled && [status[@"video"] boolValue];
-    BOOL emptyStream = !local && !usb && !ALValidStreamURL(self.source[@"url"]);
-    self.sourceLabel.text = usb ? @"USB 数据线" : local ? self.source[@"name"] ?: @"本地素材"
+    BOOL emptyStream = !local && !ALValidStreamURL(self.source[@"url"]);
+    self.sourceLabel.text = local ? self.source[@"name"] ?: @"本地素材"
         : emptyStream ? @"点击「检测」填写 RTMP / RTSP 地址" : self.source[@"url"];
     self.sourceLabel.numberOfLines = 1; self.sourceLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
     if (self.importing) self.statusLabel.text = @"正在导入…";
     else if (![self.controls[@"enabled"] boolValue]) self.statusLabel.text = @"使用手机摄像头";
-    else if (usb) self.statusLabel.text = video ? @"USB 信号已接入" : @"等待 USB 信号";
     else if (emptyStream) self.statusLabel.text = @"等待添加信号";
     else if ([state isEqualToString:@"error"]) {
-        NSString *error = media[@"error"] ?: @"";
-        if ([error rangeOfString:@"Immediate exit requested" options:NSCaseInsensitiveSearch].location != NSNotFound)
-            error = @"连接超时：推流端未响应";
-        self.statusLabel.text = [@"读取失败：" stringByAppendingString:error];
+        self.statusLabel.text = ALFriendlyStreamError(media[@"error"]);
     }
     else if ([state isEqualToString:@"paused"]) self.statusLabel.text = @"已暂停";
     else if ([state isEqualToString:@"ended"]) self.statusLabel.text = @"播放结束";
@@ -442,9 +443,6 @@ static NSString *ALDefaultStreamURL(void) {
         : [state isEqualToString:@"paused"] ? @"PAUSED" : video ? @"LIVE" : @"STANDBY";
     self.signalDot.backgroundColor = video ? self.accent : ALCyberMuted();
     self.streamButton.selected = enabled && !emptyStream && [kind isEqualToString:@"network"];
-    self.usbButton.selected = enabled && usb;
-    [self.usbButton setTitle:enabled && usb ? @"断开 USB" : @"USB 数据线" forState:UIControlStateNormal];
-    self.usbButton.accessibilityLabel = enabled && usb ? @"断开 USB" : @"USB 数据线";
     BOOL seekable = local && [media[@"duration"] doubleValue] > 0;
     self.playButton.hidden = !seekable;
     [self.playButton setTitle:[state isEqualToString:@"paused"] || [state isEqualToString:@"ended"] ? @"播放" : @"暂停" forState:UIControlStateNormal];

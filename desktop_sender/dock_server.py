@@ -1,4 +1,4 @@
-"""Loopback-only OBS browser dock. OBS Lua owns capture and applies commands."""
+"""Loopback-only AppleLive browser dock backed by OBS WebSocket 5."""
 from __future__ import annotations
 
 import argparse
@@ -11,37 +11,38 @@ import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from io import BytesIO
-from urllib.parse import parse_qs, urlsplit
-from phone_plugin import download_name, download_url, plugin_path
+from urllib.parse import urlsplit
+
+from obs_websocket import OBSClient, OBSConnectionError
+from phone_plugin import plugin_path
+from stream_server import StreamServer
+
+DESKTOP_VERSION = "0.2.5"
 
 
-def read_json(path: Path) -> dict:
+def machine_id() -> str:
+    if os.name != "nt":
+        return socket.gethostname()
     try:
-        return json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
-        return {}
-
-
-def atomic_json(path: Path, value: dict) -> None:
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
-    os.replace(temporary, path)
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography") as key:
+            return str(winreg.QueryValueEx(key, "MachineGuid")[0]).strip()
+    except OSError:
+        return socket.gethostname()
 
 
 def local_addresses() -> list[str]:
     candidates: set[str] = set()
+    route_address = ""
     try:
         candidates.update(a[4][0] for a in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET))
     except OSError:
         pass
-    # Windows may not publish an adapter address through the hostname lookup.
-    # A UDP route probe discovers the interface selected for another LAN host
-    # without sending a packet or requiring external network access.
     probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         probe.connect(("192.0.2.1", 9))
-        candidates.add(probe.getsockname()[0])
+        route_address = probe.getsockname()[0]
+        candidates.add(route_address)
     except OSError:
         pass
     finally:
@@ -55,25 +56,27 @@ def local_addresses() -> list[str]:
         if address.is_loopback or address.is_multicast or address.is_unspecified or value.startswith("169.254."):
             continue
         valid.append(str(address))
-    return sorted(set(valid), key=lambda value: (not ipaddress.IPv4Address(value).is_private, value))
+    ordered = sorted(set(valid), key=lambda value: (not ipaddress.IPv4Address(value).is_private, value))
+    if route_address in ordered:
+        ordered.remove(route_address)
+        ordered.insert(0, route_address)
+    return ordered
 
 
 def validate_command(value: dict) -> dict:
-    if not isinstance(value, dict) or value.get("action") not in {"start", "stop", "settings"}:
+    if not isinstance(value, dict) or value.get("action") not in {"configure_stream", "start_stream", "stop_stream"}:
         raise ValueError("无效的操作")
-    settings = value.get("settings", {})
-    if not isinstance(settings, dict):
-        raise ValueError("设置格式错误")
-    choices = {"quality": {"smooth", "standard", "high"}, "connection_mode": {"lan", "usb"}}
-    result = {}
-    for key, setting in settings.items():
-        if key in choices and isinstance(setting, str) and setting in choices[key]:
-            result[key] = setting
-        elif key == "computer_audio" and type(setting) is bool:
-            result[key] = setting
-        else:
-            raise ValueError("不支持的设置")
-    return {"action": value["action"], "settings": result}
+    if set(value) - {"action", "host"}:
+        raise ValueError("不支持的设置")
+    host = value.get("host", "")
+    if value["action"] == "configure_stream":
+        try:
+            host = str(ipaddress.IPv4Address(host))
+        except (ipaddress.AddressValueError, TypeError):
+            raise ValueError("电脑局域网 IP 无效") from None
+    elif host:
+        raise ValueError("此操作不需要 IP")
+    return {"action": value["action"], "host": host}
 
 
 class DockServer(ThreadingHTTPServer):
@@ -83,33 +86,67 @@ class DockServer(ThreadingHTTPServer):
         self.directory = directory
         self.token = secrets.token_urlsafe(32)
         self.command_lock = threading.Lock()
-        self.last_bridge = {}
+        self.last_command = ""
         self.addresses = local_addresses()
         super().__init__(("127.0.0.1", port), Handler)
         self.origin = f"http://127.0.0.1:{self.server_port}"
+        self.stream_server = StreamServer(directory / "server")
+        self.stream_error = ""
+        self.firewall_pending = False
+        self.firewall_error = ""
+
+    def server_close(self):
+        self.stream_server.stop()
+        super().server_close()
+
+    def ensure_stream_server(self):
+        try:
+            if not self.stream_server.start():
+                raise OSError("缺少 server/mediamtx.exe，请安装完整 OBS 插件包")
+            self.stream_error = ""
+        except (OSError, RuntimeError) as error:
+            self.stream_error = str(error)
+            raise
+
+    def stop_stream_server(self):
+        self.stream_server.stop()
+        self.stream_error = ""
+
+    def firewall_access_enabled(self) -> bool:
+        try:
+            marker = (self.directory / "lan-access.ok").read_text(encoding="ascii").strip()
+        except OSError:
+            return False
+        return marker == f"AppleLiveLAN2:{machine_id()}"
+
+    def _run_firewall_setup(self, script: Path) -> None:
+        import ctypes
+        arguments = f'-NoProfile -ExecutionPolicy Bypass -File "{script}"'
+        shell_execute = ctypes.windll.shell32.ShellExecuteW
+        shell_execute.restype = ctypes.c_void_p
+        result = shell_execute(None, "runas", "powershell.exe", arguments, str(self.directory), 0)
+        if not result or result <= 32:
+            raise OSError(f"无法打开 Windows 授权窗口（错误 {result}）")
 
     def status(self) -> dict:
-        bridge = read_json(self.directory / "applelive-bridge.json")
-        if bridge.get("updated_at", 0) >= self.last_bridge.get("updated_at", 0) and bridge:
-            self.last_bridge = bridge
-        else:
-            bridge = self.last_bridge
-        sender = read_json(self.directory / "applelive-status.json")
-        ready = 0 <= time.time() - bridge.get("updated_at", 0) < 8
-        if not 0 <= time.time() - sender.get("updated_at", 0) < 6:
-            sender = {"state": "stopped", "clients": 0, "usb_clients": 0}
-            if ready and bridge.get("sender_state") in {"starting", "stopping", "error"}:
-                sender["state"] = bridge["sender_state"]
-                if sender["state"] == "error":
-                    sender["error"] = bridge.get("status_text", "发送器启动失败")
-        pending = read_json(self.directory / "applelive-command.json")
-        if pending.get("action") == "stop" and sender.get("state") in {"starting", "running"}:
-            sender["state"] = "stopping"
-        port = bridge.get("settings", {}).get("port", 8765)
-        return {"ready": ready, "sender": sender, "bridge": bridge,
-                "addresses": self.addresses, "token": self.token, "pending": bool(pending),
-                "phone_plugin": {"available": plugin_path(self.directory).is_file(), "port": port,
-                    "lan_ready": sender.get("connection_mode") == "lan" and sender.get("state") == "running"}}
+        bridge = {"stream_active": False, "stream_configured": False,
+                  "stream_server": "", "last_command": self.last_command, "command_error": ""}
+        ready, obs_error = False, ""
+        try:
+            with OBSClient(self.directory) as client:
+                bridge.update(client.stream_state())
+                ready = True
+        except OBSConnectionError as error:
+            obs_error = str(error)
+        path = self.stream_server.path_status()
+        return {"ready": ready, "bridge": bridge, "obs_error": obs_error,
+                "addresses": self.addresses, "token": self.token, "pending": False,
+                "desktop_version": DESKTOP_VERSION,
+                "stream_server_ready": self.stream_server.ready(), "stream_error": self.stream_error,
+                "firewall_ready": self.firewall_access_enabled(),
+                "firewall_pending": self.firewall_pending, "firewall_error": self.firewall_error,
+                "stream_path": path,
+                "phone_plugin": {"available": plugin_path(self.directory).is_file()}}
 
     def request_firewall_access(self) -> None:
         if os.name != "nt":
@@ -117,15 +154,26 @@ class DockServer(ThreadingHTTPServer):
         script = self.directory / "setup_lan.ps1"
         if not script.is_file():
             raise OSError("Missing setup_lan.ps1")
-        port = int(self.status()["phone_plugin"]["port"])
-        arguments = f'-NoProfile -ExecutionPolicy Bypass -File "{script}" -VideoPort {port}'
-        import ctypes
-        shell_execute = ctypes.windll.shell32.ShellExecuteW
-        shell_execute.restype = ctypes.c_void_p
-        result = shell_execute(
-            None, "runas", "powershell.exe", arguments, str(self.directory), 0)
-        if not result or result <= 32:
-            raise OSError(f"Could not open Windows firewall setup ({result})")
+        if self.firewall_pending:
+            return
+        (self.directory / "lan-access.ok").unlink(missing_ok=True)
+        self.firewall_pending = True
+        self.firewall_error = ""
+
+        def elevate():
+            try:
+                self._run_firewall_setup(script)
+                for _ in range(100):
+                    if self.firewall_access_enabled():
+                        return
+                    time.sleep(0.1)
+                self.firewall_error = "授权没有完成，请再次点击授权按钮"
+            except (OSError, TypeError, ValueError) as error:
+                self.firewall_error = str(error)
+            finally:
+                self.firewall_pending = False
+
+        threading.Thread(target=elevate, daemon=True).start()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -158,30 +206,13 @@ class Handler(BaseHTTPRequestHandler):
             self.json_reply(200, self.server.status())
             return
         url = urlsplit(self.path)
-        if url.path in {"/api/phone-plugin", "/api/phone-qr"}:
-            host = parse_qs(url.query).get("host", [""])[0]
-            if host not in self.server.addresses:
-                self.json_reply(400, {"error": "请选择本机局域网地址"})
-                return
-            status = self.server.status()
+        if url.path == "/api/phone-plugin" and not url.query:
             try:
-                name = download_name(host, int(status["phone_plugin"]["port"]))
                 body = plugin_path(self.server.directory).read_bytes()
-            except (ValueError, TypeError):
-                self.json_reply(400, {"error": "电脑地址或端口无效"})
-                return
             except OSError:
-                self.json_reply(404, {"error": "手机插件文件缺失，请更新完整 OBS 插件包"})
+                self.json_reply(404, {"error": "手机插件文件缺失，请安装完整 OBS 插件包"})
                 return
-            if url.path == "/api/phone-plugin":
-                self.reply(200, body, "application/octet-stream", name)
-            elif not status["phone_plugin"]["lan_ready"]:
-                self.json_reply(409, {"error": "请先在电脑选择局域网并开始传输"})
-            else:
-                import qrcode
-                output = BytesIO()
-                qrcode.make(download_url(host, int(status["phone_plugin"]["port"]))).save(output, format="PNG")
-                self.reply(200, output.getvalue(), "image/png")
+            self.reply(200, body, "application/octet-stream", "AppleLive.dylib")
             return
         files = {"/": ("index.html", "text/html; charset=utf-8"),
                  "/app.js": ("app.js", "text/javascript; charset=utf-8"),
@@ -218,19 +249,25 @@ class Handler(BaseHTTPRequestHandler):
             self.json_reply(400, {"error": str(error)})
             return
         with self.server.command_lock:
-            status = self.server.status()
-            if not status["ready"]:
-                self.json_reply(503, {"error": "请在 OBS 工具 → 脚本中加载 AppleLive.lua"})
+            if command["action"] == "configure_stream" and command["host"] not in self.server.addresses:
+                self.json_reply(400, {"error": "请选择这台电脑的局域网 IP"})
                 return
-            if status["pending"]:
-                self.json_reply(409, {"error": "上一项操作正在处理，请稍候"})
+            try:
+                if command["action"] in {"configure_stream", "start_stream"}:
+                    self.server.ensure_stream_server()
+                with OBSClient(self.server.directory) as client:
+                    if command["action"] == "configure_stream":
+                        client.configure(command["host"])
+                    elif command["action"] == "start_stream":
+                        client.start()
+                    else:
+                        client.stop()
+                        self.server.stop_stream_server()
+            except (OBSConnectionError, OSError, RuntimeError) as error:
+                self.json_reply(503, {"error": str(error)})
                 return
-            if command["settings"] and status["sender"].get("state") in {"running", "starting", "stopping"}:
-                self.json_reply(409, {"error": "请先停止传输，再调整设置"})
-                return
-            command.update(id=secrets.token_hex(8), created_at=time.time())
-            atomic_json(self.server.directory / "applelive-command.json", command)
-        self.json_reply(202, {"id": command["id"]})
+            self.server.last_command = secrets.token_hex(8)
+        self.json_reply(202, {"id": self.server.last_command})
 
 
 def main():
@@ -242,7 +279,7 @@ def main():
     try:
         server = DockServer(args.directory.resolve(), args.port)
     except OSError:
-        return  # An already-running dock owns this loopback port.
+        return
     started = time.time()
 
     def watch_obs():

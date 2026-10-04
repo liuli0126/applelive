@@ -37,6 +37,7 @@ jobs:
         run: |
           python desktop_sender/protocol_test.py
           python desktop_sender/dock_test.py
+          python desktop_sender/obs_websocket_test.py
           python desktop_sender/transport_test.py
           python desktop_sender/phone_plugin_test.py
           python desktop_sender/usb_direct_test.py

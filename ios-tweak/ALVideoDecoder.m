@@ -1,4 +1,5 @@
 #import "ALVideoDecoder.h"
+#import "ALColorPipeline.h"
 #import <CoreMedia/CoreMedia.h>
 #import <VideoToolbox/VideoToolbox.h>
 #import <os/lock.h>
@@ -33,6 +34,7 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
                              CMTime pts, CMTime duration) {
     ALVideoDecoder *decoder = (__bridge ALVideoDecoder *)refCon;
     if (status == noErr && imageBuffer && decoder.onFrame) {
+        ALSetDefaultVideoColorAttachments((CVPixelBufferRef)imageBuffer);
         decoder.onFrame((CVPixelBufferRef)imageBuffer, (uint32_t)(uintptr_t)frameRefCon);
         static uint64_t frames = 0;
         uint64_t count = __sync_add_and_fetch(&frames, 1);

@@ -1,166 +1,167 @@
-"""Exercise the HTTP control boundary without starting OBS or capture."""
+"""Exercise the HTTP boundary and OBS command handoff without launching OBS."""
 import http.client
-import importlib.util
 import json
 from pathlib import Path
 import tempfile
 import threading
-import time
 import unittest
 from unittest import mock
 
-from dock_server import DockServer, atomic_json, local_addresses
+from dock_server import DockServer, local_addresses
 from phone_plugin import plugin_path
+
+
+class FakeOBS:
+    def __init__(self):
+        self.calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        pass
+
+    def stream_state(self):
+        return {"stream_active": False, "stream_configured": False, "stream_server": ""}
+
+    def configure(self, host):
+        self.calls.append(("configure", host))
+
+    def start(self):
+        self.calls.append(("start",))
+
+    def stop(self):
+        self.calls.append(("stop",))
 
 
 class DockTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name)
-        atomic_json(self.path / "applelive-bridge.json", {"updated_at": time.time(), "settings": {}})
         self.server = DockServer(self.path, 0)
+        self.server.addresses = ["192.168.1.45"]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
+        self.obs = FakeOBS()
+        self.patch = mock.patch("dock_server.OBSClient", return_value=self.obs)
+        self.patch.start()
 
     def tearDown(self):
+        self.patch.stop()
         self.server.shutdown()
         self.server.server_close()
         self.thread.join()
         self.temp.cleanup()
 
     def request(self, value, **headers):
-        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=2)
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
         base = {"Origin": self.server.origin, "X-AppleLive-Token": self.server.token}
         base.update(headers)
         connection.request("POST", "/api/command", json.dumps(value), base)
         response = connection.getresponse()
-        result = response.status, json.loads(response.read())
+        code = response.status
+        result = json.loads(response.read())
         connection.close()
-        return result
+        return code, result
 
-    def test_one_command_at_a_time(self):
-        code, result = self.request({"action": "settings", "settings": {"quality": "high"}})
+    def test_configure_uses_selected_computer_address(self):
+        for host in ("127.0.0.1", "192.168.1.99", "example.com"):
+            self.assertEqual(self.request({"action": "configure_stream", "host": host})[0], 400)
+        with mock.patch.object(self.server, "ensure_stream_server"):
+            code, result = self.request({"action": "configure_stream", "host": "192.168.1.45"})
         self.assertEqual(code, 202)
-        self.assertEqual(json.loads((self.path / "applelive-command.json").read_text())["id"], result["id"])
-        self.assertEqual(self.request({"action": "start"})[0], 409)
+        self.assertEqual(self.obs.calls, [("configure", "192.168.1.45")])
+        self.assertEqual(self.server.status()["bridge"]["last_command"], result["id"])
 
-    def test_local_addresses_include_route_probe_and_ignore_unusable_interfaces(self):
+    def test_configure_starts_and_stop_closes_media_server(self):
+        with mock.patch.object(self.server, "ensure_stream_server") as start, \
+                mock.patch.object(self.server, "stop_stream_server") as stop:
+            self.assertEqual(self.request({"action": "configure_stream", "host": "192.168.1.45"})[0], 202)
+            self.assertEqual(self.request({"action": "stop_stream"})[0], 202)
+        start.assert_called_once_with()
+        stop.assert_called_once_with()
+
+    def test_start_requires_media_server(self):
+        with mock.patch.object(self.server, "ensure_stream_server", side_effect=OSError("MediaMTX missing")):
+            code, result = self.request({"action": "start_stream"})
+        self.assertEqual(code, 503)
+        self.assertIn("MediaMTX", result["error"])
+        self.assertFalse(self.obs.calls)
+
+    def test_stop_does_not_require_media_server(self):
+        self.assertEqual(self.request({"action": "stop_stream"})[0], 202)
+        self.assertEqual(self.obs.calls, [("stop",)])
+
+    def test_reject_foreign_pages_and_invalid_actions(self):
+        for headers in ({"Origin": "https://example.com"}, {"X-AppleLive-Token": "wrong"}, {"Host": "attacker.test"}):
+            self.assertEqual(self.request({"action": "stop_stream"}, **headers)[0], 403)
+        for value in ({"action": "start"}, {"action": "settings", "quality": "high"}, {"action": "start_stream", "host": "192.168.1.45"}):
+            self.assertEqual(self.request(value)[0], 400)
+        self.assertFalse(self.obs.calls)
+
+    def test_status_and_phone_download(self):
+        self.assertTrue(self.server.status()["ready"])
+        self.assertFalse(self.server.status()["firewall_pending"])
+        with mock.patch.object(self.server.stream_server, "path_status", return_value={
+            "ready": True, "readers": 1, "tracks": ["H264", "MPEG-4 Audio"]}):
+            self.assertEqual(self.server.status()["stream_path"], {
+                "ready": True, "readers": 1, "tracks": ["H264", "MPEG-4 Audio"]})
+        path = plugin_path(self.path)
+        path.parent.mkdir()
+        path.write_bytes(b"signed-library")
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        connection.request("GET", "/api/phone-plugin")
+        response = connection.getresponse()
+        self.assertEqual(response.status, 200)
+        self.assertIn("AppleLive.dylib", response.getheader("Content-Disposition"))
+        self.assertEqual(response.read(), b"signed-library")
+        connection.close()
+
+    def test_local_addresses_filter_unusable_interfaces(self):
         probe = mock.Mock()
         probe.getsockname.return_value = ("192.168.8.20", 54321)
         with mock.patch("dock_server.socket.getaddrinfo", return_value=[
-                (2, 1, 6, "", ("127.0.0.1", 0)),
-                (2, 1, 6, "", ("169.254.10.5", 0)),
-                (2, 1, 6, "", ("10.0.0.4", 0)),
-             ]), mock.patch("dock_server.socket.socket", return_value=probe):
-            self.assertEqual(local_addresses(), ["10.0.0.4", "192.168.8.20"])
-        probe.connect.assert_called_once_with(("192.0.2.1", 9))
-        probe.close.assert_called_once_with()
+            (2, 1, 6, "", ("127.0.0.1", 0)),
+            (2, 1, 6, "", ("169.254.10.5", 0)),
+            (2, 1, 6, "", ("10.0.0.4", 0)),
+        ]), mock.patch("dock_server.socket.socket", return_value=probe):
+            self.assertEqual(local_addresses(), ["192.168.8.20", "10.0.0.4"])
 
-    def test_reject_foreign_pages_and_invalid_host(self):
-        for headers in [{"Origin": "https://example.com"}, {"X-AppleLive-Token": "wrong"}, {"Host": "attacker.test"}]:
-            self.assertEqual(self.request({"action": "stop"}, **headers)[0], 403)
-        self.assertFalse((self.path / "applelive-command.json").exists())
+    def test_firewall_script_allows_any_remote_address(self):
+        script = (Path(__file__).parent / "setup_lan.ps1").read_text(encoding="utf-8")
+        self.assertIn("-RemoteAddress Any", script)
+        self.assertNotIn("LocalSubnet", script)
+        self.assertIn("AppleLiveLAN2:$machineGuid", script)
 
-    def test_firewall_endpoint_requires_local_authenticated_page(self):
-        for headers in [{"Origin": "https://example.com"}, {"X-AppleLive-Token": "wrong"}, {"Host": "attacker.test"}]:
-            connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=2)
-            base = {"Origin": self.server.origin, "X-AppleLive-Token": self.server.token}
-            base.update(headers)
-            connection.request("POST", "/api/firewall", headers=base)
-            response = connection.getresponse()
-            self.assertEqual(response.status, 403)
-            response.read(); connection.close()
+    def test_firewall_marker_is_bound_to_this_computer(self):
+        marker = self.path / "lan-access.ok"
+        with mock.patch("dock_server.machine_id", return_value="computer-a"):
+            marker.write_text("AppleLiveLAN2:computer-b", encoding="ascii")
+            self.assertFalse(self.server.firewall_access_enabled())
+            marker.write_text("AppleLiveLAN2:computer-a", encoding="ascii")
+            self.assertTrue(self.server.firewall_access_enabled())
 
-    def test_firewall_endpoint_requests_elevation(self):
-        with mock.patch.object(self.server, "request_firewall_access") as request:
-            connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=2)
-            connection.request("POST", "/api/firewall", headers={
-                "Host": f"127.0.0.1:{self.server.server_port}",
-                "Origin": self.server.origin,
-                "X-AppleLive-Token": self.server.token,
-            })
-            response = connection.getresponse()
-            self.assertEqual(response.status, 202)
-            response.read(); connection.close()
-            request.assert_called_once_with()
+    def test_firewall_elevation_runs_in_background(self):
+        (self.path / "setup_lan.ps1").write_text("", encoding="utf-8")
+        started = threading.Event()
+        release = threading.Event()
 
-    def test_reject_unknown_settings(self):
-        for settings in [{"ffmpeg_path": "cmd.exe"}, {"quality": "bogus"}, {"computer_audio": "false"}]:
-            self.assertEqual(self.request({"action": "settings", "settings": settings})[0], 400)
+        def elevate(_script):
+            started.set()
+            release.wait(2)
 
-    def test_running_capture_settings_locked_but_stop_allowed(self):
-        atomic_json(self.path / "applelive-status.json", {"state": "running", "updated_at": time.time()})
-        self.assertEqual(self.request({"action": "settings", "settings": {"quality": "high"}})[0], 409)
-        self.assertEqual(self.request({"action": "stop"})[0], 202)
-
-    def test_missing_obs_is_not_reported_as_ready(self):
-        atomic_json(self.path / "applelive-bridge.json", {"updated_at": time.time() - 30})
-        self.assertFalse(self.server.status()["ready"])
-        self.assertEqual(self.request({"action": "start"})[0], 503)
-
-    def test_bridge_replace_gap_keeps_recent_obs_heartbeat(self):
-        self.assertTrue(self.server.status()["ready"])
-        (self.path / "applelive-bridge.json").unlink()
-        self.assertTrue(self.server.status()["ready"])
-
-    def test_stale_sender_is_stopped(self):
-        atomic_json(self.path / "applelive-status.json", {"state": "running", "updated_at": time.time() - 30})
-        self.assertEqual(self.server.status()["sender"]["state"], "stopped")
-
-    def test_plugin_download_requires_local_address_and_preserves_bytes(self):
-        self.server.addresses = ["192.168.1.45"]
-        path = plugin_path(self.path)
-        path.parent.mkdir()
-        body = b"\xca\xfe\xba\xbebinary-signature-fixture"
-        path.write_bytes(body)
-        for host, expected in [("attacker.test", 400), ("127.0.0.1", 400), ("192.168.1.45", 200)]:
-            connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=2)
-            connection.request("GET", "/api/phone-plugin?host=" + host)
-            response = connection.getresponse()
-            self.assertEqual(response.status, expected)
-            if expected == 200:
-                self.assertIn("AppleLive-192.168.1.45-8765.dylib", response.getheader("Content-Disposition"))
-                self.assertEqual(response.read(), body)
-            else:
-                response.read()
-            connection.close()
-
-    def test_qr_is_unavailable_until_lan_sender_is_running(self):
-        self.server.addresses = ["192.168.1.45"]
-        path = plugin_path(self.path)
-        path.parent.mkdir()
-        path.write_bytes(b"library")
-        for mode in ("usb", "lan"):
-            atomic_json(self.path / "applelive-status.json", {
-                "state": "stopped" if mode == "lan" else "running",
-                "connection_mode": mode, "updated_at": time.time()})
-            connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=2)
-            connection.request("GET", "/api/phone-qr?host=192.168.1.45")
-            response = connection.getresponse()
-            self.assertEqual(response.status, 409)
-            response.read()
-            connection.close()
-
-    @unittest.skipUnless(importlib.util.find_spec("qrcode"), "QR rendering dependency is installed by CI")
-    def test_running_lan_renders_png_qr(self):
-        self.server.addresses = ["192.168.1.45"]
-        path = plugin_path(self.path)
-        path.parent.mkdir()
-        path.write_bytes(b"library")
-        atomic_json(self.path / "applelive-status.json", {
-            "state": "running", "connection_mode": "lan", "updated_at": time.time()})
-        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=2)
-        connection.request("GET", "/api/phone-qr?host=192.168.1.45")
-        response = connection.getresponse()
-        self.assertEqual(response.status, 200)
-        self.assertEqual(response.getheader("Content-Type"), "image/png")
-        self.assertTrue(response.read().startswith(b"\x89PNG\r\n\x1a\n"))
-        connection.close()
-
-    def test_obs_launch_remains_busy_until_sender_writes_status(self):
-        atomic_json(self.path / "applelive-bridge.json", {"updated_at": time.time(), "sender_state": "starting"})
-        self.assertEqual(self.server.status()["sender"]["state"], "starting")
-        self.assertEqual(self.request({"action": "settings", "settings": {"quality": "high"}})[0], 409)
+        with mock.patch("dock_server.os.name", "nt"), \
+                mock.patch.object(self.server, "_run_firewall_setup", side_effect=elevate), \
+                mock.patch.object(self.server, "firewall_access_enabled", return_value=True):
+            self.server.request_firewall_access()
+            self.assertTrue(started.wait(1))
+            self.assertTrue(self.server.firewall_pending)
+            release.set()
+            for _ in range(100):
+                if not self.server.firewall_pending:
+                    break
+                threading.Event().wait(0.01)
+            self.assertFalse(self.server.firewall_pending)
 
 
 if __name__ == "__main__":

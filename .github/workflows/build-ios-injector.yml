@@ -72,12 +72,21 @@ jobs:
           FF=.build/ios-ffmpeg/host
           xcrun clang -fobjc-arc -Iios-injector -Iios-tweak -I"$FF/include" \
             ios-injector/tests/media-test.m ios-injector/ALMediaPlayer.m \
-            ios-injector/ALSampleAudio.m ios-tweak/ALAudioRing.m \
+            ios-injector/ALSampleAudio.m ios-tweak/ALAudioRing.m ios-tweak/ALColorPipeline.m \
             -L"$FF/lib" -lavformat -lavcodec -lswresample -lswscale -lavutil -lz -lbz2 -liconv \
             -framework Foundation -framework QuartzCore -framework CoreVideo -framework CoreMedia \
-            -framework VideoToolbox -framework AudioToolbox -framework Security -framework CoreFoundation \
+            -framework CoreImage -framework CoreGraphics -framework VideoToolbox \
+            -framework AudioToolbox -framework Security -framework CoreFoundation \
             -o "$RUNNER_TEMP/applelive-media-test"
           "$RUNNER_TEMP/applelive-media-test" ios-injector/tests/fixture.mp4
+
+      - name: Test BT.709 video-range rendering
+        run: |
+          xcrun clang -fobjc-arc -Iios-tweak \
+            ios-injector/tests/color-pipeline-test.m ios-tweak/ALColorPipeline.m \
+            -framework Foundation -framework CoreVideo -framework CoreImage -framework CoreGraphics \
+            -o "$RUNNER_TEMP/applelive-color-test"
+          "$RUNNER_TEMP/applelive-color-test"
 
       - name: Test RTMP and RTSP sources through MediaMTX
         run: |
@@ -95,10 +104,11 @@ jobs:
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           FF=.build/ios-ffmpeg/host
           xcrun clang -fobjc-arc -Iios-injector -I"$FF/include" \
-            ios-injector/tests/network-test.m ios-injector/ALMediaPlayer.m \
+            -Iios-tweak ios-injector/tests/network-test.m ios-injector/ALMediaPlayer.m ios-tweak/ALColorPipeline.m \
             -L"$FF/lib" -lavformat -lavcodec -lswresample -lswscale -lavutil -lz -lbz2 -liconv \
             -framework Foundation -framework QuartzCore -framework CoreVideo -framework CoreMedia \
-            -framework VideoToolbox -framework AudioToolbox -framework Security -o "$RUNNER_TEMP/applelive-network-test"
+            -framework CoreImage -framework CoreGraphics -framework VideoToolbox \
+            -framework AudioToolbox -framework Security -o "$RUNNER_TEMP/applelive-network-test"
           "$RUNNER_TEMP/applelive-network-test" ios-injector/tests/fixture.mp4
 
       - name: Build injector dylib

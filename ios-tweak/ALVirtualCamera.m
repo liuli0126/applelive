@@ -5,6 +5,7 @@
 #import "ALVideoDecoder.h"
 #import "ALControls.h"
 #import "ALConnection.h"
+#import "ALColorPipeline.h"
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
 #import <CoreMedia/CoreMedia.h>
@@ -478,10 +479,7 @@ static void ALInstallHooks(void) {
         // Reuse the GPU context. This method can run on multiple camera queues.
         @synchronized (self) {
             if (!self.renderContext) {
-                self.renderContext = [CIContext contextWithOptions:@{
-                    kCIContextUseSoftwareRenderer: @NO,
-                    kCIContextCacheIntermediates: @NO,
-                }];
+                self.renderContext = ALCreateVideoRenderContext();
             }
         }
         CGFloat width = CVPixelBufferGetWidth(target);
@@ -516,7 +514,7 @@ static void ALInstallHooks(void) {
         CIImage *black = [[CIImage imageWithColor:[CIColor colorWithRed:0 green:0 blue:0 alpha:1]]
                          imageByCroppingToRect:bounds];
         image = [[image imageByCompositingOverImage:black] imageByCroppingToRect:bounds];
-        [self.renderContext render:image toCVPixelBuffer:target bounds:bounds colorSpace:nil];
+        ALRenderVideoImage(self.renderContext, image, target, bounds);
         CMSetAttachment(sample, CFSTR("applelive_virtual"), kCFBooleanTrue,
                         kCMAttachmentMode_ShouldPropagate);
         static uint64_t renders = 0;

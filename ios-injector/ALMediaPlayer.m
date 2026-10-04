@@ -1,4 +1,5 @@
 #import "ALMediaPlayer.h"
+#import "ALColorPipeline.h"
 #import <QuartzCore/QuartzCore.h>
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
@@ -56,6 +57,46 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
                                          NULL, NULL, 0) >= 0) context->get_format = ALHardwareFormat;
     if (avcodec_open2(context, codec, NULL) < 0) { avcodec_free_context(&context); return NULL; }
     return context;
+}
+
+static enum AVColorSpace ALFrameColorSpace(AVFrame *frame, AVStream *stream) {
+    if (frame->colorspace != AVCOL_SPC_UNSPECIFIED) return frame->colorspace;
+    if (stream->codecpar->color_space != AVCOL_SPC_UNSPECIFIED) return stream->codecpar->color_space;
+    return frame->width >= 1280 || frame->height > 576 ? AVCOL_SPC_BT709 : AVCOL_SPC_SMPTE170M;
+}
+
+static enum AVColorRange ALFrameColorRange(AVFrame *frame, AVStream *stream) {
+    if (frame->color_range != AVCOL_RANGE_UNSPECIFIED) return frame->color_range;
+    if (stream->codecpar->color_range != AVCOL_RANGE_UNSPECIFIED) return stream->codecpar->color_range;
+    return AVCOL_RANGE_MPEG;
+}
+
+static void ALApplyFrameColorMetadata(CVPixelBufferRef pixelBuffer, AVFrame *frame,
+                                      AVStream *stream) {
+    enum AVColorSpace space = ALFrameColorSpace(frame, stream);
+    enum AVColorPrimaries primaries = frame->color_primaries != AVCOL_PRI_UNSPECIFIED
+        ? frame->color_primaries : stream->codecpar->color_primaries;
+    enum AVColorTransferCharacteristic transfer = frame->color_trc != AVCOL_TRC_UNSPECIFIED
+        ? frame->color_trc : stream->codecpar->color_trc;
+    CFStringRef cvPrimaries = primaries == AVCOL_PRI_BT709
+        ? kCVImageBufferColorPrimaries_ITU_R_709_2 : NULL;
+    CFStringRef cvTransfer = transfer == AVCOL_TRC_IEC61966_2_1
+        ? kCVImageBufferTransferFunction_sRGB
+        : transfer != AVCOL_TRC_UNSPECIFIED ? kCVImageBufferTransferFunction_ITU_R_709_2 : NULL;
+    CFStringRef cvMatrix = space == AVCOL_SPC_BT709
+        ? kCVImageBufferYCbCrMatrix_ITU_R_709_2
+        : space != AVCOL_SPC_UNSPECIFIED ? kCVImageBufferYCbCrMatrix_ITU_R_601_4 : NULL;
+    ALSetVideoColorAttachments(pixelBuffer, cvPrimaries, cvTransfer, cvMatrix);
+    ALSetDefaultVideoColorAttachments(pixelBuffer);
+}
+
+static int ALSwsColorSpace(enum AVColorSpace space) {
+    switch (space) {
+        case AVCOL_SPC_BT709: return SWS_CS_ITU709;
+        case AVCOL_SPC_FCC: return SWS_CS_FCC;
+        case AVCOL_SPC_SMPTE240M: return SWS_CS_SMPTE240M;
+        default: return SWS_CS_ITU601;
+    }
 }
 
 @interface ALMediaPlayer () {
@@ -272,12 +313,23 @@ static AVCodecContext *ALOpenMediaCodec(AVStream *stream, BOOL hardware) {
                                 CVPixelBufferLockBaseAddress(pixel, 0);
                                 uint8_t *planes[4] = {CVPixelBufferGetBaseAddress(pixel), NULL, NULL, NULL};
                                 int strides[4] = {(int)CVPixelBufferGetBytesPerRow(pixel), 0, 0, 0};
-                                if (scaler) sws_scale(scaler, (const uint8_t * const *)frame->data, frame->linesize, 0, frame->height, planes, strides);
+                                if (scaler) {
+                                    const int *coefficients = sws_getCoefficients(ALSwsColorSpace(ALFrameColorSpace(frame, stream)));
+                                    int sourceFullRange = ALFrameColorRange(frame, stream) == AVCOL_RANGE_JPEG;
+                                    if (sws_setColorspaceDetails(scaler, coefficients, sourceFullRange,
+                                            coefficients, 1, 0, 1 << 16, 1 << 16) < 0 ||
+                                        sws_scale(scaler, (const uint8_t * const *)frame->data,
+                                                  frame->linesize, 0, frame->height,
+                                                  planes, strides) <= 0) {
+                                        sws_freeContext(scaler); scaler = NULL;
+                                    }
+                                }
                                 CVPixelBufferUnlockBaseAddress(pixel, 0);
                                 if (!scaler) { CVPixelBufferRelease(pixel); pixel = NULL; }
                             }
                         }
                         if (pixel) {
+                            ALApplyFrameColorMetadata(pixel, frame, stream);
                             @synchronized (self) {
                                 if (atomic_load(&_generation) == generation && self.onFrame) self.onFrame(pixel, rotation);
                             }

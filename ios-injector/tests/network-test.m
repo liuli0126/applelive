@@ -5,6 +5,11 @@
 #include <unistd.h>
 
 static atomic_bool gStopPublisher;
+static BOOL hasVideoColorMetadata(CVPixelBufferRef frame) {
+    return CVBufferGetAttachment(frame, kCVImageBufferColorPrimariesKey, NULL) &&
+        CVBufferGetAttachment(frame, kCVImageBufferTransferFunctionKey, NULL) &&
+        CVBufferGetAttachment(frame, kCVImageBufferYCbCrMatrixKey, NULL);
+}
 static void publishFixture(const char *filename) {
     AVFormatContext *input = NULL, *output = NULL;
     AVPacket *packet = av_packet_alloc();
@@ -49,8 +54,12 @@ done:
 static BOOL testSource(NSString *url) {
     ALMediaPlayer *player = [ALMediaPlayer new];
     __block atomic_uint frames, audio;
-    atomic_init(&frames, 0); atomic_init(&audio, 0);
-    player.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) { atomic_fetch_add(&frames, 1); };
+    __block atomic_bool colorMetadata;
+    atomic_init(&frames, 0); atomic_init(&audio, 0); atomic_init(&colorMetadata, false);
+    player.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) {
+        if (hasVideoColorMetadata(frame)) atomic_store(&colorMetadata, true);
+        atomic_fetch_add(&frames, 1);
+    };
     player.onAudio = ^(const float *pcm, NSUInteger count) { atomic_fetch_add(&audio, (unsigned)count); };
     [player playURL:[NSURL URLWithString:url]];
     BOOL started = NO, sawError = NO;
@@ -63,7 +72,8 @@ static BOOL testSource(NSString *url) {
         if (i == 59) { middleFrames = atomic_load(&frames); middleAudio = atomic_load(&audio); }
     }
     unsigned finalFrames = atomic_load(&frames), finalAudio = atomic_load(&audio);
-    BOOL passed = started && !sawError && middleFrames >= 20 && finalFrames - middleFrames >= 20 &&
+    BOOL passed = started && !sawError && atomic_load(&colorMetadata) &&
+        middleFrames >= 20 && finalFrames - middleFrames >= 20 &&
         middleAudio >= 20000 && finalAudio - middleAudio >= 20000 &&
         [player.status[@"state"] isEqualToString:@"playing"];
     fprintf(passed ? stdout : stderr,

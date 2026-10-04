@@ -6,13 +6,29 @@ import shutil
 import subprocess
 import sys
 import time
+import tempfile
 from urllib.request import urlopen
 
 from stream_server import StreamServer
 from sender import stop_process_tree
 
 
+def test_user_writable_runtime_directory():
+    with tempfile.TemporaryDirectory() as temp:
+        old = os.environ.get("LOCALAPPDATA")
+        os.environ["LOCALAPPDATA"] = temp
+        try:
+            server = StreamServer(Path(temp) / "read-only-plugin")
+            assert server.runtime_directory == Path(temp) / "AppleLive"
+        finally:
+            if old is None:
+                os.environ.pop("LOCALAPPDATA", None)
+            else:
+                os.environ["LOCALAPPDATA"] = old
+
+
 def main():
+    test_user_writable_runtime_directory()
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("FFmpeg required for the streaming integration test")

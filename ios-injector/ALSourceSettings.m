@@ -3,7 +3,7 @@
 BOOL ALValidStreamURL(NSString *value) {
     if (![value isKindOfClass:NSString.class]) return NO;
     NSURLComponents *url = [NSURLComponents componentsWithString:value];
-    return [@[@"rtmp", @"rtmps", @"rtsp", @"http", @"https"] containsObject:url.scheme.lowercaseString] && url.host.length > 0;
+    return [@[@"rtmp", @"rtsp"] containsObject:url.scheme.lowercaseString] && url.host.length > 0;
 }
 
 NSDictionary *ALMigrateMediaSource(NSDictionary *saved, NSString *defaultURL) {
@@ -14,7 +14,7 @@ NSDictionary *ALMigrateMediaSource(NSDictionary *saved, NSString *defaultURL) {
     NSString *kind = source[@"kind"];
     // The former computer source was the second LAN path. Upgrade it to Detection,
     // retaining a previously entered stream URL (including RTSP) when available.
-    if (!kind || [kind isEqualToString:@"computer"]) {
+    if (!kind || [kind isEqualToString:@"computer"] || [kind isEqualToString:@"usb"]) {
         source[@"kind"] = @"network";
         if (!ALValidStreamURL(source[@"url"])) source[@"url"] = ALValidStreamURL(defaultURL) ? defaultURL : @"";
     }

@@ -10,6 +10,14 @@
 static void require(BOOL condition, const char *message) {
     if (!condition) { fprintf(stderr, "%s\n", message); exit(1); }
 }
+static void requireVideoColorMetadata(CVPixelBufferRef frame) {
+    require(CVBufferGetAttachment(frame, kCVImageBufferColorPrimariesKey, NULL) != NULL,
+            "decoded video color primaries");
+    require(CVBufferGetAttachment(frame, kCVImageBufferTransferFunctionKey, NULL) != NULL,
+            "decoded video transfer function");
+    require(CVBufferGetAttachment(frame, kCVImageBufferYCbCrMatrixKey, NULL) != NULL,
+            "decoded video YCbCr matrix");
+}
 static void testAudio(void) {
     ALAudioRing *ring = [ALAudioRing new];
     for (int planar = 0; planar <= 1; planar++) for (int floating = 0; floating <= 1; floating++) {
@@ -64,6 +72,7 @@ int main(int argc, char **argv) {
         player.onReset = ^{ atomic_fetch_add(&resets, 1); };
         player.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) {
             require(CVPixelBufferGetWidth(frame) == 320 && CVPixelBufferGetHeight(frame) == 240, "decoded video dimensions");
+            requireVideoColorMetadata(frame);
             atomic_fetch_add(&frames, 1);
         };
         player.onAudio = ^(const float *pcm, NSUInteger count) {

@@ -1,25 +1,16 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>AppleLive</title><link rel="stylesheet" href="style.css"></head>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>AppleLive</title><link rel="stylesheet" href="style.css"></head>
 <body><main>
-  <header><div class="logo" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="12" height="14" rx="3"/><path d="m15 10 6-4v12l-6-4"/></svg></div><div><h1>AppleLive</h1><p>把 OBS 画面送到 iPhone</p></div></header>
-  <section class="status" aria-live="polite"><span id="light" class="light"></span><div><strong id="status">正在连接控制面板…</strong><p id="detail">请稍候</p></div></section>
-  <form id="settings"><fieldset id="fields">
-    <label for="connection_mode">连接方式</label><select id="connection_mode"><option value="usb">USB 数据线</option><option value="lan">同一局域网</option></select>
-    <label for="quality">画质</label><select id="quality"><option value="smooth">流畅 · 540p</option><option value="standard">标准 · 720p</option><option value="high">高清 · 1080p</option></select>
-    <label class="check"><span>传输电脑声音</span><input type="checkbox" id="computer_audio"></label>
-  </fieldset></form>
-  <p id="mode_hint" class="hint">USB：连接数据线，并在手机上信任此电脑。</p>
-  <div id="stream_box" class="address" hidden><span>播放器拉流地址 · RTMP</span><strong id="stream_address"></strong><button id="copy_stream" type="button" class="secondary" title="复制播放器拉流地址">复制地址</button></div>
-  <button id="allow_lan" type="button" class="secondary" hidden>授权此电脑的局域网访问</button>
+  <header><div class="logo" aria-hidden="true">AL</div><div><h1>AppleLive</h1><p>OBS 画面到 iPhone · 电脑端 v0.2.5</p></div></header>
+  <section class="status" aria-live="polite"><span id="light" class="light"></span><div><strong id="status">正在连接 OBS</strong><p id="detail"></p></div></section>
+  <label for="host">电脑局域网 IP</label><select id="host" aria-label="电脑局域网 IP"></select>
+  <button id="configure" type="button" class="secondary">获取推流码</button>
+  <div class="address"><span>OBS 推流服务器</span><strong id="publish_server"></strong><span>推流密钥</span><strong id="publish_key">applelive</strong></div>
+  <button id="broadcast" type="button" disabled>开播</button>
+  <div class="address"><span>手机 RTMP 拉流地址</span><strong id="rtmp_pull_address"></strong><button type="button" class="secondary copy_address" data-target="rtmp_pull_address">复制 RTMP 地址</button><span class="address_label">手机 RTSP 拉流地址</span><strong id="rtsp_pull_address"></strong><button type="button" class="secondary copy_address" data-target="rtsp_pull_address">复制 RTSP 地址</button></div>
+  <p id="lan_status" class="network_status">正在检查局域网端口</p>
+  <button id="allow_lan" type="button" class="secondary">授权局域网访问</button>
+  <a id="phone_plugin" class="download_button" href="/api/phone-plugin" download="AppleLive.dylib">下载手机插件</a>
   <p id="error" role="alert" hidden></p>
-  <button id="toggle" type="button" disabled>正在准备…</button>
-  <p id="settings_hint" class="hint center">设置自动保存</p>
-  <button id="phone_plugin" type="button" class="secondary" disabled>安装手机插件</button>
-  <dialog id="plugin_dialog" aria-labelledby="plugin_title">
-    <div class="dialog_head"><h2 id="plugin_title">手机插件</h2><button id="close_plugin" type="button" aria-label="关闭" title="关闭">&#215;</button></div>
-    <label for="plugin_host" id="plugin_host_label">电脑地址</label><select id="plugin_host"></select>
-    <div class="qr_area"><img id="plugin_qr" alt="手机插件下载二维码" width="240" height="240" hidden><p id="plugin_message" role="status"></p></div>
-    <a id="download_plugin" class="download_button" download>下载 .dylib</a>
-  </dialog>
-  <details><summary>连接和声音帮助</summary><p>手机画面替换会自动连接电脑；「检测」中的 RTMP 地址仅用于独立播放器拉流。</p><p>局域网：手机与电脑连接同一路由器，并允许 Windows 防火墙放行 TCP 8765；标准播放器还需要放行 TCP 1935。</p><p>USB：打开已注入 AppleLive 的直播 App，连接并信任电脑。旧 deb 版使用已配对的 OpenSSH 通道。</p><p>声音：OBS 将声音「监听并输出」至 CABLE Input，电脑开启声音传输，手机打开「内录」。内录关闭手机麦克风，缺少源音频时保持静音。</p></details>
 </main><script src="app.js"></script></body></html>

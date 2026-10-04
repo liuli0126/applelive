@@ -5,14 +5,11 @@ The standalone library is imported into each target application with the user's 
 ## Sources and controls
 
 - Album and Files import an image or video into the target app's own storage. Images retain a static frame; local videos always loop and support play/pause. There is no loop switch, and an old saved loop-off setting is discarded on upgrade.
-- Detection is the only LAN entry. Paste a full stream URL, for example `rtmp://192.168.1.45:1935/live/applelive`. RTMP/RTMPS, RTSP over TCP and HTTP/HTTPS media/HLS inputs are supported. It accepts SRS and MediaMTX stream URLs.
-- USB Cable selects the dedicated USB app listener. The standalone plugin no longer connects to the old WebSocket LAN sender or shows a Computer address/connection button. On upgrade, an old Computer source moves to Detection, preserving an existing stream URL or suggesting RTMP from the saved computer IP.
+- Detection is the only network entry. Paste a full RTMP or RTSP URL, for example `rtmp://192.168.1.45:1935/live/applelive`. Phone and computer must be on the same Wi-Fi. An obsolete Computer or USB source moves to Detection on upgrade.
 - Internal audio replaces microphone input with source sound. Silence is used when the source has no audio or the audio buffer underflows. Mute silences the injected audio. Turning off internal audio restores the app's microphone path.
 - Mirror, rotation, fit/fill and Restore Camera apply to the selected source. The compact panel shows all controls on one screen without vertical scrolling. Internal audio is the only audio option; it replaces the microphone when enabled.
 
-USB requires the Apple USB device driver and device trust on Windows. The standalone app listener uses usbmux port 8766 and does not require OpenSSH. The legacy deb's SSH route remains available for older deployments.
-
-The phone panel uses an ice white/blue theme with soft rounded borders, native controls and a circular floating launcher. The `替换画面` switch applies to every source: USB cable, RTMP/RTSP/HTTP stream, Album and Files. The launcher is transparent outside its disc, clips to a circle and only accepts touches inside that circle.
+The phone panel uses an ice white/blue theme with soft rounded borders, native controls and a circular floating launcher. The `替换画面` switch applies to RTMP/RTSP streams, Album and Files. The launcher is transparent outside its disc, clips to a circle and only accepts touches inside that circle.
 
 ## Build And Relink
 
@@ -24,4 +21,4 @@ The CI artifact includes `AppleLive-relink.tar.gz`: application object files for
 
 ## Verification
 
-CI runs source migration, standalone LAN route removal, RTMP/RTSP video and audio, playback, pause, seeking, looping, cancellation, PCM layout and microphone-underflow silence tests, then verifies architectures, deployment versions and absence of external injection framework dependencies. Real-device video, audio and USB results are recorded separately; a compiled binary does not demonstrate app compatibility.
+CI runs source migration, RTMP/RTSP video and audio, playback, pause, seeking, looping, cancellation, PCM layout and microphone-underflow silence tests, then verifies architectures, deployment versions and absence of external injection framework dependencies. Real-device video and audio results are recorded separately; a compiled binary does not demonstrate app compatibility.
