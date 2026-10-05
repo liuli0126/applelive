@@ -4,6 +4,7 @@
 #import <VideoToolbox/VideoToolbox.h>
 #import <os/lock.h>
 #import <os/log.h>
+#include <stdint.h>
 
 static void ALReportDecodeError(const char *stage, OSStatus status) {
     static uint64_t errors = 0;
@@ -20,14 +21,9 @@ static void ALReportDecodeError(const char *stage, OSStatus status) {
     CMVideoFormatDescriptionRef _formatDescription;
     VTDecompressionSessionRef _session;
     os_unfair_lock _lock;
+    BOOL _needsKeyframe;
 }
 @end
-
-static size_t ALStartCodeLength(const uint8_t *bytes, size_t length) {
-    if (length >= 4 && bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 0 && bytes[3] == 1) return 4;
-    if (length >= 3 && bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 1) return 3;
-    return 0;
-}
 
 static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
                              VTDecodeInfoFlags infoFlags, CVImageBufferRef imageBuffer,
@@ -54,7 +50,10 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
 
 - (instancetype)init {
     self = [super init];
-    if (self) _lock = OS_UNFAIR_LOCK_INIT;
+    if (self) {
+        _lock = OS_UNFAIR_LOCK_INIT;
+        _needsKeyframe = YES;
+    }
     return self;
 }
 
@@ -65,6 +64,7 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
 - (void)reset {
     os_unfair_lock_lock(&_lock);
     if (_session) {
+        VTDecompressionSessionWaitForAsynchronousFrames(_session);
         VTDecompressionSessionInvalidate(_session);
         CFRelease(_session);
         _session = NULL;
@@ -75,6 +75,7 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
     }
     _sps = nil;
     _pps = nil;
+    _needsKeyframe = YES;
     os_unfair_lock_unlock(&_lock);
 }
 
@@ -116,28 +117,68 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
 - (void)decodeNAL:(NSData *)nalData sequence:(uint32_t)sequence {
     if (!nalData.length) return;
     const uint8_t *bytes = nalData.bytes;
-    size_t startCode = ALStartCodeLength(bytes, nalData.length);
-    if (!startCode || nalData.length <= startCode) return;
-    const uint8_t *payload = bytes + startCode;
-    size_t payloadLength = nalData.length - startCode;
-    uint8_t nalType = payload[0] & 0x1F;
+    const size_t length = nalData.length;
+    NSMutableArray<NSData *> *slices = [NSMutableArray array];
+    BOOL hasKeyframe = NO;
+
+    // A frame can contain more than one slice NAL.  The old implementation
+    // treated the whole packet as one NAL and fed a trailing start code to
+    // VideoToolbox, which produces corrupted pictures on some iOS versions.
+    // Split every Annex-B NAL first, then submit all slices in one sample.
+    size_t cursor = 0;
+    while (cursor + 3 <= length) {
+        size_t start = SIZE_MAX, startCode = 0;
+        for (size_t index = cursor; index + 3 <= length; index++) {
+            if (index + 4 <= length && bytes[index] == 0 && bytes[index + 1] == 0 &&
+                bytes[index + 2] == 0 && bytes[index + 3] == 1) {
+                start = index; startCode = 4; break;
+            }
+            if (bytes[index] == 0 && bytes[index + 1] == 0 && bytes[index + 2] == 1) {
+                start = index; startCode = 3; break;
+            }
+        }
+        if (start == SIZE_MAX || start + startCode >= length) break;
+        size_t next = length;
+        for (size_t index = start + startCode; index + 3 <= length; index++) {
+            if ((index + 4 <= length && bytes[index] == 0 && bytes[index + 1] == 0 &&
+                 bytes[index + 2] == 0 && bytes[index + 3] == 1) ||
+                (bytes[index] == 0 && bytes[index + 1] == 0 && bytes[index + 2] == 1)) {
+                next = index;
+                break;
+            }
+        }
+        size_t payloadLength = next - (start + startCode);
+        if (payloadLength) {
+            const uint8_t *payload = bytes + start + startCode;
+            uint8_t nalType = payload[0] & 0x1F;
+            if (nalType == 7 || nalType == 8) {
+                // Parameter sets are copied while the input NSData remains
+                // owned by the USB/WebSocket receive callback.
+                os_unfair_lock_lock(&_lock);
+                NSData *parameterSet = [NSData dataWithBytes:payload length:payloadLength];
+                if (nalType == 7 && ![_sps isEqualToData:parameterSet]) {
+                    _sps = parameterSet;
+                    [self resetSessionLocked];
+                } else if (nalType == 8 && ![_pps isEqualToData:parameterSet]) {
+                    _pps = parameterSet;
+                    [self resetSessionLocked];
+                }
+                os_unfair_lock_unlock(&_lock);
+            } else if (nalType == 1 || nalType == 5) {
+                [slices addObject:[NSData dataWithBytes:payload length:payloadLength]];
+                hasKeyframe = hasKeyframe || nalType == 5;
+            }
+        }
+        cursor = next;
+        if (cursor == length) break;
+    }
+    if (!slices.count) return;
 
     os_unfair_lock_lock(&_lock);
-    if (nalType == 7) {
-        NSData *sps = [NSData dataWithBytes:payload length:payloadLength];
-        if (![_sps isEqualToData:sps]) {
-            _sps = sps;
-            [self resetSessionLocked];
-        }
-        os_unfair_lock_unlock(&_lock);
-        return;
-    }
-    if (nalType == 8) {
-        NSData *pps = [NSData dataWithBytes:payload length:payloadLength];
-        if (![_pps isEqualToData:pps]) {
-            _pps = pps;
-            [self resetSessionLocked];
-        }
+    // Never decode a delta frame after a reconnect or parameter-set change.
+    // Waiting for the next IDR prevents the decoder from displaying blocks
+    // and avoids cascading VideoToolbox failures after a dropped USB packet.
+    if (_needsKeyframe && !hasKeyframe) {
         os_unfair_lock_unlock(&_lock);
         return;
     }
@@ -146,16 +187,22 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
         return;
     }
 
-    size_t blockLength = payloadLength + 4;
+    size_t blockLength = 0;
+    for (NSData *slice in slices) blockLength += slice.length + 4;
     CMBlockBufferRef block = NULL;
     OSStatus status = CMBlockBufferCreateWithMemoryBlock(
         kCFAllocatorDefault, NULL, blockLength, kCFAllocatorDefault, NULL,
         0, blockLength, kCMBlockBufferAssureMemoryNowFlag, &block);
     if (status == kCMBlockBufferNoErr) {
-        uint32_t length = CFSwapInt32HostToBig((uint32_t)payloadLength);
-        status = CMBlockBufferReplaceDataBytes(&length, block, 0, 4);
-        if (status == kCMBlockBufferNoErr) {
-            status = CMBlockBufferReplaceDataBytes(payload, block, 4, payloadLength);
+        size_t offset = 0;
+        for (NSData *slice in slices) {
+            uint32_t sliceLength = CFSwapInt32HostToBig((uint32_t)slice.length);
+            status = CMBlockBufferReplaceDataBytes(&sliceLength, block, offset, 4);
+            if (status != kCMBlockBufferNoErr) break;
+            status = CMBlockBufferReplaceDataBytes(slice.bytes, block, offset + 4,
+                                                    slice.length);
+            if (status != kCMBlockBufferNoErr) break;
+            offset += slice.length + 4;
         }
     }
     if (status != kCMBlockBufferNoErr) {
@@ -177,9 +224,13 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
     if (status == noErr && sample) {
         VTDecodeInfoFlags info = 0;
         OSStatus decodeStatus = VTDecompressionSessionDecodeFrame(_session, sample,
-                                           kVTDecodeFrame_EnableAsynchronousDecompression,
+                                           0,
                                            (void *)(uintptr_t)sequence, &info);
-        if (decodeStatus != noErr) ALReportDecodeError("frame", decodeStatus);
+        if (decodeStatus != noErr) {
+            ALReportDecodeError("frame", decodeStatus);
+        } else if (hasKeyframe) {
+            _needsKeyframe = NO;
+        }
         CFRelease(sample);
     }
     os_unfair_lock_unlock(&_lock);
@@ -187,6 +238,7 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
 
 - (void)resetSessionLocked {
     if (_session) {
+        VTDecompressionSessionWaitForAsynchronousFrames(_session);
         VTDecompressionSessionInvalidate(_session);
         CFRelease(_session);
         _session = NULL;
@@ -195,6 +247,7 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
         CFRelease(_formatDescription);
         _formatDescription = NULL;
     }
+    _needsKeyframe = YES;
 }
 
 @end
