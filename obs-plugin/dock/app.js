@@ -29,7 +29,9 @@ function updateModeUI() {
 }
 
 function selectMode(mode) {
-  if (!['lan', 'usb'].includes(mode) || state?.bridge?.stream_active) return;
+  if (!['lan', 'usb'].includes(mode)) return;
+  const active = selectedMode === 'usb' ? !!state?.usb?.running : !!state?.bridge?.stream_active;
+  if (active || pendingId) return;
   selectedMode = mode;
   modeTouched = true;
   localStorage.setItem('applelive.mode', mode);
@@ -111,13 +113,16 @@ async function refresh() {
       pendingId = null;
       showError('OBS 没有完成操作，请检查脚本是否已加载');
     }
-    const active = !!bridge.stream_active;
-    const configured = !!bridge.stream_configured;
-    const path = state.stream_path || {};
+
     const usb = state.usb || {};
-    const selectedServer = selectedMode === 'usb' ? 'rtmp://127.0.0.1:1935/live' : `rtmp://${$('host').value}:1935/live`;
+    const usbActive = selectedMode === 'usb' && !!usb.running;
+    const active = selectedMode === 'usb' ? usbActive : !!bridge.stream_active;
+    const configured = selectedMode === 'usb' ? usbActive : !!bridge.stream_configured;
+    const path = state.stream_path || {};
+    const selectedServer = `rtmp://${$('host').value}:1935/live`;
     const tracks = path.tracks || [];
     const usbConnected = selectedMode === 'usb' && (usb.usb_clients || 0) > 0;
+
     $('status').textContent = !state.ready ? '等待 OBS 控制连接'
       : selectedMode === 'usb' && usbConnected ? 'USB 数据线已连接'
       : selectedMode === 'usb' && active ? '等待手机 USB 连接'
@@ -126,24 +131,25 @@ async function refresh() {
       : configured ? (selectedMode === 'usb' ? 'USB 直连已准备' : '推流码已写入 OBS')
       : (selectedMode === 'usb' ? '尚未准备 USB 直连' : '尚未获取推流码');
     $('detail').textContent = !state.ready ? (state.obs_error || '请在 OBS 工具 → 脚本中加载 AppleLive.lua')
+      : selectedMode === 'usb' && usb.error ? usb.error
+      : selectedMode === 'usb' && active ? (usbConnected ? 'OBS 画面正在通过数据线传输' : '保持 iPhone 解锁并连接数据线')
+      : selectedMode === 'usb' ? '点击准备 USB 直连会自动启动 OBS 画面输出，不需要 OBS 开播'
       : active && !state.stream_server_ready ? '本地流服务器未就绪'
       : active && !path.ready ? 'OBS 已开播，本地流服务器尚未收到画面'
       : active && !tracks.includes('H264') ? '请将 OBS 视频编码设为 H.264'
       : active && !tracks.includes('MPEG-4 Audio') ? '请将 OBS 音频编码设为 AAC'
-      : selectedMode === 'usb' && usb.error ? usb.error
-      : selectedMode === 'usb' && active ? (usbConnected ? 'OBS 音画正在通过数据线传输' : '保持 iPhone 解锁并连接数据线')
       : active ? `手机拉流连接：${path.readers || 0}` : '本地流尚未开始';
     $('usb_status').textContent = usbConnected ? '已连接手机'
       : usb.state === 'error' ? (usb.error || 'USB 发送器错误')
-      : usb.running ? '正在查找 iPhone' : active ? '正在启动' : '等待开播';
+      : usb.running ? `正在查找 iPhone（${usb.video_device || 'OBS 画面'}）` : '等待准备 USB 直连';
     $('light').className = 'light' + (selectedMode === 'usb' ? (usbConnected ? ' on' : '') : (active && path.ready ? ' on' : ''));
     $('configure').disabled = !state.ready || (selectedMode === 'lan' && !hosts.length) || active || !!pendingId;
-    $('broadcast').disabled = !state.ready || !configured || !!pendingId ||
-      (selectedMode === 'lan' && !state.firewall_ready) ||
-      (!active && !state.stream_server_ready) || bridge.stream_server !== selectedServer;
-    $('broadcast').textContent = active ? '下播' : '开播';
+    $('broadcast').disabled = !state.ready || !!pendingId ||
+      (selectedMode === 'lan' && (!configured || !state.firewall_ready ||
+        (!active && !state.stream_server_ready) || bridge.stream_server !== selectedServer));
+    $('broadcast').textContent = selectedMode === 'usb' ? (active ? '停止直连' : '开始直连') : (active ? '下播' : '开播');
     $('broadcast').className = active ? 'stop' : '';
-    if (configured && !active && bridge.stream_server !== selectedServer) $('broadcast').disabled = true;
+    if (selectedMode === 'lan' && configured && !active && bridge.stream_server !== selectedServer) $('broadcast').disabled = true;
     $('mode_lan').disabled = $('mode_usb').disabled = active || !!pendingId;
     $('phone_plugin').hidden = !state.phone_plugin?.available;
     $('lan_status').textContent = state.firewall_ready ? '局域网端口已授权'
@@ -172,7 +178,9 @@ $('host').addEventListener('change', updateAddresses);
 $('mode_lan').addEventListener('click', () => selectMode('lan'));
 $('mode_usb').addEventListener('click', () => selectMode('usb'));
 $('configure').addEventListener('click', configure);
-$('broadcast').addEventListener('click', () => command(state?.bridge?.stream_active ? 'stop_stream' : 'start_stream'));
+$('broadcast').addEventListener('click', () => command(
+  (selectedMode === 'usb' ? !!state?.usb?.running : !!state?.bridge?.stream_active)
+    ? 'stop_stream' : 'start_stream'));
 document.querySelectorAll('.copy_address').forEach(button => button.addEventListener('click', async () => {
   const label = button.textContent;
   try {

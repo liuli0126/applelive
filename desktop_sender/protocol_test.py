@@ -56,12 +56,15 @@ def test_obs_video_command_uses_virtual_camera():
     assert any(part.startswith("scale=1280:720:force_original_aspect_ratio=decrease") for part in command)
     assert command[command.index("-b:v") + 1] == "5000k"
     assert command[command.index("-preset") + 1] == "veryfast"
-    assert "repeat-headers=1" in command
+    assert any(part.startswith("repeat-headers=1") for part in command)
 
     args.encoder = "nvenc"
     command = video_command(args)
     assert "h264_nvenc" in command
     assert command[command.index("-tune") + 1] == "ull"
+    assert command[command.index("-profile:v") + 1] == "baseline"
+    assert command[command.index("-coder:v") + 1] == "cavlc"
+    assert command[command.index("-aud") + 1] == "1"
 
 
 def test_local_obs_stream_is_copied_to_usb_packets():

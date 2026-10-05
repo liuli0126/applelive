@@ -1,18 +1,18 @@
-# AppleLive OBS 插件（Windows，电脑端 v0.3.0）
+# AppleLive OBS plugin (Windows desktop v0.4.2)
 
-支持两种独立连接方式：局域网模式由 OBS 通过内置 MediaMTX v1.18.1 提供 RTMP/RTSP；USB 数据线模式把 OBS 的节目画面和混音音频送入电脑本机 MediaMTX，再通过 usbmux 直接传到 iPhone。USB 模式不使用 Wi-Fi、OpenSSH、OBS 虚拟摄像头或额外音频驱动。
+LAN mode uses the bundled MediaMTX RTMP/RTSP server. USB mode is a direct OBS virtual-camera -> FFmpeg -> usbmux path and never starts OBS streaming or MediaMTX.
 
 ## 安装
 
 1. 将 ZIP 解压到 OBS 目录以外的任意文件夹，双击 `安装或更新AppleLive.cmd`。安装程序会定位并关闭 OBS、替换旧版文件、自动添加 Lua 脚本和 AppleLive 停靠窗口、启用 OBS WebSocket，然后重新打开 OBS。
-2. 在面板里确认显示“电脑端 v0.3.0”，选择「局域网」或「USB 数据线」，点击准备按钮，再点击「开播」。首次打开 OBS 时，应先完成或关闭自动配置向导。
+2. In the dock, choose LAN or USB. LAN keeps the existing Get Stream Key / Start workflow. USB only needs Prepare USB Direct; it starts the OBS virtual camera and USB sender automatically, with no OBS Start Streaming click.
 3. 局域网模式需要把面板显示的 RTMP 或 RTSP 地址填进手机插件的「检测」入口；USB 模式需要在手机插件里点击「USB 直连」。
 
 `127.0.0.1:18765` 只供 OBS 本机停靠面板使用，不是手机拉流地址。
 
 ## USB 数据线
 
-USB 模式要求 iPhone 已信任当前电脑，并安装包含「USB 直连」入口的最新版 `AppleLive.dylib`。Windows 还必须已有 Apple Mobile Device/usbmux 驱动（Apple Devices、iTunes 或爱思安装的驱动均可）；这是系统的 iPhone 识别驱动，不需要单独安装 Python、FFmpeg 或 OpenSSH。连接后，OBS 面板会分别显示「正在查找 iPhone」和「已连接手机」。整套 Windows 包已包含 USB 发送器、pymobiledevice3 运行依赖和 FFmpeg。
+USB mode requires the iPhone to trust this computer and the latest `AppleLive.dylib`. Windows must have Apple Mobile Device/usbmux drivers (Apple Devices, iTunes, or 3uTools drivers). The USB media path does not use Wi-Fi, RTMP, RTSP, OpenSSH, or a user-triggered OBS live output.
 
 ## 地址
 

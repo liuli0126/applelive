@@ -19,7 +19,62 @@ from obs_websocket import OBSClient, OBSConnectionError
 from phone_plugin import plugin_path
 from stream_server import RTMP_URL, StreamServer
 
-DESKTOP_VERSION = "0.3.0"
+DESKTOP_VERSION = "0.4.2"
+
+
+def _list_dshow_devices(ffmpeg: Path) -> list[tuple[str, str]]:
+    try:
+        result = subprocess.run(
+            [str(ffmpeg), "-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"],
+            capture_output=True, timeout=5, check=False,
+        )
+        output = (result.stdout + result.stderr).decode("utf-8", errors="replace")
+        import re
+        return [(match.group(1), match.group(2).lower()) for match in re.finditer(
+            r'"([^"]+)"\s+\((video|audio|none)\)', output, re.I)]
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+
+
+def find_virtual_camera(ffmpeg: Path) -> str:
+    """Find the OBS program camera name on this Windows installation.
+
+    OBS calls it ``OBS Virtual Camera`` in a standard install and ``HD
+    Camera`` in the customized OBS build used by this project.  Device names
+    are localized and can change between OBS versions, so probe DirectShow
+    once instead of hard-coding one name.
+    """
+    candidates = [name for name, kind in _list_dshow_devices(ffmpeg) if kind in {"video", "none"}]
+    preferred = ("OBS Virtual Camera", "HD Camera", "OBS-Camera", "OBS Camera")
+    for name in preferred:
+        if name in candidates:
+            return name
+    for name in candidates:
+        lowered = name.lower()
+        if "obs" in lowered and ("camera" in lowered or "cam" in lowered):
+            return name
+    # Keep the standard name as a useful error message on machines where OBS
+    # has not registered its virtual camera yet.
+    return preferred[0]
+
+
+def find_audio_device(ffmpeg: Path) -> str:
+    """Prefer a loopback/virtual playback capture device for OBS mixed audio."""
+    candidates = [name for name, kind in _list_dshow_devices(ffmpeg) if kind == "audio"]
+    preferred = (
+        "CABLE Output (VB-Audio Virtual Cable)",
+        "VB-Audio Virtual Cable",
+        "OBS Audio",
+        "Desktop Audio",
+    )
+    for name in preferred:
+        if name in candidates:
+            return name
+    for name in candidates:
+        lowered = name.lower()
+        if "cable output" in lowered or "virtual audio" in lowered:
+            return name
+    return ""
 
 
 class USBSender:
@@ -30,8 +85,13 @@ class USBSender:
         self.stop_file = runtime_root / "applelive-usb-stop.flag"
         self.log_file = runtime_root / "applelive-usb.log"
         self.process = None
+        self.video_device = ""
+        self.audio_device = ""
+        self.width = 0
+        self.height = 0
+        self.fps = 30
 
-    def start(self) -> None:
+    def start(self, video_settings: dict | None = None) -> None:
         if self.process and self.process.poll() is None:
             return
         sender = self.directory / "AppleLiveSender.exe"
@@ -41,12 +101,29 @@ class USBSender:
         self.status_file.parent.mkdir(parents=True, exist_ok=True)
         self.stop_file.unlink(missing_ok=True)
         self.status_file.unlink(missing_ok=True)
+        if not self.video_device:
+            self.video_device = find_virtual_camera(ffmpeg)
+        if not self.audio_device:
+            self.audio_device = find_audio_device(ffmpeg)
+        if video_settings:
+            width = int(video_settings.get("outputWidth") or video_settings.get("baseWidth") or 0)
+            height = int(video_settings.get("outputHeight") or video_settings.get("baseHeight") or 0)
+            fps_num = int(video_settings.get("fpsNumerator") or 0)
+            fps_den = int(video_settings.get("fpsDenominator") or 1)
+            if width >= 320 and height >= 240 and width % 2 == 0 and height % 2 == 0:
+                self.width, self.height = width, height
+            if 1 <= fps_num <= 60 * fps_den:
+                self.fps = max(1, min(60, round(fps_num / fps_den)))
         command = [
             str(sender), "--connection-mode", "usb", "--port", "0",
-            "--input-url", RTMP_URL, "--ffmpeg", str(ffmpeg),
+            "--video-device", self.video_device, "--ffmpeg", str(ffmpeg),
+            "--width", str(self.width or 1920), "--height", str(self.height or 1080),
+            "--fps", str(self.fps),
             "--status-file", str(self.status_file), "--stop-file", str(self.stop_file),
             "--log-file", str(self.log_file),
         ]
+        if self.audio_device:
+            command += ["--audio-device", self.audio_device]
         self.process = subprocess.Popen(
             command, cwd=self.directory, stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -71,11 +148,12 @@ class USBSender:
 
     def status(self) -> dict:
         running = bool(self.process and self.process.poll() is None)
-        value = {"state": "stopped", "usb_clients": 0, "error": "", "running": running}
+        value = {"state": "stopped", "usb_clients": 0, "error": "", "running": running,
+                 "video_device": self.video_device, "audio_device": self.audio_device}
         try:
             saved = json.loads(self.status_file.read_text(encoding="utf-8"))
-            if isinstance(saved, dict):
-                value.update({key: saved.get(key, value[key]) for key in ("state", "usb_clients", "error")})
+            if isinstance(saved, dict) and self.process is not None:
+                value.update({key: saved.get(key, value[key]) for key in ("state", "usb_clients", "error", "video_device", "audio_device")})
         except (OSError, ValueError, TypeError):
             pass
         if not running and value["state"] not in {"error", "stopped"}:
@@ -161,12 +239,20 @@ class DockServer(ThreadingHTTPServer):
         self.origin = f"http://127.0.0.1:{self.server_port}"
         self.stream_server = StreamServer(directory / "server")
         self.usb_sender = USBSender(directory)
+        self.virtualcam_owned = False
         self.stream_error = ""
         self.firewall_pending = False
         self.firewall_error = ""
 
     def server_close(self):
         self.usb_sender.stop()
+        if self.virtualcam_owned:
+            try:
+                with OBSClient(self.directory) as client:
+                    client.stop_virtualcam()
+            except OBSConnectionError:
+                pass
+            self.virtualcam_owned = False
         self.stream_server.stop()
         super().server_close()
 
@@ -325,27 +411,35 @@ class Handler(BaseHTTPRequestHandler):
                 self.json_reply(400, {"error": "请选择这台电脑的局域网 IP"})
                 return
             try:
-                if command["action"] in {"configure_stream", "start_stream"}:
-                    self.server.ensure_stream_server()
                 with OBSClient(self.server.directory) as client:
                     if command["action"] == "configure_stream":
                         self.server.usb_sender.stop()
-                        client.configure(command["host"])
+                        if command["mode"] == "usb":
+                            # USB is a direct OBS virtual-camera -> FFmpeg ->
+                            # usbmux path. It deliberately does not configure
+                            # or start an OBS RTMP stream.
+                            was_active = client.virtualcam_state()
+                            self.server.virtualcam_owned = self.server.virtualcam_owned or (not was_active and client.start_virtualcam())
+                            self.server.usb_sender.start(client.video_settings())
+                        else:
+                            client.configure(command["host"])
+                            self.server.ensure_stream_server()
                     elif command["action"] == "start_stream":
                         mode = client.stream_state().get("stream_mode")
-                        client.start()
+                        if self.server.usb_sender.process and self.server.usb_sender.process.poll() is None:
+                            mode = "usb"
                         if mode == "usb":
-                            for _ in range(50):
-                                if self.server.stream_server.path_status()["ready"]:
-                                    break
-                                time.sleep(0.1)
-                            else:
-                                raise RuntimeError("OBS 本机画面尚未就绪，请重试开播")
-                            self.server.usb_sender.start()
+                            if not client.virtualcam_state():
+                                self.server.virtualcam_owned = self.server.virtualcam_owned or client.start_virtualcam()
+                            self.server.usb_sender.start(client.video_settings())
                         else:
-                            self.server.usb_sender.stop()
-                    else:
+                            self.server.ensure_stream_server()
+                            client.start()
+                    elif command["action"] == "stop_stream":
                         self.server.usb_sender.stop()
+                        if self.server.virtualcam_owned:
+                            client.stop_virtualcam()
+                            self.server.virtualcam_owned = False
                         client.stop()
                         self.server.stop_stream_server()
             except (OBSConnectionError, OSError, RuntimeError) as error:

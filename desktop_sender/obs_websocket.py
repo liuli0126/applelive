@@ -125,3 +125,22 @@ class OBSClient:
             if not state["stream_configured"]:
                 raise OBSConnectionError("OBS 正在向其他地址直播，请在 OBS 中停止")
             self.request("StopStream")
+
+    def virtualcam_state(self) -> bool:
+        """Return whether OBS's program virtual camera is publishing frames."""
+        return bool(self.request("GetVirtualCamStatus").get("outputActive"))
+
+    def start_virtualcam(self) -> bool:
+        """Start OBS virtual camera without starting an OBS live output."""
+        if self.virtualcam_state():
+            return False
+        self.request("StartVirtualCam")
+        return True
+
+    def video_settings(self) -> dict:
+        """Return OBS canvas/output dimensions for the direct USB encoder."""
+        return self.request("GetVideoSettings")
+
+    def stop_virtualcam(self) -> None:
+        if self.virtualcam_state():
+            self.request("StopVirtualCam")

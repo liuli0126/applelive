@@ -33,6 +33,19 @@ class FakeOBS:
     def stop(self):
         self.calls.append(("stop",))
 
+    def virtualcam_state(self):
+        return False
+
+    def start_virtualcam(self):
+        self.calls.append(("start_virtualcam",))
+        return True
+
+    def stop_virtualcam(self):
+        self.calls.append(("stop_virtualcam",))
+
+    def video_settings(self):
+        return {"outputWidth": 1280, "outputHeight": 720, "fpsNumerator": 30, "fpsDenominator": 1}
+
 
 class DockTests(unittest.TestCase):
     def setUp(self):
@@ -101,19 +114,13 @@ class DockTests(unittest.TestCase):
             self.assertEqual(self.request(value)[0], 400)
         self.assertFalse(self.obs.calls)
 
-    def test_usb_configures_loopback_and_starts_sender_after_obs(self):
-        self.obs.stream_state = mock.Mock(return_value={
-            "stream_active": False, "stream_configured": True,
-            "stream_server": "rtmp://127.0.0.1:1935/live", "stream_mode": "usb"})
-        with mock.patch.object(self.server, "ensure_stream_server"), \
-                mock.patch.object(self.server.stream_server, "path_status", return_value={
-                    "ready": True, "readers": 0, "tracks": ["H264", "MPEG-4 Audio"]}), \
+    def test_usb_starts_virtual_camera_and_direct_sender_without_media_server(self):
+        with mock.patch.object(self.server, "ensure_stream_server") as media, \
                 mock.patch.object(self.server.usb_sender, "start") as start_usb:
             self.assertEqual(self.request({"action": "configure_stream", "mode": "usb"})[0], 202)
-            self.assertEqual(self.request({"action": "start_stream"})[0], 202)
-        self.assertIn(("configure", "127.0.0.1"), self.obs.calls)
-        self.assertIn(("start",), self.obs.calls)
-        start_usb.assert_called_once_with()
+            self.assertEqual(self.obs.calls, [("start_virtualcam",)])
+            start_usb.assert_called_once_with({"outputWidth": 1280, "outputHeight": 720, "fpsNumerator": 30, "fpsDenominator": 1})
+            media.assert_not_called()
 
     def test_status_and_phone_download(self):
         self.assertTrue(self.server.status()["ready"])

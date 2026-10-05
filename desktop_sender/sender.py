@@ -105,7 +105,7 @@ def video_command(args: argparse.Namespace) -> list[str]:
         return [
             args.ffmpeg, "-hide_banner", "-loglevel", "warning",
             "-fflags", "nobuffer", "-flags", "low_delay",
-            "-analyzeduration", "1000000", "-probesize", "1000000",
+            "-analyzeduration", "5000000", "-probesize", "5000000",
             "-i", args.input_url,
             "-map", "0:v:0", "-an", "-c:v", "copy",
             "-bsf:v", "h264_mp4toannexb", "-f", "h264", "pipe:1",
@@ -138,14 +138,26 @@ def video_command(args: argparse.Namespace) -> list[str]:
         command += [
             "-c:v", "h264_nvenc", "-preset", "p4", "-tune", "ull",
             "-rc", "vbr", "-zerolatency", "1", "-delay", "0",
-            "-forced-idr", "1",
+            # Keep the USB stream within the most widely supported
+            # VideoToolbox subset.  In particular, CAVLC/constrained-baseline
+            # avoids the occasional corrupt picture produced by older iOS
+            # decoders when NVENC emits a Main profile stream.
+            "-profile:v", "baseline", "-level:v", "4.2",
+            "-coder:v", "cavlc", "-refs", "1", "-bf", "0",
+            "-aud", "1", "-forced-idr", "1",
         ]
     else:
         command += [
             "-c:v", "libx264", "-preset", args.encoder_preset,
             "-tune", "zerolatency", "-sc_threshold", "0",
             "-keyint_min", str(gop_frames),
-            "-x264-params", "repeat-headers=1",
+            "-profile:v", "baseline", "-level:v", "4.2",
+            "-coder:v", "cavlc", "-refs", "1", "-bf", "0",
+            # With sliced threads x264 may emit several slice NALs for one
+            # frame.  The phone protocol carries one NAL per video packet,
+            # so use a single encoder thread to keep each packet a frame.
+            "-threads", "1", "-aud", "1",
+            "-x264-params", "repeat-headers=1:sliced-threads=0",
         ]
     command += [
         "-pix_fmt", "yuv420p",
@@ -167,7 +179,7 @@ def audio_command(args: argparse.Namespace) -> list[str] | None:
     if getattr(args, "input_url", None):
         command += [
             "-fflags", "nobuffer", "-flags", "low_delay",
-            "-analyzeduration", "1000000", "-probesize", "1000000",
+            "-analyzeduration", "5000000", "-probesize", "5000000",
             "-i", args.input_url, "-map", "0:a:0",
         ]
     elif args.audio_device:
@@ -225,9 +237,19 @@ def write_status(path: str | None, state: str, client_count: int = 0,
             try:
                 os.replace(pending, target)
                 return
-            except PermissionError:
-                if attempt == 5:
+            except OSError as error:
+                # Windows readers can briefly keep the status file open
+                # without FILE_SHARE_DELETE. Retry the atomic replacement
+                # for the transient sharing/rename errors.
+                if getattr(error, "winerror", None) not in {5, 17, 32}:
                     raise
+                if attempt == 5:
+                    # Skip this refresh when a reader keeps the destination
+                    # open without delete sharing. The next heartbeat retries
+                    # with a fresh temporary file and capture continues.
+                    with contextlib.suppress(OSError):
+                        pending.unlink()
+                    return
                 time.sleep(0.015)
     except OSError as error:
         LOG.warning("Could not refresh status; capture continues: %s", error)
@@ -521,7 +543,8 @@ async def main(args: argparse.Namespace) -> None:
                         if process.poll() is not None:
                             raise RuntimeError(f"FFmpeg exited unexpectedly (code {process.returncode})")
                     last_video = broadcaster.last_video_frame_at
-                    if not last_video and time.monotonic() - capture_started_at > 8:
+                    if (not last_video and time.monotonic() - capture_started_at > 8
+                            and not args.input_url):
                         raise RuntimeError("No video frames received from FFmpeg; check the selected video device and OBS Virtual Camera")
                     if last_video and time.monotonic() - last_video > 5:
                         raise RuntimeError("Video capture stalled for more than 5 seconds")

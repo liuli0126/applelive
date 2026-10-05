@@ -1,5 +1,28 @@
 # Findings
 
+## 2026-10-05 current USB direct-mode gap
+- The no-SSH transport already exists: `desktop_sender/usb_direct.py` discovers trusted USB devices with `pymobiledevice3`, connects through usbmux to phone TCP 8766, checks `ALUSB1\r\n`, and sends length-prefixed legacy media packets.
+- `ios-injector/ALUSBReceiver.m` already listens only on phone loopback TCP 8766 and parses those framed packets. This avoids OpenSSH and an exposed LAN listener.
+- The current OBS dock controls only OBS RTMP publishing and MediaMTX. Its installer removes `AppleLiveSender.exe` and `usb_forward.ps1`, so a fresh/current installation cannot start the retained USB transport.
+- `ALMigrateMediaSource` currently converts a saved `usb` source to `network`, and the current phone panel exposes only RTMP/RTSP Detection. USB must be restored as a distinct source and must not require a stream URL.
+- USB should use the existing raw H.264/float32 PCM packet protocol and sender rather than tunnel RTMP/RTSP. LAN remains RTMP/RTSP through MediaMTX.
+- Selected desktop architecture: in USB mode OBS publishes its normal H.264/AAC program output to MediaMTX on `127.0.0.1`; the packaged sender reads that local stream, copies Annex-B H.264, decodes AAC to float PCM, and forwards packets over usbmux. The phone never uses Wi-Fi for this mode.
+- This local-stream bridge preserves OBS mixed audio and avoids requiring OBS Virtual Camera, VB-CABLE, OpenSSH or a user-selected audio device.
+- The dock can infer configured mode from the OBS stream server: loopback means USB, a selected non-loopback address means LAN. Runtime USB status comes from the sender status file and reports cable discovery separately from frame production.
+
+## 2026-10-04 飞书教程事实基线
+- 电脑端当前交付版本为 v0.2.5，局域网链路为 OBS -> RTMP 发布 -> 内置 MediaMTX 1.18.1 -> 手机 RTMP/RTSP 拉流。
+- 默认完整地址为 `rtmp://电脑IP:1935/live/applelive` 与 `rtsp://电脑IP:8554/live/applelive`；`127.0.0.1:18765` 仅为电脑本机 OBS 停靠窗口。
+- 当前独立 `AppleLive.dylib` 的 arm64 slice 最低 iOS 14，arm64e slice 最低 iOS 15；不能用于 iOS 13.3。
+- iOS 13.3 / unc0ver + Substitute 使用专用 rootful v0.1.11 deb，走旧的 8765 WebSocket 通道，不能与当前只使用 RTMP/RTSP 的独立 dylib 流程混写。
+- 文档需要区分“已实机验证”“构建/自动测试通过”“待实机验证”，避免承诺所有 iOS/机型可用。
+
+## OBS local RTMP publish and phone RTSP pull (2026-10-03)
+- The new desktop workflow does not use OBS Virtual Camera or the old WebSocket sender. OBS publishes `rtmp://<computer LAN IP>:1935/live` with key `applelive`; MediaMTX exposes the same stream to the phone at `rtsp://<computer LAN IP>:8554/live/applelive`.
+- The dock controls OBS through its bundled WebSocket 5 server; it reads local port/password configuration and authenticates without asking users to type a password. Another computer needs Windows x64 OBS 28+ with the server enabled, the complete ZIP, and firewall permission for TCP 1935/8554.
+- Desktop FFprobe confirmed H.264 1080x1920 and AAC over the exact LAN RTSP address. This does not establish real iPhone app playback or latency; those require device testing.
+- OBS custom build crashed in Lua timer/frontend access during development. The final Lua script only launches the helper, and the tested OBS process remains running with no active stream.
+
 ## Single-screen mobile panel (2026-10-03)
 - User requested three UI changes: remove the Preview button, show the whole panel without vertical scrolling, and keep only Internal Audio without a Mute switch.
 - `9b8874a` removes the preview action and preview controller, removes the Mute control, forces standalone saved mute state to `NO`, removes the `UIScrollView`, and compresses the sections into one panel. The successful CI run `37089891485` passed the existing source, media, RTMP/RTSP, architecture and dependency checks.

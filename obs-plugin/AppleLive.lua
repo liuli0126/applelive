@@ -73,11 +73,9 @@ function script_properties()
     return props
 end
 function script_load()
-    obs.obs_frontend_add_event_callback(frontend_event)
     obs.timer_add(delayed_launch, 3000)
 end
 
 function script_unload()
     obs.timer_remove(delayed_launch)
-    obs.obs_frontend_remove_event_callback(frontend_event)
 end

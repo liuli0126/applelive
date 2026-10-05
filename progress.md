@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-10-04 飞书版完整操作教程
+- 已开始整理面向普通用户的完整教程，范围包括 Windows/OBS v0.2.5、手机独立 dylib 注入、RTMP/RTSP 使用、iOS 13.3 专用 rootful 安装、升级和故障排查。
+- 已确认当前独立 dylib 不兼容 iOS 13.3；13.3 专用 deb 已放入 `交付文件/AppleLive-iOS13.3-unc0ver-rootful-v0.1.11.deb`。
+- 已生成 `交付文件/AppleLive-多版本完整操作教程-飞书版.md` 和 `.docx`。DOCX 可重新解析，包含 320 个段落、50 个标题和 8 张表。
+- 已核对教程中的 v0.2.5、RTMP/RTSP 地址、主线 LAN 限制、iOS 13.3 旧通道隔离以及三个交付文件 SHA-256；实际文件哈希全部一致。
+
 ## 2026-10-03 mobile panel simplification
 
 - Removed the Preview button, removed Mute, forced standalone audio controls to Internal Audio only, removed the vertical scroll view and compacted all sections into one screen. The preview HTML/PNG now shows a single complete panel with Pause + Restore Camera and the time readout beside the timeline.
@@ -202,3 +208,15 @@
 - Reproduced Windows status-file sharing failure with a real reader handle; status writes now retry and skip transient failures rather than terminating video. Stopped status is published after the WebSocket listener closes.
 - Dock helper previously could exit on a single transient bridge-file read gap. It now caches the recent heartbeat and watches the actual OBS process handle. LuaJIT native PID call verified; running helper launched with OBS PID23600.
 - Final Windows CI36811840389 passed and rebuilt the distributable. Local ZIP is updated; LAN high-quality transmission restarted with two receivers and audio off. User needs only stop/select/start on PC; phone no longer presents a competing transport selector.
+# OBS streaming controls (2026-10-03)
+- User clarified the new phone workflow uses RTMP/RTSP only. OBS now publishes directly to `live/applelive` through MediaMTX; phone uses RTSP pull. No virtual camera or old sender is exposed in the new panel.
+- OBS Lua cannot schedule a Lua function with `obs_queue_task` in this build; polling frontend APIs from its graphics-thread timer also crashed. Replaced those controls with local OBS WebSocket 5 requests, including automatic authentication from the local OBS configuration. Lua now only launches the dock helper.
+- The installed custom OBS accepted `SetStreamServiceSettings`, `StartStream`, and `StopStream`. While streaming, FFprobe read `1080x1920` H.264 video and AAC audio from `rtsp://192.168.1.45:8554/live/applelive`; OBS is left stopped with the local service configured.
+- Dock HTTP tests (6), WebSocket authentication test (1), MediaMTX RTMP/RTSP integration, JavaScript syntax, Lua syntax and `git diff --check` passed. The first ZIP had duplicate normalized paths because `Compress-Archive -Force` updated an existing archive; build now creates a fresh archive, and the final ZIP extracted cleanly into a separate directory. The extracted helper connected to OBS on port 18766, then was stopped.
+- Final delivery ZIP, extracted package and installed OBS phone download all contain the current `AppleLive.dylib` SHA256 `3D119368F5709E39A5852BAB275A14337FD58E537DACA2158B499FB868BB3FEE`.
+## 2026-10-05 USB direct mode restoration
+- Resumed the AppleLive project after pausing the separate iOS capture work.
+- Audited current OBS dock, installer, desktop sender, usbmux transport and standalone injector.
+- Confirmed the direct USB transport is implemented but disconnected from the current OBS and phone UI/package.
+- Started phase 28 to reconnect, package and verify the no-SSH USB path.
+- Chose a localhost RTMP bridge for OBS-to-sender input so USB carries the same OBS video and mixed audio without virtual camera or external audio drivers.

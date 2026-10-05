@@ -33,8 +33,24 @@
 | 24. 手机单入口与赛博 UI | complete | `286bcef`、CI `37000248401` 通过迁移/循环/RTMP/RTSP/双架构验证；新版 `交付文件/AppleLive.dylib` 已交付并同步 OBS 下载位置与 ZIP。黑红 UI 与圆形悬浮按钮已编译，真机显示/注入兼容性待用户实测 |
 | 25. 本地视频固定循环 | complete | `586e9b1`、CI `37003673977` 移除循环开关和旧设置，本地视频始终循环；重复 EOF/暂停/拖动/网络拉流及双架构测试通过，预览和唯一 dylib 交付、OBS 下载/ZIP 均已更新；真机待验证 |
 | 26. 手机面板单屏精简 | complete | `9b8874a` / CI `37089891485` 移除预览、静音和垂直滑动，保留内录并将全部控制压入单屏；成功产物已覆盖交付目录唯一 `AppleLive.dylib`。`3b1f6fa` 的播放行细调等待 GitHub 账户额度恢复，不影响已交付三项需求 |
+| 27. 飞书版完整操作教程 | complete | 已生成 Markdown 与 DOCX：覆盖电脑端 v0.2.5、手机独立 dylib、iOS 13.3 rootful 专用流程、更新、批量验收和故障排查；DOCX 重开与交付哈希核对通过 |
+
+| 28. USB direct mode restoration | in_progress | Restore the existing no-SSH usbmux transport in the current OBS dock and standalone phone dylib; package, test, and install it |
+
+## Current USB direct work (2026-10-05)
+- [x] Audit the retained desktop usbmux sender and iOS loopback receiver.
+- [ ] Add an explicit LAN/USB selector and USB lifecycle/status to the OBS dock.
+- [ ] Restore the standalone phone USB source and connect its packets to the virtual camera.
+- [ ] Include the USB sender in install/update and delivery packages.
+- [ ] Run desktop, packaging and iOS source/build verification; install into the local OBS tree.
+
+## Current OBS streaming work (2026-10-03)
+- [x] Audit existing dock, sender, MediaMTX and delivery package.
+- [x] Replace the old virtual-camera sender UI with OBS RTMP publish and phone RTSP pull on `live/applelive`.
+- [x] Verify OBS WebSocket control, RTMP-to-RTSP playback and clean portable ZIP extraction; refresh the single OBS delivery ZIP.
 
 ## Constraints
+
 - 用户交付偏好：后续只需覆盖 `E:/1/applelive/交付文件` 中的同名最新版；手机固定为 `AppleLive.dylib`，不新增带版本号的副本、不在交付目录保留旧版，也不让用户去其他目录寻找成品。其他安装位置或交付件仅在用户另有要求时更新。
 - 当前单文件手机版：局域网统一从“检测”填写 RTMP/RTSP 拉流地址，移除旧“电脑连接”入口及其 LAN 客户端；USB 数据线单独保留，旧 deb 暂不调整。
 - 相册/文件导入的本地视频始终自动循环，不显示循环开关；保留暂停、预览与进度条，本地图片维持静态。
