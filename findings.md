@@ -125,3 +125,10 @@ USB 不是 iOS tweak 自己“看到”的串口。电脑端需要 `usbmuxd`/`py
 - OBS30.2.3 custom browser dock uses http://127.0.0.1:18765/. Local HTTP helper talks to Lua via atomic command files; OBS WebSocket is unnecessary. Browser refresh is available from its right-click menu.
 - Direct new shared preference-file creation by sandboxed mediaserverd fails; com.apple.mediaserverd NSUserDefaults persists via the preferences daemon.
 - Accept-then-close is unsuitable for incompatible transports: iPhone preferred-USB probe would switch at handshake success. Reject incompatible paths with HTTP403 before upgrade, preventing oscillation. PC USB mode binds loopback only.
+
+## 2026-10-05 portable OBS competitor comparison
+- The supplied competitor directory is a full portable OBS root under `E:\2\obs-AuxCam\...\obs studio` with `bin`, `data`, `obs-plugins`, `tools`, and bundled driver/server folders.
+- Custom plugin DLLs include `obs-ai-apple-stream.dll`, `obs-ai-srs-push.dll`, `obs-ai-live-relay.dll`, `obs-ai-playback-controller.dll`, `obs-ai-video-processor.dll`, `tang-douyin-direct.dll`, and `vcamtang-obs-usb.dll`; the USB DLL imports OBS output/encoder APIs, Qt6, and registers an OBS dock/output. The companion USB relay is `bin\vcamtang-usb\VcamTang_OBS_USB_Relay_Douyin.exe`.
+- The package includes MediaMTX, SRS, Apple Mobile Device Support, a virtual microphone driver, portable mode marker, installer BAT/PS1 files, and Chinese usage notes. It is designed so users extract once and launch the bundled OBS wrapper.
+- The supplied competitor root has no `obs64.exe` at the inspected top level; `AuxCam.exe` is a license/launcher wrapper whose strings reference a sibling `obs64.exe`. This is useful for packaging pattern, not a complete executable source to reuse.
+- Our current package is an external helper + browser dock installed into an OBS root. It already has portable-compatible `install_or_update.ps1`, MediaMTX, USB sender, and phone dylib. The next implementation is a full portable-root overlay builder that copies the current OBS tree and embeds AppleLive files/configuration, so end users receive one archive.

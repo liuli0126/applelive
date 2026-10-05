@@ -1,7 +1,8 @@
 """AppleLive desktop capture sender.
 
-FFmpeg captures the Windows desktop or OBS Virtual Camera as low-latency
-H.264 Annex-B and, when requested, a dshow audio device as float32 PCM.
+FFmpeg reads a local OBS RTMP/RTSP source or captures a Windows device as
+low-latency H.264 Annex-B and, when requested, audio as float32 PCM. The
+packaged USB path uses the local OBS RTMP source so DirectShow is not involved.
 """
 
 from __future__ import annotations
@@ -105,7 +106,10 @@ def video_command(args: argparse.Namespace) -> list[str]:
         return [
             args.ffmpeg, "-hide_banner", "-loglevel", "warning",
             "-fflags", "nobuffer", "-flags", "low_delay",
-            "-analyzeduration", "5000000", "-probesize", "5000000",
+            # The input is our own loopback MediaMTX instance. A short probe
+            # keeps USB start-up below one GOP while the RTMP metadata still
+            # supplies the H.264/AAC track descriptions.
+            "-analyzeduration", "1000000", "-probesize", "1000000",
             "-i", args.input_url,
             "-map", "0:v:0", "-an", "-c:v", "copy",
             "-bsf:v", "h264_mp4toannexb", "-f", "h264", "pipe:1",
@@ -179,7 +183,7 @@ def audio_command(args: argparse.Namespace) -> list[str] | None:
     if getattr(args, "input_url", None):
         command += [
             "-fflags", "nobuffer", "-flags", "low_delay",
-            "-analyzeduration", "5000000", "-probesize", "5000000",
+            "-analyzeduration", "1000000", "-probesize", "1000000",
             "-i", args.input_url, "-map", "0:a:0",
         ]
     elif args.audio_device:
@@ -545,7 +549,7 @@ async def main(args: argparse.Namespace) -> None:
                     last_video = broadcaster.last_video_frame_at
                     if (not last_video and time.monotonic() - capture_started_at > 8
                             and not args.input_url):
-                        raise RuntimeError("No video frames received from FFmpeg; check the selected video device and OBS Virtual Camera")
+                        raise RuntimeError("No video frames received from FFmpeg; check the selected input URL or video device")
                     if last_video and time.monotonic() - last_video > 5:
                         raise RuntimeError("Video capture stalled for more than 5 seconds")
                     state = "running" if last_video else "starting"

@@ -100,3 +100,15 @@ OBS 局域网模式自动启动随包的 MediaMTX 1.18.1，并将同一次 H.264
 - `AppleLive.plist` 的 UIKit bundle 过滤器用于让 delegate 回退 hook 有机会进入直播 App，但具体 Substrate 版本对 bundle 过滤的匹配方式需要在目标设备验证。
 - 独立插件提供 `AVCaptureAudioDataOutput` 和 RemoteIO/VoiceProcessingIO 输入替换；使用其他音频采集管线的 App 仍需要适配。
 - 这是越狱系统级注入，建议先在备用设备、测试直播 App 和局域网环境验证，不要直接在主力设备上升级系统后盲装。
+
+## Full portable OBS delivery
+
+To build a single extracted OBS folder with AppleLive already embedded, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-portable-obs.ps1 `
+  -ObsRoot 'D:\OBS定制款\OBS定制款\obs studio' `
+  -Output .\artifacts\AppleLive-OBS-Portable.zip
+```
+
+The builder copies the supplied OBS root, embeds AppleLive below `data\obs-plugins\AppleLive`, writes portable mode, pre-registers the dock and writes `AppleLive-Launcher.cmd`. It does not modify the source OBS folder. See `COMPETITOR_COMPARISON.md` for the reference tree analysis and the remaining native USB output work.

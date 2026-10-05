@@ -46,7 +46,7 @@ OBS 脚本及可执行文件的使用说明见 `../obs-plugin/README.md`。
 
 ## USB
 
-OBS 插件的 USB 数据线模式不需要 OpenSSH、Filza、Python、FFmpeg 或额外音频驱动。插件会把 OBS 已经推到本机 MediaMTX 的 H.264/AAC 流转换为 AppleLive 媒体包，再通过 `pymobiledevice3` 的 usbmux 发送到手机插件的 `127.0.0.1:8766`。
+OBS 插件的 USB 数据线模式不需要 OpenSSH、Filza、虚拟摄像头或额外音频驱动。OBS 输出先进入本机 MediaMTX 的 H.264/AAC 流，发送器从 loopback RTMP 读取后再通过 `pymobiledevice3` 的 usbmux 发送到手机插件的 `127.0.0.1:8766`。这比 DirectShow 读取 OBS Virtual Camera 稳定，但仍比同行的原生 OBS output DLL 多一个 FFmpeg/Python 转发层。
 
 Windows 必须能识别 iPhone 的 Apple Mobile Device/usbmux 驱动；安装 Apple Devices、iTunes 或爱思中的任意一种驱动即可。
 

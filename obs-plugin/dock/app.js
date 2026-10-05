@@ -132,7 +132,7 @@ async function refresh() {
       : (selectedMode === 'usb' ? '尚未准备 USB 直连' : '尚未获取推流码');
     $('detail').textContent = !state.ready ? (state.obs_error || '请在 OBS 工具 → 脚本中加载 AppleLive.lua')
       : selectedMode === 'usb' && usb.error ? usb.error
-      : selectedMode === 'usb' && active ? (usbConnected ? 'OBS 画面正在通过数据线传输' : '保持 iPhone 解锁并连接数据线')
+      : selectedMode === 'usb' && active ? (usbConnected ? 'OBS 编码流正在通过数据线传输' : '保持 iPhone 解锁并连接数据线')
       : selectedMode === 'usb' ? '点击准备 USB 直连会自动启动 OBS 画面输出，不需要 OBS 开播'
       : active && !state.stream_server_ready ? '本地流服务器未就绪'
       : active && !path.ready ? 'OBS 已开播，本地流服务器尚未收到画面'
@@ -141,7 +141,7 @@ async function refresh() {
       : active ? `手机拉流连接：${path.readers || 0}` : '本地流尚未开始';
     $('usb_status').textContent = usbConnected ? '已连接手机'
       : usb.state === 'error' ? (usb.error || 'USB 发送器错误')
-      : usb.running ? `正在查找 iPhone（${usb.video_device || 'OBS 画面'}）` : '等待准备 USB 直连';
+      : usb.running ? `正在查找 iPhone（${usb.input_url || 'OBS 本地编码流'}）` : '等待准备 USB 直连';
     $('light').className = 'light' + (selectedMode === 'usb' ? (usbConnected ? ' on' : '') : (active && path.ready ? ' on' : ''));
     $('configure').disabled = !state.ready || (selectedMode === 'lan' && !hosts.length) || active || !!pendingId;
     $('broadcast').disabled = !state.ready || !!pendingId ||

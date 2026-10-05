@@ -220,3 +220,20 @@
 - Confirmed the direct USB transport is implemented but disconnected from the current OBS and phone UI/package.
 - Started phase 28 to reconnect, package and verify the no-SSH USB path.
 - Chose a localhost RTMP bridge for OBS-to-sender input so USB carries the same OBS video and mixed audio without virtual camera or external audio drivers.
+
+## 2026-10-05 portable OBS packaging
+- Added `scripts/build-portable-obs.ps1`, which copies an operator-provided OBS root, embeds AppleLive under `data/obs-plugins/AppleLive`, creates portable mode, pre-registers the dock/WebSocket config, and writes `AppleLive-Launcher.cmd`.
+- Extended `obs-plugin/install_or_update.ps1` with `-Embedded` mode so the updater can configure an already-embedded package without copying over itself. It now recognizes renamed custom launchers by name pattern.
+- First real build from `D:\OBS定制款\OBS定制款\obs studio` completed as `artifacts/AppleLive-OBS-Portable.zip` (SHA256 `08F3154A770247D0F529E07A40E297736B194BDAA52E6052E6AC24CD62DFD834`), but inspection found runtime log markers copied from the development package; the builder cleanup list was expanded and the archive needs one clean rebuild.
+- Clean portable rebuild completed from `D:\OBS定制款\OBS定制款\obs studio`.
+- Final archive: `artifacts/AppleLive-OBS-Portable.zip`, 385+ MB compressed package, SHA256 `7D9959307081835BD601BFEAB13772BE1BF02A4E25584961292A4B07FC15A321`.
+- Extract verification confirms `AppleLive-Launcher.cmd`, portable marker, embedded dock/sender/MediaMTX/phone dylib, pre-registered AppleLive dock (`127.0.0.1:18765`) and enabled OBS WebSocket. The embedded phone SHA256 file now matches the dylib (`DFBC7C138FD25F6F34B3DD1367D38002DEFC54C24D6A27E98FE16361A6CD1F63`). No runtime log/flag files are present.
+- The package is delivery-ready for the supplied OBS base. USB stability still differs from the reference because the loopback bridge has an FFmpeg/Python hop; matching the reference native OBS output/relay requires a separate native plugin phase.
+
+## 2026-10-05 reference alignment and USB bridge
+
+- Static PE/import audit confirmed the reference `vcamtang-obs-usb.dll` is a native OBS encoded output: it imports OBS output/encoder APIs, Winsock listen/accept/send, and contains keyframe gating, bounded queue, and relay-stall messages. Its relay speaks the Apple usbmux plist protocol and uses port 28765 for Douyin.
+- The reference driver setup repairs Apple Mobile Device Support/usbmux binding and service state before installing optional camera/audio drivers. Those drivers are setup dependencies; the reference USB media hot path does not read a virtual camera.
+- AppleLive USB now configures OBS to publish to `rtmp://127.0.0.1:1935/live/applelive`, starts the bundled MediaMTX server, and feeds the loopback stream to the existing usbmux sender. Virtual camera and VB-Cable discovery were removed from the packaged USB path; USB startup probe was shortened to 1 second.
+- Tests: 17 desktop protocol/dock/transport tests pass, then the full 21-test desktop suite passes. JavaScript syntax and `git diff --check` pass.
+- Rebuilt `artifacts/AppleLive-OBS-Portable.zip` from `D:\OBS定制款\OBS定制款\obs studio`. SHA-256: `D1163DC7783EDE32C96D854BD45614CEAC7A6A395C7FF0158AFE92D22`. Extraction contains the embedded dock/sender/MediaMTX/dylib and no runtime log or status files. The remaining difference from the reference is the FFmpeg/Python hop; native output + native relay is Phase 30's final parity work.

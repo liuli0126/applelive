@@ -2,7 +2,8 @@ param(
   [string]$ObsRoot = "",
   [string]$ConfigRoot = "",
   [switch]$NoElevation,
-  [switch]$NoLaunch
+  [switch]$NoLaunch,
+  [switch]$Embedded
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,6 +40,18 @@ function Get-ObsExecutable([string]$root) {
     } |
     Select-Object -First 1
   if ($custom) { return $custom.FullName }
+
+  # Some custom portable distributions rename the OBS launcher (for example
+  # AuxCam or a localized obs*.exe) while keeping the normal OBS bin/data
+  # layout. Accept an explicit launcher-shaped name after checking the normal
+  # ProductName, while excluding OBS helper/test executables.
+  $renamed = Get-ChildItem -LiteralPath $bin -File -ErrorAction SilentlyContinue |
+    Where-Object {
+      $_.Name -match '^(obs|AuxCam).*\.exe$' -and
+      $_.Name -notmatch '(?i)(test|browser|ffmpeg|nvenc|qsv)'
+    } |
+    Select-Object -First 1
+  if ($renamed) { return $renamed.FullName }
   return $null
 }
 
@@ -291,7 +304,7 @@ $ObsRoot = (Resolve-Path -LiteralPath $ObsRoot).Path
 $obsExe = Get-ObsExecutable $ObsRoot
 $target = Join-Path $ObsRoot 'data\obs-plugins\AppleLive'
 $ConfigRoot = Get-ObsConfigRoot $ObsRoot $ConfigRoot
-if ($source.TrimEnd('\').Equals($target.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
+if (-not $Embedded -and $source.TrimEnd('\').Equals($target.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
   throw 'Run this updater from a newly extracted package outside the OBS installation folder.'
 }
 
@@ -301,6 +314,7 @@ if (-not $isAdmin -and -not $NoElevation) {
   $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -ObsRoot `"$ObsRoot`""
   $arguments += " -ConfigRoot `"$ConfigRoot`""
   if ($NoLaunch) { $arguments += ' -NoLaunch' }
+  if ($Embedded) { $arguments += ' -Embedded' }
   Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList $arguments -WorkingDirectory $source | Out-Null
   exit 0
 }
@@ -331,34 +345,39 @@ Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
 Start-Sleep -Milliseconds 500
 
 New-Item -ItemType Directory -Path $target -Force | Out-Null
-foreach ($directory in @('dock', 'server', 'phone-plugin')) {
-  $destination = Join-Path $target $directory
-  if (Test-Path -LiteralPath $destination) { Remove-Item -LiteralPath $destination -Recurse -Force }
-  Copy-Item -LiteralPath (Join-Path $source $directory) -Destination $destination -Recurse -Force
-}
-foreach ($file in @(
-  'AppleLive.lua',
-  'AppleLiveDock.exe',
-  'AppleLiveSender.exe',
-  'ffmpeg.exe',
-  'README.md',
-  'setup_lan.ps1',
-  'install_or_update.ps1',
-  'Install-AppleLive.cmd',
-  'VERSION.txt'
-)) {
-  Copy-Item -LiteralPath (Join-Path $source $file) -Destination (Join-Path $target $file) -Force
-}
+if (-not $Embedded) {
+  foreach ($directory in @('dock', 'server', 'phone-plugin')) {
+    $destination = Join-Path $target $directory
+    if (Test-Path -LiteralPath $destination) { Remove-Item -LiteralPath $destination -Recurse -Force }
+    Copy-Item -LiteralPath (Join-Path $source $directory) -Destination $destination -Recurse -Force
+  }
+  foreach ($file in @(
+    'AppleLive.lua',
+    'AppleLiveDock.exe',
+    'AppleLiveSender.exe',
+    'ffmpeg.exe',
+    'README.md',
+    'setup_lan.ps1',
+    'install_or_update.ps1',
+    'Install-AppleLive.cmd',
+    'VERSION.txt'
+  )) {
+    Copy-Item -LiteralPath (Join-Path $source $file) -Destination (Join-Path $target $file) -Force
+  }
 
-foreach ($stale in @(
-  'usb_forward.ps1',
-  'applelive-bridge.json',
-  'applelive-command.json',
+  foreach ($stale in @(
+    'usb_forward.ps1',
+    'applelive-bridge.json',
+    'applelive-command.json',
   'applelive-sender.log',
   'applelive-status.json',
-  'applelive-stop.flag'
+  'applelive-stop.flag',
+  'applelive-usb-error.log',
+  'unicode-launch.log',
+  'lan-access.ok'
 )) {
-  Remove-Item -LiteralPath (Join-Path $target $stale) -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $target $stale) -Force -ErrorAction SilentlyContinue
+  }
 }
 
 Get-ChildItem -LiteralPath $target -Recurse -File | Unblock-File -ErrorAction SilentlyContinue

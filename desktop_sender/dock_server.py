@@ -85,13 +85,12 @@ class USBSender:
         self.stop_file = runtime_root / "applelive-usb-stop.flag"
         self.log_file = runtime_root / "applelive-usb.log"
         self.process = None
-        self.video_device = ""
-        self.audio_device = ""
+        self.input_url = ""
         self.width = 0
         self.height = 0
         self.fps = 30
 
-    def start(self, video_settings: dict | None = None) -> None:
+    def start(self, input_url: str, video_settings: dict | None = None) -> None:
         if self.process and self.process.poll() is None:
             return
         sender = self.directory / "AppleLiveSender.exe"
@@ -101,10 +100,9 @@ class USBSender:
         self.status_file.parent.mkdir(parents=True, exist_ok=True)
         self.stop_file.unlink(missing_ok=True)
         self.status_file.unlink(missing_ok=True)
-        if not self.video_device:
-            self.video_device = find_virtual_camera(ffmpeg)
-        if not self.audio_device:
-            self.audio_device = find_audio_device(ffmpeg)
+        if not input_url:
+            raise ValueError("USB 媒体地址为空")
+        self.input_url = input_url
         if video_settings:
             width = int(video_settings.get("outputWidth") or video_settings.get("baseWidth") or 0)
             height = int(video_settings.get("outputHeight") or video_settings.get("baseHeight") or 0)
@@ -116,14 +114,12 @@ class USBSender:
                 self.fps = max(1, min(60, round(fps_num / fps_den)))
         command = [
             str(sender), "--connection-mode", "usb", "--port", "0",
-            "--video-device", self.video_device, "--ffmpeg", str(ffmpeg),
+            "--input-url", input_url, "--ffmpeg", str(ffmpeg),
             "--width", str(self.width or 1920), "--height", str(self.height or 1080),
             "--fps", str(self.fps),
             "--status-file", str(self.status_file), "--stop-file", str(self.stop_file),
             "--log-file", str(self.log_file),
         ]
-        if self.audio_device:
-            command += ["--audio-device", self.audio_device]
         self.process = subprocess.Popen(
             command, cwd=self.directory, stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -149,11 +145,12 @@ class USBSender:
     def status(self) -> dict:
         running = bool(self.process and self.process.poll() is None)
         value = {"state": "stopped", "usb_clients": 0, "error": "", "running": running,
-                 "video_device": self.video_device, "audio_device": self.audio_device}
+                 "input_url": self.input_url, "video_device": "OBS local RTMP",
+                 "audio_device": "OBS AAC track"}
         try:
             saved = json.loads(self.status_file.read_text(encoding="utf-8"))
             if isinstance(saved, dict) and self.process is not None:
-                value.update({key: saved.get(key, value[key]) for key in ("state", "usb_clients", "error", "video_device", "audio_device")})
+                value.update({key: saved.get(key, value[key]) for key in ("state", "usb_clients", "error")})
         except (OSError, ValueError, TypeError):
             pass
         if not running and value["state"] not in {"error", "stopped"}:
@@ -239,20 +236,20 @@ class DockServer(ThreadingHTTPServer):
         self.origin = f"http://127.0.0.1:{self.server_port}"
         self.stream_server = StreamServer(directory / "server")
         self.usb_sender = USBSender(directory)
-        self.virtualcam_owned = False
+        self.usb_stream_owned = False
         self.stream_error = ""
         self.firewall_pending = False
         self.firewall_error = ""
 
     def server_close(self):
         self.usb_sender.stop()
-        if self.virtualcam_owned:
+        if self.usb_stream_owned:
             try:
                 with OBSClient(self.directory) as client:
-                    client.stop_virtualcam()
+                    client.stop()
             except OBSConnectionError:
                 pass
-            self.virtualcam_owned = False
+            self.usb_stream_owned = False
         self.stream_server.stop()
         super().server_close()
 
@@ -415,13 +412,20 @@ class Handler(BaseHTTPRequestHandler):
                     if command["action"] == "configure_stream":
                         self.server.usb_sender.stop()
                         if command["mode"] == "usb":
-                            # USB is a direct OBS virtual-camera -> FFmpeg ->
-                            # usbmux path. It deliberately does not configure
-                            # or start an OBS RTMP stream.
-                            was_active = client.virtualcam_state()
-                            self.server.virtualcam_owned = self.server.virtualcam_owned or (not was_active and client.start_virtualcam())
-                            self.server.usb_sender.start(client.video_settings())
+                            # USB consumes the same encoded OBS output as LAN.
+                            # MediaMTX is loopback-only for this mode; FFmpeg
+                            # copies H.264 and decodes AAC for the phone. This
+                            # avoids DirectShow, OBS Virtual Camera and
+                            # VB-Cable in the USB hot path.
+                            self.server.ensure_stream_server()
+                            client.configure("127.0.0.1")
+                            client.start()
+                            self.server.usb_stream_owned = True
+                            self.server.usb_sender.start(RTMP_URL, client.video_settings())
                         else:
+                            if self.server.usb_stream_owned:
+                                client.stop()
+                                self.server.usb_stream_owned = False
                             client.configure(command["host"])
                             self.server.ensure_stream_server()
                     elif command["action"] == "start_stream":
@@ -429,20 +433,25 @@ class Handler(BaseHTTPRequestHandler):
                         if self.server.usb_sender.process and self.server.usb_sender.process.poll() is None:
                             mode = "usb"
                         if mode == "usb":
-                            if not client.virtualcam_state():
-                                self.server.virtualcam_owned = self.server.virtualcam_owned or client.start_virtualcam()
-                            self.server.usb_sender.start(client.video_settings())
+                            self.server.ensure_stream_server()
+                            if client.stream_state().get("stream_server") != "rtmp://127.0.0.1:1935/live":
+                                client.configure("127.0.0.1")
+                            if not client.stream_state().get("stream_active"):
+                                client.start()
+                            self.server.usb_stream_owned = True
+                            self.server.usb_sender.start(RTMP_URL, client.video_settings())
                         else:
                             self.server.ensure_stream_server()
                             client.start()
                     elif command["action"] == "stop_stream":
                         self.server.usb_sender.stop()
-                        if self.server.virtualcam_owned:
-                            client.stop_virtualcam()
-                            self.server.virtualcam_owned = False
-                        client.stop()
+                        if self.server.usb_stream_owned:
+                            client.stop()
+                            self.server.usb_stream_owned = False
+                        else:
+                            client.stop()
                         self.server.stop_stream_server()
-            except (OBSConnectionError, OSError, RuntimeError) as error:
+            except (OBSConnectionError, OSError, RuntimeError, ValueError) as error:
                 self.json_reply(503, {"error": str(error)})
                 return
             self.server.last_command = secrets.token_hex(8)

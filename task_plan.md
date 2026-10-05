@@ -68,3 +68,26 @@
 | Direct removal of obsolete delivery files rejected | 1-2 | 执行环境拦截 `Remove-Item`；旧项已移至 `.build/obsolete-delivery-20261002`，未声称永久删除 |
 | GitHub clone connection reset | 1 | 改用 GitHub API/raw 读取参考实现，仅提取公开协议和结构，不复制其授权不明源码 |
 | iOS toolchain unavailable on Windows | 1 | 完成源码级审查并记录限制；交由 macOS/Linux Theos 环境执行最终 deb 构建 |
+
+## Phase 29. Full portable OBS delivery
+Status: in_progress
+
+- [x] Inspect the supplied reference OBS tree and custom plugin/relay/server/driver layout.
+- [x] Add embedded mode to the AppleLive updater and support renamed custom OBS launchers.
+- [x] Add a builder that overlays AppleLive into a copied OBS root and writes a one-click launcher.
+- [ ] Regenerate and verify the clean portable archive.
+- [ ] Commit the packaging changes and report the remaining USB architecture gap.
+
+## Phase 29. Full portable OBS delivery
+Status: complete
+
+The portable overlay builder and clean archive were verified. USB now uses the OBS loopback RTMP output, so the packaged hot path no longer depends on virtual camera/audio capture. Native OBS output plus a native usbmux relay remains the final parity phase.
+
+## Phase 30. USB media path alignment
+Status: in_progress
+
+- [x] Static-audit the supplied OBS USB DLL, relay, MediaMTX/SRS configs, Apple driver installer, and VB-Cable installer.
+- [x] Replace the packaged USB DirectShow path with OBS local RTMP -> MediaMTX -> FFmpeg -> usbmux.
+- [x] Add regression tests proving USB does not pass `--video-device` or `--audio-device`.
+- [x] Rebuild and extract-verify the full portable archive.
+- [ ] Implement the final native OBS output DLL and native usbmux relay for exact reference architecture.

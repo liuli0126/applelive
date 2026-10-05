@@ -7,7 +7,7 @@ import threading
 import unittest
 from unittest import mock
 
-from dock_server import DockServer, local_addresses
+from dock_server import DockServer, USBSender, local_addresses
 from phone_plugin import plugin_path
 
 
@@ -114,13 +114,16 @@ class DockTests(unittest.TestCase):
             self.assertEqual(self.request(value)[0], 400)
         self.assertFalse(self.obs.calls)
 
-    def test_usb_starts_virtual_camera_and_direct_sender_without_media_server(self):
+    def test_usb_uses_loopback_rtmp_and_direct_sender(self):
         with mock.patch.object(self.server, "ensure_stream_server") as media, \
                 mock.patch.object(self.server.usb_sender, "start") as start_usb:
             self.assertEqual(self.request({"action": "configure_stream", "mode": "usb"})[0], 202)
-            self.assertEqual(self.obs.calls, [("start_virtualcam",)])
-            start_usb.assert_called_once_with({"outputWidth": 1280, "outputHeight": 720, "fpsNumerator": 30, "fpsDenominator": 1})
-            media.assert_not_called()
+            self.assertEqual(self.obs.calls, [("configure", "127.0.0.1"), ("start",)])
+            start_usb.assert_called_once_with(
+                "rtmp://127.0.0.1:1935/live/applelive",
+                {"outputWidth": 1280, "outputHeight": 720, "fpsNumerator": 30, "fpsDenominator": 1},
+            )
+            media.assert_called_once_with()
 
     def test_status_and_phone_download(self):
         self.assertTrue(self.server.status()["ready"])
@@ -140,6 +143,25 @@ class DockTests(unittest.TestCase):
         self.assertIn("AppleLive.dylib", response.getheader("Content-Disposition"))
         self.assertEqual(response.read(), b"signed-library")
         connection.close()
+
+    def test_usb_sender_uses_encoded_loopback_input(self):
+        sender_root = self.path / "sender"
+        sender_root.mkdir()
+        (sender_root / "AppleLiveSender.exe").write_bytes(b"stub")
+        (sender_root / "ffmpeg.exe").write_bytes(b"stub")
+        usb = USBSender(sender_root)
+        process = mock.Mock()
+        process.poll.return_value = None
+        with mock.patch("dock_server.subprocess.Popen", return_value=process) as popen:
+            usb.start("rtmp://127.0.0.1:1935/live/applelive", {
+                "outputWidth": 1280, "outputHeight": 720,
+                "fpsNumerator": 30, "fpsDenominator": 1,
+            })
+        command = popen.call_args.args[0]
+        self.assertIn("--input-url", command)
+        self.assertIn("rtmp://127.0.0.1:1935/live/applelive", command)
+        self.assertNotIn("--video-device", command)
+        self.assertNotIn("--audio-device", command)
 
     def test_local_addresses_filter_unusable_interfaces(self):
         probe = mock.Mock()
