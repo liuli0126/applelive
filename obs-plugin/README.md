@@ -1,14 +1,18 @@
-# AppleLive OBS 插件（Windows，电脑端 v0.2.5）
+# AppleLive OBS 插件（Windows，电脑端 v0.3.0）
 
-OBS 通过插件内置的 MediaMTX v1.18.1 推送一条 RTMP 流；手机在同一局域网可以用 RTMP 或 RTSP 拉取该流。电脑端直接使用 OBS 的节目画面和音频，不启动 OBS 虚拟摄像头，也不使用旧的 WebSocket 发送器。
+支持两种独立连接方式：局域网模式由 OBS 通过内置 MediaMTX v1.18.1 提供 RTMP/RTSP；USB 数据线模式把 OBS 的节目画面和混音音频送入电脑本机 MediaMTX，再通过 usbmux 直接传到 iPhone。USB 模式不使用 Wi-Fi、OpenSSH、OBS 虚拟摄像头或额外音频驱动。
 
 ## 安装
 
 1. 将 ZIP 解压到 OBS 目录以外的任意文件夹，双击 `安装或更新AppleLive.cmd`。安装程序会定位并关闭 OBS、替换旧版文件、自动添加 Lua 脚本和 AppleLive 停靠窗口、启用 OBS WebSocket，然后重新打开 OBS。
-2. 在面板里确认显示“电脑端 v0.2.5”，选择本机局域网 IP，点击「获取推流码」，确认首次出现的 Windows 授权提示，再点击「开播」。获取推流码时会启动 MediaMTX，下播时会将其停止。首次打开 OBS 时，应先完成或关闭自动配置向导。
-3. 将面板显示的手机 RTMP 或 RTSP 地址填进手机插件悬浮窗的「检测」拉流入口。
+2. 在面板里确认显示“电脑端 v0.3.0”，选择「局域网」或「USB 数据线」，点击准备按钮，再点击「开播」。首次打开 OBS 时，应先完成或关闭自动配置向导。
+3. 局域网模式需要把面板显示的 RTMP 或 RTSP 地址填进手机插件的「检测」入口；USB 模式需要在手机插件里点击「USB 直连」。
 
 `127.0.0.1:18765` 只供 OBS 本机停靠面板使用，不是手机拉流地址。
+
+## USB 数据线
+
+USB 模式要求 iPhone 已信任当前电脑，并安装包含「USB 直连」入口的最新版 `AppleLive.dylib`。Windows 还必须已有 Apple Mobile Device/usbmux 驱动（Apple Devices、iTunes 或爱思安装的驱动均可）；这是系统的 iPhone 识别驱动，不需要单独安装 Python、FFmpeg 或 OpenSSH。连接后，OBS 面板会分别显示「正在查找 iPhone」和「已连接手机」。整套 Windows 包已包含 USB 发送器、pymobiledevice3 运行依赖和 FFmpeg。
 
 ## 地址
 
@@ -32,4 +36,4 @@ python -m pip install -r desktop_sender/requirements.txt pyinstaller
 ./scripts/build-obs-plugin.ps1
 ```
 
-构建脚本使用 `obs-plugin/phone-plugin/AppleLive.dylib` 和 `obs-plugin/server/mediamtx.exe`，输出 `artifacts/AppleLive-OBS-Windows.zip`。控制服务只监听电脑本机回环地址，通过本机 OBS WebSocket 执行按钮命令；Lua 脚本只负责随 OBS 启动停靠服务。运行日志写入 `%LOCALAPPDATA%\AppleLive`，不要求 OBS 安装目录可写。
+构建脚本使用 `obs-plugin/phone-plugin/AppleLive.dylib`、`obs-plugin/server/mediamtx.exe` 和本机 FFmpeg，输出 `artifacts/AppleLive-OBS-Windows.zip`。控制服务只监听电脑本机回环地址，通过本机 OBS WebSocket 执行按钮命令；Lua 脚本只负责随 OBS 启动停靠服务。运行日志写入 `%LOCALAPPDATA%\AppleLive`，不要求 OBS 安装目录可写。

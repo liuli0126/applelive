@@ -2,15 +2,17 @@
 <html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>AppleLive</title><link rel="stylesheet" href="style.css"></head>
 <body><main>
-  <header><div class="logo" aria-hidden="true">AL</div><div><h1>AppleLive</h1><p>OBS 画面到 iPhone · 电脑端 v0.2.5</p></div></header>
+  <header><div class="logo" aria-hidden="true">AL</div><div><h1>AppleLive</h1><p>OBS 画面到 iPhone · 电脑端 v0.3.0</p></div></header>
   <section class="status" aria-live="polite"><span id="light" class="light"></span><div><strong id="status">正在连接 OBS</strong><p id="detail"></p></div></section>
-  <label for="host">电脑局域网 IP</label><select id="host" aria-label="电脑局域网 IP"></select>
+  <label>连接方式</label>
+  <div class="mode_switch" role="group" aria-label="连接方式"><button id="mode_lan" type="button" aria-pressed="true">局域网</button><button id="mode_usb" type="button" aria-pressed="false">USB 数据线</button></div>
+  <div id="lan_host"><label for="host">电脑局域网 IP</label><select id="host" aria-label="电脑局域网 IP"></select></div>
   <button id="configure" type="button" class="secondary">获取推流码</button>
-  <div class="address"><span>OBS 推流服务器</span><strong id="publish_server"></strong><span>推流密钥</span><strong id="publish_key">applelive</strong></div>
+  <div id="lan_publish" class="address"><span>OBS 推流服务器</span><strong id="publish_server"></strong><span>推流密钥</span><strong id="publish_key">applelive</strong></div>
+  <div id="usb_panel" class="address" hidden><span>USB 直连状态</span><strong id="usb_status">等待启动</strong></div>
   <button id="broadcast" type="button" disabled>开播</button>
-  <div class="address"><span>手机 RTMP 拉流地址</span><strong id="rtmp_pull_address"></strong><button type="button" class="secondary copy_address" data-target="rtmp_pull_address">复制 RTMP 地址</button><span class="address_label">手机 RTSP 拉流地址</span><strong id="rtsp_pull_address"></strong><button type="button" class="secondary copy_address" data-target="rtsp_pull_address">复制 RTSP 地址</button></div>
-  <p id="lan_status" class="network_status">正在检查局域网端口</p>
-  <button id="allow_lan" type="button" class="secondary">授权局域网访问</button>
+  <div id="lan_addresses" class="address"><span>手机 RTMP 拉流地址</span><strong id="rtmp_pull_address"></strong><button type="button" class="secondary copy_address" data-target="rtmp_pull_address">复制 RTMP 地址</button><span class="address_label">手机 RTSP 拉流地址</span><strong id="rtsp_pull_address"></strong><button type="button" class="secondary copy_address" data-target="rtsp_pull_address">复制 RTSP 地址</button></div>
+  <div id="lan_access"><p id="lan_status" class="network_status">正在检查局域网端口</p><button id="allow_lan" type="button" class="secondary">授权局域网访问</button></div>
   <a id="phone_plugin" class="download_button" href="/api/phone-plugin" download="AppleLive.dylib">下载手机插件</a>
   <p id="error" role="alert" hidden></p>
 </main><script src="app.js"></script></body></html>

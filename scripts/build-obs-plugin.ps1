@@ -18,7 +18,15 @@ if (-not $SkipDock) {
   & $Python -m PyInstaller --noconfirm --clean --onefile --noconsole `
   --name AppleLiveDock --distpath $output --workpath (Join-Path $build "dock") `
   --specpath $build (Join-Path $projectRoot "desktop_sender\dock_server.py")
-if ($LASTEXITCODE -ne 0) { throw "Dock build failed" }
+  if ($LASTEXITCODE -ne 0) { throw "Dock build failed" }
+  & $Python -m PyInstaller --noconfirm --clean --onefile --noconsole `
+    --name AppleLiveSender --distpath $output --workpath (Join-Path $build "sender") `
+    --specpath $build (Join-Path $projectRoot "desktop_sender\sender.py")
+  if ($LASTEXITCODE -ne 0) { throw "USB sender build failed" }
+
+  $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+  if (-not $ffmpeg) { throw "FFmpeg not found while building the USB package" }
+  Copy-Item -LiteralPath $ffmpeg.Source -Destination (Join-Path $output "ffmpeg.exe") -Force
 }
 
 Copy-Item -LiteralPath (Join-Path $projectRoot "desktop_sender\setup_lan.ps1") `
@@ -35,6 +43,8 @@ New-Item -ItemType Directory -Path $stage -Force | Out-Null
 foreach ($item in @(
   (Join-Path $output "AppleLive.lua"),
   (Join-Path $output "AppleLiveDock.exe"),
+  (Join-Path $output "AppleLiveSender.exe"),
+  (Join-Path $output "ffmpeg.exe"),
   (Join-Path $output "dock"),
   (Join-Path $output "setup_lan.ps1"),
   (Join-Path $output "install_or_update.ps1"),

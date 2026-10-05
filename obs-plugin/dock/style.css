@@ -3,3 +3,4 @@
 [hidden]{display:none!important}h1{letter-spacing:0}
 .logo{font-size:14px;font-weight:700}
 .address_label{margin-top:12px}.network_status{margin:8px 0;color:#ffcf78}.network_status.ready{color:#75dda8}
+.mode_switch{display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px;border:1px solid #555b67;border-radius:8px;background:#2a2d34;margin-bottom:8px}.mode_switch button{min-height:38px;background:transparent;color:#b9c1ce;border-radius:5px}.mode_switch button[aria-pressed=true]{background:#2869df;color:#fff}.mode_switch button:disabled{opacity:.65}

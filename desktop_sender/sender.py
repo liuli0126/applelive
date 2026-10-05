@@ -101,6 +101,15 @@ class AnnexBParser:
 
 
 def video_command(args: argparse.Namespace) -> list[str]:
+    if getattr(args, "input_url", None):
+        return [
+            args.ffmpeg, "-hide_banner", "-loglevel", "warning",
+            "-fflags", "nobuffer", "-flags", "low_delay",
+            "-analyzeduration", "1000000", "-probesize", "1000000",
+            "-i", args.input_url,
+            "-map", "0:v:0", "-an", "-c:v", "copy",
+            "-bsf:v", "h264_mp4toannexb", "-f", "h264", "pipe:1",
+        ]
     gop_frames = max(args.fps // 2, 1)
     command = [args.ffmpeg, "-hide_banner", "-loglevel", "warning"]
     if args.video_device:
@@ -150,6 +159,25 @@ def video_command(args: argparse.Namespace) -> list[str]:
                     f"[select=v:bsfs/v=h264_mp4toannexb,dump_extra=freq=keyframe:f=h264]pipe:1|[onfail=ignore:f=flv:flush_packets=1:flvflags=no_duration_filesize]{rtmp_url}"]
     else:
         command += ["-f", "h264", "pipe:1"]
+    return command
+
+
+def audio_command(args: argparse.Namespace) -> list[str] | None:
+    command = [args.ffmpeg, "-hide_banner", "-loglevel", "warning"]
+    if getattr(args, "input_url", None):
+        command += [
+            "-fflags", "nobuffer", "-flags", "low_delay",
+            "-analyzeduration", "1000000", "-probesize", "1000000",
+            "-i", args.input_url, "-map", "0:a:0",
+        ]
+    elif args.audio_device:
+        command += ["-f", "dshow", "-i", f"audio={args.audio_device}"]
+    else:
+        return None
+    command += [
+        "-vn", "-ac", str(args.channels), "-ar", str(args.sample_rate),
+        "-f", "f32le", "pipe:1",
+    ]
     return command
 
 
@@ -431,7 +459,7 @@ def connection_filter(mode: str, directory: Path | None = None):
 async def main(args: argparse.Namespace) -> None:
     if shutil.which(args.ffmpeg) is None:
         raise RuntimeError(f"FFmpeg not found: {args.ffmpeg}")
-    args.encoder = select_encoder(args.ffmpeg, args.encoder)
+    args.encoder = "copy" if args.input_url else select_encoder(args.ffmpeg, args.encoder)
     LOG.info("using %s H.264 encoder", args.encoder)
 
     loop = asyncio.get_running_loop()
@@ -466,14 +494,9 @@ async def main(args: argparse.Namespace) -> None:
                                  args=(video_process, broadcaster, args.width, args.height),
                                  daemon=True),
             ]
-            if args.audio_device:
-                audio_command = [
-                    args.ffmpeg, "-hide_banner", "-loglevel", "warning",
-                    "-f", "dshow", "-i", f"audio={args.audio_device}",
-                    "-ac", str(args.channels), "-ar", str(args.sample_rate),
-                    "-f", "f32le", "pipe:1",
-                ]
-                audio_process = run_ffmpeg(audio_command)
+            audio = audio_command(args)
+            if audio:
+                audio_process = run_ffmpeg(audio)
                 processes.append(audio_process)
                 threads.extend([
                     threading.Thread(target=drain_stderr, args=(audio_process, "audio"), daemon=True),
@@ -542,6 +565,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--encoder", choices=("auto", "nvenc", "x264"), default="auto")
     parser.add_argument("--encoder-preset", choices=("ultrafast", "superfast", "veryfast", "faster", "fast"), default="veryfast")
     parser.add_argument("--ffmpeg", default="ffmpeg")
+    parser.add_argument("--input-url", help="Read OBS H.264/AAC from a local RTMP/RTSP stream")
     parser.add_argument("--video-device", help="Windows dshow video device, e.g. OBS Virtual Camera")
     parser.add_argument("--audio-device", help="Windows dshow audio device, e.g. CABLE Output")
     parser.add_argument("--sample-rate", type=int, default=48000)

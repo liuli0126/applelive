@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 import secrets
 import socket
+import subprocess
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -15,9 +17,70 @@ from urllib.parse import urlsplit
 
 from obs_websocket import OBSClient, OBSConnectionError
 from phone_plugin import plugin_path
-from stream_server import StreamServer
+from stream_server import RTMP_URL, StreamServer
 
-DESKTOP_VERSION = "0.2.5"
+DESKTOP_VERSION = "0.3.0"
+
+
+class USBSender:
+    def __init__(self, directory: Path):
+        self.directory = directory
+        runtime_root = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "AppleLive"
+        self.status_file = runtime_root / "applelive-usb-status.json"
+        self.stop_file = runtime_root / "applelive-usb-stop.flag"
+        self.log_file = runtime_root / "applelive-usb.log"
+        self.process = None
+
+    def start(self) -> None:
+        if self.process and self.process.poll() is None:
+            return
+        sender = self.directory / "AppleLiveSender.exe"
+        ffmpeg = self.directory / "ffmpeg.exe"
+        if not sender.is_file() or not ffmpeg.is_file():
+            raise OSError("USB 组件缺失，请安装完整 AppleLive OBS 插件包")
+        self.status_file.parent.mkdir(parents=True, exist_ok=True)
+        self.stop_file.unlink(missing_ok=True)
+        self.status_file.unlink(missing_ok=True)
+        command = [
+            str(sender), "--connection-mode", "usb", "--port", "0",
+            "--input-url", RTMP_URL, "--ffmpeg", str(ffmpeg),
+            "--status-file", str(self.status_file), "--stop-file", str(self.stop_file),
+            "--log-file", str(self.log_file),
+        ]
+        self.process = subprocess.Popen(
+            command, cwd=self.directory, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+
+    def stop(self) -> None:
+        process, self.process = self.process, None
+        if not process or process.poll() is not None:
+            return
+        self.stop_file.parent.mkdir(parents=True, exist_ok=True)
+        self.stop_file.write_text("stop", encoding="ascii")
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
+
+    def status(self) -> dict:
+        running = bool(self.process and self.process.poll() is None)
+        value = {"state": "stopped", "usb_clients": 0, "error": "", "running": running}
+        try:
+            saved = json.loads(self.status_file.read_text(encoding="utf-8"))
+            if isinstance(saved, dict):
+                value.update({key: saved.get(key, value[key]) for key in ("state", "usb_clients", "error")})
+        except (OSError, ValueError, TypeError):
+            pass
+        if not running and value["state"] not in {"error", "stopped"}:
+            value["state"] = "stopped"
+        return value
 
 
 def machine_id() -> str:
@@ -66,17 +129,23 @@ def local_addresses() -> list[str]:
 def validate_command(value: dict) -> dict:
     if not isinstance(value, dict) or value.get("action") not in {"configure_stream", "start_stream", "stop_stream"}:
         raise ValueError("无效的操作")
-    if set(value) - {"action", "host"}:
+    if set(value) - {"action", "host", "mode"}:
         raise ValueError("不支持的设置")
     host = value.get("host", "")
+    mode = value.get("mode", "")
     if value["action"] == "configure_stream":
-        try:
-            host = str(ipaddress.IPv4Address(host))
-        except (ipaddress.AddressValueError, TypeError):
-            raise ValueError("电脑局域网 IP 无效") from None
-    elif host:
+        if mode not in {"lan", "usb"}:
+            raise ValueError("请选择局域网或 USB 数据线")
+        if mode == "lan":
+            try:
+                host = str(ipaddress.IPv4Address(host))
+            except (ipaddress.AddressValueError, TypeError):
+                raise ValueError("电脑局域网 IP 无效") from None
+        else:
+            host = "127.0.0.1"
+    elif host or mode:
         raise ValueError("此操作不需要 IP")
-    return {"action": value["action"], "host": host}
+    return {"action": value["action"], "host": host, "mode": mode}
 
 
 class DockServer(ThreadingHTTPServer):
@@ -91,11 +160,13 @@ class DockServer(ThreadingHTTPServer):
         super().__init__(("127.0.0.1", port), Handler)
         self.origin = f"http://127.0.0.1:{self.server_port}"
         self.stream_server = StreamServer(directory / "server")
+        self.usb_sender = USBSender(directory)
         self.stream_error = ""
         self.firewall_pending = False
         self.firewall_error = ""
 
     def server_close(self):
+        self.usb_sender.stop()
         self.stream_server.stop()
         super().server_close()
 
@@ -146,6 +217,7 @@ class DockServer(ThreadingHTTPServer):
                 "firewall_ready": self.firewall_access_enabled(),
                 "firewall_pending": self.firewall_pending, "firewall_error": self.firewall_error,
                 "stream_path": path,
+                "usb": self.usb_sender.status(),
                 "phone_plugin": {"available": plugin_path(self.directory).is_file()}}
 
     def request_firewall_access(self) -> None:
@@ -249,7 +321,7 @@ class Handler(BaseHTTPRequestHandler):
             self.json_reply(400, {"error": str(error)})
             return
         with self.server.command_lock:
-            if command["action"] == "configure_stream" and command["host"] not in self.server.addresses:
+            if command["action"] == "configure_stream" and command["mode"] == "lan" and command["host"] not in self.server.addresses:
                 self.json_reply(400, {"error": "请选择这台电脑的局域网 IP"})
                 return
             try:
@@ -257,10 +329,23 @@ class Handler(BaseHTTPRequestHandler):
                     self.server.ensure_stream_server()
                 with OBSClient(self.server.directory) as client:
                     if command["action"] == "configure_stream":
+                        self.server.usb_sender.stop()
                         client.configure(command["host"])
                     elif command["action"] == "start_stream":
+                        mode = client.stream_state().get("stream_mode")
                         client.start()
+                        if mode == "usb":
+                            for _ in range(50):
+                                if self.server.stream_server.path_status()["ready"]:
+                                    break
+                                time.sleep(0.1)
+                            else:
+                                raise RuntimeError("OBS 本机画面尚未就绪，请重试开播")
+                            self.server.usb_sender.start()
+                        else:
+                            self.server.usb_sender.stop()
                     else:
+                        self.server.usb_sender.stop()
                         client.stop()
                         self.server.stop_stream_server()
             except (OBSConnectionError, OSError, RuntimeError) as error:

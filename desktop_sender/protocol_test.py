@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import json
 import os
 
-from sender import AnnexBParser, AUDIO_HEADER, VIDEO_HEADER, Broadcaster, capture_audio, video_command, write_status
+from sender import AnnexBParser, AUDIO_HEADER, VIDEO_HEADER, Broadcaster, audio_command, capture_audio, video_command, write_status
 
 
 def test_annexb_parser_handles_split_chunks():
@@ -62,6 +62,22 @@ def test_obs_video_command_uses_virtual_camera():
     command = video_command(args)
     assert "h264_nvenc" in command
     assert command[command.index("-tune") + 1] == "ull"
+
+
+def test_local_obs_stream_is_copied_to_usb_packets():
+    args = Namespace(ffmpeg="ffmpeg", fps=30, width=1920, height=1080,
+                     video_device=None, audio_device=None, bitrate_kbps=5000,
+                     encoder_preset="veryfast", encoder="auto", rtmp_url=None,
+                     input_url="rtmp://127.0.0.1:1935/live/applelive",
+                     channels=2, sample_rate=48000)
+    video = video_command(args)
+    audio = audio_command(args)
+    self_copy = video[video.index("-c:v"):video.index("-c:v") + 2]
+    assert self_copy == ["-c:v", "copy"]
+    assert "h264_mp4toannexb" in video
+    assert "0:v:0" in video
+    assert audio is not None and "0:a:0" in audio
+    assert "f32le" in audio and "dshow" not in audio
 
 
 def test_audio_packets_keep_sample_alignment():

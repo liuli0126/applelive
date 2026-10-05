@@ -101,8 +101,11 @@ class OBSClient:
         configured = service.get("streamServiceType") == "rtmp_custom" and \
             server.startswith("rtmp://") and server.endswith(":1935/live") and \
             settings.get("key") == "applelive"
+        mode = "usb" if configured and server == "rtmp://127.0.0.1:1935/live" else \
+            "lan" if configured else ""
         return {"stream_active": bool(stream.get("outputActive")),
-                "stream_configured": configured, "stream_server": server if configured else ""}
+                "stream_configured": configured, "stream_server": server if configured else "",
+                "stream_mode": mode}
 
     def configure(self, host: str) -> None:
         if self.request("GetStreamStatus").get("outputActive"):

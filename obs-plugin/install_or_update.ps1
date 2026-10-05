@@ -10,6 +10,8 @@ $source = $PSScriptRoot
 $required = @(
   'AppleLive.lua',
   'AppleLiveDock.exe',
+  'AppleLiveSender.exe',
+  'ffmpeg.exe',
   'dock\index.html',
   'server\mediamtx.exe',
   'server\mediamtx.yml',
@@ -323,7 +325,7 @@ if ($obsProcesses.Count) {
 $targetPrefix = $target.TrimEnd('\') + '\'
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
   Where-Object {
-    $_.Name -in @('AppleLiveDock.exe', 'mediamtx.exe') -and
+    $_.Name -in @('AppleLiveDock.exe', 'AppleLiveSender.exe', 'ffmpeg.exe', 'mediamtx.exe') -and
     $_.ExecutablePath -and $_.ExecutablePath.StartsWith($targetPrefix, [StringComparison]::OrdinalIgnoreCase)
   } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Milliseconds 500
@@ -337,6 +339,8 @@ foreach ($directory in @('dock', 'server', 'phone-plugin')) {
 foreach ($file in @(
   'AppleLive.lua',
   'AppleLiveDock.exe',
+  'AppleLiveSender.exe',
+  'ffmpeg.exe',
   'README.md',
   'setup_lan.ps1',
   'install_or_update.ps1',
@@ -347,7 +351,6 @@ foreach ($file in @(
 }
 
 foreach ($stale in @(
-  'AppleLiveSender.exe',
   'usb_forward.ps1',
   'applelive-bridge.json',
   'applelive-command.json',

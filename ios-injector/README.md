@@ -5,7 +5,9 @@ The standalone library is imported into each target application with the user's 
 ## Sources and controls
 
 - Album and Files import an image or video into the target app's own storage. Images retain a static frame; local videos always loop and support play/pause. There is no loop switch, and an old saved loop-off setting is discarded on upgrade.
-- Detection is the only network entry. Paste a full RTMP or RTSP URL, for example `rtmp://192.168.1.45:1935/live/applelive`. Phone and computer must be on the same Wi-Fi. An obsolete Computer or USB source moves to Detection on upgrade.
+- Detection is the LAN network entry. Paste a full RTMP or RTSP URL, for example `rtmp://192.168.1.45:1935/live/applelive`; the phone and computer must be on the same Wi-Fi.
+- USB Direct is a separate entry. Select `USB 直连` in the phone panel, select `USB 数据线` in the OBS dock, connect and trust the iPhone, then start OBS. USB Direct uses the phone's loopback listener over usbmux and does not use Wi-Fi, OpenSSH, or the LAN RTMP/RTSP address.
+- Existing `computer` sources migrate to Detection. Existing `usb` sources remain USB Direct so an update does not silently change the transport.
 - Internal audio replaces microphone input with source sound. Silence is used when the source has no audio or the audio buffer underflows. Mute silences the injected audio. Turning off internal audio restores the app's microphone path.
 - Mirror, rotation, fit/fill and Restore Camera apply to the selected source. The compact panel shows all controls on one screen without vertical scrolling. Internal audio is the only audio option; it replaces the microphone when enabled.
 

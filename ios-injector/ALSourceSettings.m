@@ -14,7 +14,7 @@ NSDictionary *ALMigrateMediaSource(NSDictionary *saved, NSString *defaultURL) {
     NSString *kind = source[@"kind"];
     // The former computer source was the second LAN path. Upgrade it to Detection,
     // retaining a previously entered stream URL (including RTSP) when available.
-    if (!kind || [kind isEqualToString:@"computer"] || [kind isEqualToString:@"usb"]) {
+    if (!kind || [kind isEqualToString:@"computer"]) {
         source[@"kind"] = @"network";
         if (!ALValidStreamURL(source[@"url"])) source[@"url"] = ALValidStreamURL(defaultURL) ? defaultURL : @"";
     }

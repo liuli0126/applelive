@@ -285,7 +285,7 @@ static void ALInstallHooks(void) {
         _decoder.onFrame = ^(CVPixelBufferRef pixelBuffer, uint32_t sequence) {
             if (weakSelf.connectionPaused) return;
 #ifdef APPLELIVE_STANDALONE
-            if (![weakSelf.sourceKind isEqualToString:@"computer"]) return;
+            if (![weakSelf.sourceKind isEqualToString:@"usb"]) return;
 #endif
             [weakSelf.frameStore storePixelBuffer:pixelBuffer sequence:sequence];
             weakSelf.lastVideoTime = CFAbsoluteTimeGetCurrent();
@@ -304,7 +304,7 @@ static void ALInstallHooks(void) {
         };
         _client.onDisconnected = ^{
 #ifdef APPLELIVE_STANDALONE
-            if (weakSelf.directUSB || ![weakSelf.sourceKind isEqualToString:@"computer"]) return;
+            if (weakSelf.directUSB || ![weakSelf.sourceKind isEqualToString:@"usb"]) return;
 #endif
             weakSelf.lastVideoTime = 0;
             weakSelf.lastAudioTime = 0;
@@ -314,18 +314,18 @@ static void ALInstallHooks(void) {
         };
 #ifdef APPLELIVE_STANDALONE
         _mediaPlayer.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) {
-            if ([weakSelf.sourceKind isEqualToString:@"computer"]) return;
+            if ([weakSelf.sourceKind isEqualToString:@"usb"]) return;
             weakSelf.sourceRotation = rotation;
             [weakSelf.frameStore storePixelBuffer:frame sequence:weakSelf.frameStore.latestSequence + 1];
             weakSelf.lastVideoTime = CFAbsoluteTimeGetCurrent();
         };
         _mediaPlayer.onAudio = ^(const float *samples, NSUInteger frames) {
-            if ([weakSelf.sourceKind isEqualToString:@"computer"]) return;
+            if ([weakSelf.sourceKind isEqualToString:@"usb"]) return;
             [weakSelf pushAudioSamples:samples count:frames channels:2 sampleRate:48000];
             weakSelf.lastAudioTime = CFAbsoluteTimeGetCurrent();
         };
         _mediaPlayer.onReset = ^{
-            if ([weakSelf.sourceKind isEqualToString:@"computer"]) return;
+            if ([weakSelf.sourceKind isEqualToString:@"usb"]) return;
             [weakSelf clearAudioSamples];
             if ([weakSelf.sourceKind isEqualToString:@"network"]) [weakSelf.frameStore clear];
         };
@@ -335,12 +335,12 @@ static void ALInstallHooks(void) {
             [weakSelf.decoder reset]; [weakSelf.frameStore clear]; [weakSelf clearAudioSamples];
         };
         _usbReceiver.onBinary = ^(NSData *data) {
-            if (weakSelf.directUSB && !weakSelf.connectionPaused && [weakSelf.sourceKind isEqualToString:@"computer"])
+            if (weakSelf.directUSB && !weakSelf.connectionPaused && [weakSelf.sourceKind isEqualToString:@"usb"])
                 [weakSelf.client acceptBinaryData:data];
         };
         _usbReceiver.onDisconnected = ^{
             weakSelf.directUSB = NO;
-            if (![weakSelf.sourceKind isEqualToString:@"computer"]) return;
+            if (![weakSelf.sourceKind isEqualToString:@"usb"]) return;
             [weakSelf.decoder reset]; [weakSelf.frameStore clear]; [weakSelf clearAudioSamples];
             [weakSelf applyConnection:ALConnectionSettings()];
         };
@@ -410,34 +410,35 @@ static void ALInstallHooks(void) {
 
 - (void)applyConnection:(NSDictionary *)settings {
 #ifdef APPLELIVE_STANDALONE
-    if (![self.sourceKind isEqualToString:@"computer"]) return;
-#endif
+    if (![self.sourceKind isEqualToString:@"usb"]) return;
+    self.connectionPaused = NO;
+    [self configureAudioBridge];
+    [self.client disconnect];
+    [self.usbReceiver start];
+    return;
+#else
     NSArray *addresses = ALConnectionAddresses(settings);
     if ([NSProcessInfo.processInfo.processName isEqualToString:@"mediaserverd"]) ALPersistConnection(settings);
     self.connectionPaused = [settings[@"paused"] boolValue];
     self.connectionAddresses = addresses;
-#ifdef APPLELIVE_STANDALONE
-    [self configureAudioBridge];
-    if (self.connectionPaused) [self.usbReceiver stop];
-    else [self.usbReceiver start];
-    if (self.directUSB && !self.connectionPaused) return;
-#endif
     if (self.enabled && !self.connectionPaused && addresses.count) [self.client connectToAddresses:addresses];
     else [self.client disconnect];
     os_log(OS_LOG_DEFAULT, "[AppleLive] connection mode=%{public}@ addresses=%{public}@", settings[@"mode"], addresses);
+#endif
 }
 
 - (NSDictionary *)streamStatus {
 #ifdef APPLELIVE_STANDALONE
     if (self.directUSB) return @{@"connected": @YES, @"usb": @YES,
         @"video": @(CFAbsoluteTimeGetCurrent() - self.lastVideoTime < 2), @"audio": @(CFAbsoluteTimeGetCurrent() - self.lastAudioTime < 2)};
-    if (![self.sourceKind isEqualToString:@"computer"]) {
-        CVPixelBufferRef frame = [self.frameStore copyLatestPixelBuffer];
-        BOOL hasFrame = frame != NULL;
-        if (frame) CVPixelBufferRelease(frame);
-        return @{@"connected": @(hasFrame), @"video": @(hasFrame), @"usb": @NO,
-                 @"audio": @(CFAbsoluteTimeGetCurrent() - self.lastAudioTime < 2)};
+    if ([self.sourceKind isEqualToString:@"usb"]) {
+        return @{@"connected": @NO, @"video": @NO, @"usb": @YES, @"audio": @NO};
     }
+    CVPixelBufferRef frame = [self.frameStore copyLatestPixelBuffer];
+    BOOL hasFrame = frame != NULL;
+    if (frame) CVPixelBufferRelease(frame);
+    return @{@"connected": @(hasFrame), @"video": @(hasFrame), @"usb": @NO,
+             @"audio": @(CFAbsoluteTimeGetCurrent() - self.lastAudioTime < 2)};
 #endif
     CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
     return @{@"connected": @(self.client.isConnected),
@@ -626,7 +627,7 @@ static void ALInstallHooks(void) {
     // network frame visible across that jitter; onReset clears it on a real
     // disconnect or failed reconnect.
     self.frameStore.holdsFrame = [kind isEqualToString:@"local"] || [kind isEqualToString:@"network"];
-    if ([kind isEqualToString:@"computer"]) [self applyConnection:ALConnectionSettings()];
+    if ([kind isEqualToString:@"usb"]) [self applyConnection:ALConnectionSettings()];
     else if (url) {
         UIImage *still = url.isFileURL ? [UIImage imageWithContentsOfFile:url.path] : nil;
         if (still.CGImage) {

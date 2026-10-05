@@ -46,10 +46,10 @@ OBS 脚本及可执行文件的使用说明见 `../obs-plugin/README.md`。
 
 ## USB
 
-USB 需要 iPhone 安装 OpenSSH。电脑已有 `pymobiledevice3` 和 Windows `ssh.exe` 时，先启动 OBS 发送器，再运行：
+OBS 插件的 USB 数据线模式不需要 OpenSSH、Filza、Python、FFmpeg 或额外音频驱动。插件会把 OBS 已经推到本机 MediaMTX 的 H.264/AAC 流转换为 AppleLive 媒体包，再通过 `pymobiledevice3` 的 usbmux 发送到手机插件的 `127.0.0.1:8766`。
 
-```powershell
-.\usb_forward.ps1
-```
+Windows 必须能识别 iPhone 的 Apple Mobile Device/usbmux 驱动；安装 Apple Devices、iTunes 或爱思中的任意一种驱动即可。
 
-脚本通过 usbmux 连接 iPhone SSH，再建立从手机 `127.0.0.1:8765` 到电脑发送器的反向隧道。保持窗口开启。当前目标手机 SSH 22 端口未开放，因此 USB 尚未完成实机验证。
+USB 模式由 OBS 停靠窗口控制：选择“USB 数据线”，点击“准备 USB 直连”，再点击“开播”。手机端打开 AppleLive 面板并点击“USB 直连”，用数据线连接并信任电脑即可。下播或切回局域网时，USB 发送器会自动停止。
+
+`usb_forward.ps1` 是旧的 OpenSSH 隧道方案，不再用于当前 USB 直连模式。

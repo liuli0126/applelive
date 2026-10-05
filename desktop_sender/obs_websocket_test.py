@@ -60,7 +60,9 @@ class OBSClientTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"APPDATA": str(appdata)}), \
                     mock.patch("obs_websocket.connect", return_value=socket):
                 with OBSClient(Path(temp) / "plugin") as client:
-                    self.assertTrue(client.stream_state()["stream_configured"])
+                    state = client.stream_state()
+                    self.assertTrue(state["stream_configured"])
+                    self.assertEqual(state["stream_mode"], "lan")
                     client.configure("192.168.1.45")
                     client.start()
                     client.stop()

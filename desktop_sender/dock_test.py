@@ -66,9 +66,9 @@ class DockTests(unittest.TestCase):
 
     def test_configure_uses_selected_computer_address(self):
         for host in ("127.0.0.1", "192.168.1.99", "example.com"):
-            self.assertEqual(self.request({"action": "configure_stream", "host": host})[0], 400)
+            self.assertEqual(self.request({"action": "configure_stream", "mode": "lan", "host": host})[0], 400)
         with mock.patch.object(self.server, "ensure_stream_server"):
-            code, result = self.request({"action": "configure_stream", "host": "192.168.1.45"})
+            code, result = self.request({"action": "configure_stream", "mode": "lan", "host": "192.168.1.45"})
         self.assertEqual(code, 202)
         self.assertEqual(self.obs.calls, [("configure", "192.168.1.45")])
         self.assertEqual(self.server.status()["bridge"]["last_command"], result["id"])
@@ -76,7 +76,7 @@ class DockTests(unittest.TestCase):
     def test_configure_starts_and_stop_closes_media_server(self):
         with mock.patch.object(self.server, "ensure_stream_server") as start, \
                 mock.patch.object(self.server, "stop_stream_server") as stop:
-            self.assertEqual(self.request({"action": "configure_stream", "host": "192.168.1.45"})[0], 202)
+            self.assertEqual(self.request({"action": "configure_stream", "mode": "lan", "host": "192.168.1.45"})[0], 202)
             self.assertEqual(self.request({"action": "stop_stream"})[0], 202)
         start.assert_called_once_with()
         stop.assert_called_once_with()
@@ -95,13 +95,30 @@ class DockTests(unittest.TestCase):
     def test_reject_foreign_pages_and_invalid_actions(self):
         for headers in ({"Origin": "https://example.com"}, {"X-AppleLive-Token": "wrong"}, {"Host": "attacker.test"}):
             self.assertEqual(self.request({"action": "stop_stream"}, **headers)[0], 403)
-        for value in ({"action": "start"}, {"action": "settings", "quality": "high"}, {"action": "start_stream", "host": "192.168.1.45"}):
+        for value in ({"action": "start"}, {"action": "settings", "quality": "high"},
+                      {"action": "configure_stream", "host": "192.168.1.45"},
+                      {"action": "start_stream", "host": "192.168.1.45"}):
             self.assertEqual(self.request(value)[0], 400)
         self.assertFalse(self.obs.calls)
+
+    def test_usb_configures_loopback_and_starts_sender_after_obs(self):
+        self.obs.stream_state = mock.Mock(return_value={
+            "stream_active": False, "stream_configured": True,
+            "stream_server": "rtmp://127.0.0.1:1935/live", "stream_mode": "usb"})
+        with mock.patch.object(self.server, "ensure_stream_server"), \
+                mock.patch.object(self.server.stream_server, "path_status", return_value={
+                    "ready": True, "readers": 0, "tracks": ["H264", "MPEG-4 Audio"]}), \
+                mock.patch.object(self.server.usb_sender, "start") as start_usb:
+            self.assertEqual(self.request({"action": "configure_stream", "mode": "usb"})[0], 202)
+            self.assertEqual(self.request({"action": "start_stream"})[0], 202)
+        self.assertIn(("configure", "127.0.0.1"), self.obs.calls)
+        self.assertIn(("start",), self.obs.calls)
+        start_usb.assert_called_once_with()
 
     def test_status_and_phone_download(self):
         self.assertTrue(self.server.status()["ready"])
         self.assertFalse(self.server.status()["firewall_pending"])
+        self.assertEqual(self.server.status()["usb"]["state"], "stopped")
         with mock.patch.object(self.server.stream_server, "path_status", return_value={
             "ready": True, "readers": 1, "tracks": ["H264", "MPEG-4 Audio"]}):
             self.assertEqual(self.server.status()["stream_path"], {

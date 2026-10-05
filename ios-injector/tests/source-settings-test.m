@@ -24,8 +24,8 @@ int main(void) {
             @{@"kind": @"network", @"url": rtsp}
         ]) check([ALMigrateMediaSource(saved, rtmp) isEqual:saved], @"Existing local and network sources must remain intact");
         migrated = ALMigrateMediaSource(@{@"kind": @"usb"}, rtmp);
-        check([migrated[@"kind"] isEqual:@"network"] && [migrated[@"url"] isEqual:rtmp],
-              @"Obsolete USB sources must migrate to Detection");
+        check([migrated isEqual:@{@"kind": @"usb"}],
+              @"USB direct sources must remain selected after upgrade");
         migrated = ALMigrateMediaSource(nil, @"");
         check([migrated[@"kind"] isEqual:@"network"] && [migrated[@"url"] isEqual:@""], @"A fresh install without a host must wait for a stream URL");
         for (NSString *url in @[rtmp, rtsp])
