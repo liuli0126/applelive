@@ -47,6 +47,9 @@ static NSDictionary *ALPanelStreamStatus(void) {
 @property(nonatomic) UISwitch *enabledSwitch;
 @property(nonatomic) UISwitch *mirrorSwitch;
 @property(nonatomic) UISwitch *fisheyeSwitch;
+@property(nonatomic) UISlider *fisheyeSlider;
+@property(nonatomic) UILabel *fisheyeStrengthLabel;
+@property(nonatomic) UIStackView *fisheyeStrengthControls;
 @property(nonatomic) UISwitch *audioSwitch;
 @property(nonatomic) UISegmentedControl *fitControl;
 @property(nonatomic) UILabel *connectionLabel;
@@ -214,6 +217,21 @@ static NSDictionary *ALPanelStreamStatus(void) {
     [self syncConnection];
     self.mirrorSwitch = [self makeSwitch:@"左右镜像"];
     self.fisheyeSwitch = [self makeSwitch:@"鱼眼效果"];
+    self.fisheyeSlider = [UISlider new];
+    self.fisheyeSlider.minimumValue = 0; self.fisheyeSlider.maximumValue = 100;
+    self.fisheyeSlider.continuous = YES;
+    self.fisheyeSlider.accessibilityLabel = @"鱼眼强度";
+    self.fisheyeSlider.accessibilityHint = @"向右增加变形，零为原画面";
+    [self.fisheyeSlider addTarget:self action:@selector(fisheyeStrengthChanged:) forControlEvents:UIControlEventValueChanged];
+    [self.fisheyeSlider addTarget:self action:@selector(finishFisheyeAdjustment) forControlEvents:
+        UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchCancel];
+    NSLayoutConstraint *sliderHeight = [self.fisheyeSlider.heightAnchor constraintGreaterThanOrEqualToConstant:44];
+    sliderHeight.priority = 999; sliderHeight.active = YES;
+    self.fisheyeStrengthLabel = [self label:@"强度：75%" size:14];
+    self.fisheyeStrengthControls = [[UIStackView alloc] initWithArrangedSubviews:@[
+        self.fisheyeStrengthLabel, self.fisheyeSlider]];
+    self.fisheyeStrengthControls.axis = UILayoutConstraintAxisVertical;
+    self.fisheyeStrengthControls.spacing = 2;
     self.audioSwitch = [self makeSwitch:@"电脑声音"];
     self.directionLabel = [self label:@"画面方向 · 0°" size:15];
     UIButton *reset = [self button:@"重置" action:@selector(resetControls)];
@@ -238,6 +256,7 @@ static NSDictionary *ALPanelStreamStatus(void) {
         [self row:@[self.directionLabel, reset]], rotation,
         [self row:@[[self label:@"左右镜像" size:16], self.mirrorSwitch]],
         [self row:@[[self label:@"鱼眼效果" size:16], self.fisheyeSwitch]],
+        self.fisheyeStrengthControls,
         self.fitControl,
         [self row:@[[self label:@"电脑声音" size:16], self.audioSwitch]], self.hintLabel,
     ]];
@@ -376,16 +395,35 @@ static NSDictionary *ALPanelStreamStatus(void) {
     self.enabledSwitch.on = [self.controls[@"enabled"] boolValue];
     self.mirrorSwitch.on = [self.controls[@"mirror"] boolValue];
     self.fisheyeSwitch.on = [self.controls[@"fisheye"] boolValue];
+    [self syncFisheyeStrength];
     self.audioSwitch.on = [self.controls[@"audio"] boolValue];
     self.fitControl.selectedSegmentIndex = [self.controls[@"fill"] boolValue] ? 1 : 0;
     self.directionLabel.text = [NSString stringWithFormat:@"画面方向 · %ld°", (long)[self.controls[@"rotation"] integerValue] * 90];
 }
 
 - (void)saveControls {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(saveControls) object:nil];
     self.published = ALSaveAndPublishControls(self.controls);
     [self syncControls];
     [self refresh];
 }
+
+- (void)syncFisheyeStrength {
+    NSUInteger strength = ALFisheyeStrength(self.controls);
+    self.fisheyeSlider.value = strength;
+    self.fisheyeStrengthLabel.text = [NSString stringWithFormat:@"强度：%lu%%", (unsigned long)strength];
+    self.fisheyeSlider.accessibilityValue = [NSString stringWithFormat:@"%lu%%", (unsigned long)strength];
+    self.fisheyeStrengthControls.hidden = ![self.controls[@"fisheye"] boolValue];
+}
+- (void)fisheyeStrengthChanged:(UISlider *)slider {
+    self.controls[@"fisheyeStrength"] = @(slider.value);
+    self.controls[@"fisheyeStrength"] = @(ALFisheyeStrength(self.controls));
+    [self syncFisheyeStrength];
+    self.published = ALPublishControls(self.controls);
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(saveControls) object:nil];
+    [self performSelector:@selector(saveControls) withObject:nil afterDelay:0.25];
+}
+- (void)finishFisheyeAdjustment { [self saveControls]; }
 
 - (void)controlsChanged:(id)sender {
     self.controls[@"enabled"] = @(self.enabledSwitch.on);

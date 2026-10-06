@@ -1,4 +1,4 @@
 #import <CoreImage/CoreImage.h>
 
-// Same extent and color semantics as the input; disabled returns it unchanged.
-CIImage *ALApplyFisheye(CIImage *image, BOOL enabled);
+// Strength is 0–100; 75 preserves the original fixed effect. Off/0 bypass it.
+CIImage *ALApplyFisheye(CIImage *image, BOOL enabled, CGFloat strength);

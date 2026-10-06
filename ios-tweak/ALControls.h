@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 
 NSDictionary *ALDefaultControls(NSString *bundleIdentifier);
+NSUInteger ALFisheyeStrength(NSDictionary *controls);
 NSDictionary *ALLoadAppControls(void);
 BOOL ALSaveAndPublishControls(NSDictionary *controls);
 BOOL ALPublishControls(NSDictionary *controls);

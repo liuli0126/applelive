@@ -123,3 +123,9 @@ Status: complete (physical phone effect/performance acceptance remains user-run)
 - [x] Apply a cached GPU fisheye warp in the shared picture path, preserving color and audio.
 - [x] Verify geometry, toggle/persistence and existing media regressions; compile the dylib.
 - [x] Refresh the same delivery files and provide the installation location.
+
+## Phase 35. Adjustable fisheye strength (2026-10-06)
+Status: in_progress
+- [ ] Add a live 0–100% slider with persisted settings and backward-compatible defaults.
+- [ ] Extend the GPU projection to stronger distortion and test bounds, zero/off bypass and strength response.
+- [ ] Compile, inspect the rendered comparison and update the same delivery files.

@@ -506,7 +506,7 @@ static void ALInstallHooks(void) {
         inputBounds = image.extent;
         image = [image imageByApplyingTransform:CGAffineTransformMakeTranslation(
             -inputBounds.origin.x, -inputBounds.origin.y)];
-        image = ALApplyFisheye(image, [controls[@"fisheye"] boolValue]);
+        image = ALApplyFisheye(image, [controls[@"fisheye"] boolValue], ALFisheyeStrength(controls));
         CGFloat scale = [controls[@"fill"] boolValue]
             ? MAX(width / inputBounds.size.width, height / inputBounds.size.height)
             : MIN(width / inputBounds.size.width, height / inputBounds.size.height);

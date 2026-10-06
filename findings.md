@@ -153,3 +153,8 @@ USB 不是 iOS tweak 自己“看到”的串口。电脑端需要 `usbmuxd`/`py
 - Use a default-off native UISwitch in picture controls with an accessibility label. Relevant ui-ux-pro-max result: active states should provide immediate feedback; native switch and next-frame application fit this requirement.
 - Use an equidistant radial warp with fixed 120-degree diagonal projection, normalized by half the image diagonal (same scale on both axes). This gives barrel curvature without manufacturing new field of view or stretching portrait/landscape differently. Cache the Core Image kernel, keep the original image when off, and preserve the existing color-render path.
 - Actual rendered comparison exposed geometry outside the declared extent during composition. An equal-extent crop did not fix it (37408681764); the final sampled-color kernel checks destination bounds and explicitly returns transparent pixels in the margins. This remains one cached GPU kernel.
+
+## 2026-10-06 adjustable fisheye
+- User clarified that Douyin preview distortion is too subtle and explicitly wants adjustable strength. This is a visual effect request.
+- Slider 0–100%, default 75% exactly preserves the previous 60-degree half-angle. Maximum 100% uses an 80-degree half-angle for stronger curvature while staying below the projection's 90-degree singularity. Zero and switch-off bypass the kernel.
+- Publish rounded slider values immediately, save after release or a short idle interval (including accessibility adjustment). Keep the value when toggled off. Hide strength controls while the effect is off.

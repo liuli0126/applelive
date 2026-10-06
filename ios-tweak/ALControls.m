@@ -2,6 +2,7 @@
 #import <notify.h>
 #import <os/log.h>
 #import <time.h>
+#include <math.h>
 
 #ifndef APPLELIVE_STANDALONE
 static const char *kALControlNotification = "com.applelive.controls.v1";
@@ -30,8 +31,14 @@ static int ALStatusToken(void) {
 
 NSDictionary *ALDefaultControls(NSString *bundleIdentifier) {
     return @{@"enabled": @YES, @"audio": @NO, @"muted": @NO, @"mirror": @NO, @"fill": @NO,
-             @"fisheye": @NO, @"rotation": @0,
+             @"fisheye": @NO, @"fisheyeStrength": @75, @"rotation": @0,
              @"cameraPortrait": @([bundleIdentifier isEqualToString:@"com.apple.camera"])};
+}
+
+NSUInteger ALFisheyeStrength(NSDictionary *controls) {
+    id saved = controls[@"fisheyeStrength"];
+    if (![saved isKindOfClass:NSNumber.class] || !isfinite([saved doubleValue])) return 75;
+    return (NSUInteger)lround(fmax(0, fmin(100, [saved doubleValue])));
 }
 
 #ifndef APPLELIVE_STANDALONE
@@ -43,7 +50,8 @@ static uint64_t ALEncodeControls(NSDictionary *controls) {
         ([controls[@"fill"] boolValue] ? 8 : 0) |
         ((uint64_t)([controls[@"rotation"] unsignedIntegerValue] % 4) << 4) |
         ([controls[@"cameraPortrait"] boolValue] ? 64 : 0) |
-        ([controls[@"fisheye"] boolValue] ? 128 : 0);
+        ([controls[@"fisheye"] boolValue] ? 128 : 0) |
+        (UINT64_C(1) << 15) | ((uint64_t)ALFisheyeStrength(controls) << 8);
 }
 
 static NSDictionary *ALDecodeControls(uint64_t state) {
@@ -51,16 +59,21 @@ static NSDictionary *ALDecodeControls(uint64_t state) {
     return @{@"enabled": @((state & 1) != 0), @"audio": @((state & 2) != 0),
              @"mirror": @((state & 4) != 0), @"fill": @((state & 8) != 0),
              @"rotation": @((state >> 4) & 3), @"cameraPortrait": @((state & 64) != 0),
-             @"fisheye": @((state & 128) != 0)};
+             @"fisheye": @((state & 128) != 0),
+             // Old publishers did not send strength. Preserve their old look;
+             // the presence bit distinguishes missing strength from explicit 0.
+             @"fisheyeStrength": @((state & (UINT64_C(1) << 15))
+                 ? MIN((state >> 8) & 127, 100) : 75)};
 }
 #endif
 
 NSDictionary *ALLoadAppControls(void) {
     NSMutableDictionary *controls = [ALDefaultControls(NSBundle.mainBundle.bundleIdentifier) mutableCopy];
     NSDictionary *saved = [NSUserDefaults.standardUserDefaults dictionaryForKey:kALSavedControls];
-    for (NSString *key in @[@"enabled", @"audio", @"muted", @"mirror", @"fill", @"rotation", @"fisheye"]) {
+    for (NSString *key in @[@"enabled", @"audio", @"muted", @"mirror", @"fill", @"rotation", @"fisheye", @"fisheyeStrength"]) {
         if ([saved[key] isKindOfClass:NSNumber.class]) controls[key] = saved[key];
     }
+    controls[@"fisheyeStrength"] = @(ALFisheyeStrength(controls));
 #ifdef APPLELIVE_STANDALONE
     // The standalone panel has one audio mode: internal recording. Keep old
     // saved mute state from silencing the new UI after an upgrade.
