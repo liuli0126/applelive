@@ -6,10 +6,13 @@ on:
   push:
     paths:
       - "ios-injector/**"
+      - "ios-uvc-service/**"
       - "ios-tweak/**"
       - "scripts/verify-injector-dylib.py"
       - "scripts/build-ios-ffmpeg.sh"
       - "scripts/build-ios-uvc.sh"
+      - "scripts/build-uvc-service.sh"
+      - "scripts/relink-uvc-service.sh"
       - "scripts/relink-injector.sh"
       - ".github/workflows/build-ios-injector.yml"
 
@@ -26,6 +29,19 @@ jobs:
             -framework Foundation -framework CoreVideo -framework ImageIO -framework CoreGraphics \
             -o "$RUNNER_TEMP/applelive-uvc-frame-test"
           "$RUNNER_TEMP/applelive-uvc-frame-test"
+
+      - name: Test authenticated phone-local UVC service
+        run: |
+          xcrun clang -fobjc-arc -DAL_UVC_SERVICE_TEST=1 -Iios-injector -Iios-uvc-service \
+            ios-uvc-service/main.m ios-uvc-service/ALUVCHostServer.m ios-injector/tests/uvc-service-fixture.m \
+            ios-injector/ALUVCWire.m ios-injector/ALUVCFrame.m \
+            -framework Foundation -framework CoreVideo -framework CoreGraphics -framework ImageIO -framework Security \
+            -o "$RUNNER_TEMP/applelive-uvc-host-test"
+          xcrun clang -fobjc-arc -Iios-injector ios-injector/tests/uvc-service-client-test.m \
+            ios-injector/ALUVCServiceClient.m ios-injector/ALUVCWire.m ios-injector/ALUVCFrame.m \
+            -framework Foundation -framework CoreVideo -framework CoreGraphics -framework ImageIO \
+            -o "$RUNNER_TEMP/applelive-uvc-client-test"
+          python3 ios-injector/tests/uvc-service-test.py "$RUNNER_TEMP/applelive-uvc-host-test" "$RUNNER_TEMP/applelive-uvc-client-test"
 
       - name: Test fisheye geometry and persistent toggle
         run: |
@@ -54,7 +70,7 @@ jobs:
           "$RUNNER_TEMP/applelive-usb-test" ios-injector/tests/native-usb.alusb ios-injector/tests/multislice-usb.alusb
 
       - name: Install build tools
-        run: brew install ldid make perl
+        run: brew install ldid dpkg make perl
 
       - name: Install Theos and SDKs
         env:
@@ -72,7 +88,7 @@ jobs:
       - name: Test external camera lifecycle with a simulated USB device
         run: |
           xcrun clang -fobjc-arc -Iios-injector -I.build/ios-uvc/include \
-            ios-injector/tests/uvc-lifecycle-test.m ios-injector/ALExternalCamera.m ios-injector/ALUVCFrame.m \
+            ios-injector/tests/uvc-lifecycle-test.m ios-injector/ALExternalCamera.m ios-injector/ALUVCFrame.m ios-injector/ALUVCWire.m \
             -framework Foundation -framework CoreVideo -framework ImageIO -framework CoreGraphics \
             -framework Security -framework IOKit -o "$RUNNER_TEMP/applelive-uvc-lifecycle-test"
           "$RUNNER_TEMP/applelive-uvc-lifecycle-test"
@@ -175,13 +191,16 @@ jobs:
           cp -R .build/fishhook relink/
           tar --exclude=.git -czf relink/ffmpeg-source.tar.gz -C .build/ios-ffmpeg source
           mkdir -p relink/source
-          git archive HEAD ios-injector ios-tweak scripts/build-ios-ffmpeg.sh scripts/build-ios-uvc.sh | tar -x -C relink/source
+          git archive HEAD ios-injector ios-tweak ios-uvc-service scripts/build-ios-ffmpeg.sh scripts/build-ios-uvc.sh scripts/build-uvc-service.sh scripts/relink-uvc-service.sh | tar -x -C relink/source
           test "$(find relink/objects/arm64 -name '*.o' | wc -l)" -ge 12
           test "$(find relink/objects/arm64e -name '*.o' | wc -l)" -ge 12
           (cd relink && bash relink-injector.sh)
           python3 scripts/verify-injector-dylib.py relink/output/AppleLive.dylib
           rm -rf relink/output
           tar -czf injector-artifact/AppleLive-relink.tar.gz relink
+
+      - name: Build signed rootless UVC service and pairing app
+        run: bash scripts/build-uvc-service.sh
 
       - name: Verify standalone binary
         run: |

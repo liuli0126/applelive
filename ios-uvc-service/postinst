@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+PATH=/var/jb/usr/bin:/var/jb/bin:/var/jb/usr/sbin:/usr/bin:/bin:/usr/sbin:/sbin
+export PATH
+if [ "$1" = configure ]; then
+  mkdir -p /var/mobile/Library/AppleLiveUVC
+  chown mobile:mobile /var/mobile/Library/AppleLiveUVC
+  chmod 700 /var/mobile/Library/AppleLiveUVC
+  launchctl bootout system/com.applelive.uvchost >/dev/null 2>&1 || true
+  launchctl bootstrap system /var/jb/Library/LaunchDaemons/com.applelive.uvchost.plist
+  if command -v uicache >/dev/null 2>&1; then
+    uicache -p /var/jb/Applications/AppleLiveUSB.app || true
+  fi
+fi
+exit 0

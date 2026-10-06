@@ -1,5 +1,6 @@
 #import "ALExternalCamera.h"
 #import "ALUVCFrame.h"
+#import "ALUVCWire.h"
 #import <libuvc/libuvc.h>
 #import <dlfcn.h>
 #import <stdatomic.h>
@@ -67,7 +68,8 @@ static void ALUVCReceive(uvc_frame_t *frame, void *context) {
 }
 - (void)recordAccessContext {
     [self log:[NSString stringWithFormat:@"AppleLive UVC experiment · %@ · %@",
-        NSBundle.mainBundle.bundleIdentifier, NSProcessInfo.processInfo.operatingSystemVersionString]];
+        NSBundle.mainBundle.bundleIdentifier ?: NSProcessInfo.processInfo.processName,
+        NSProcessInfo.processInfo.operatingSystemVersionString]];
     // Entitlements belong to the executable, not to an injected dylib. Reading
     // them is diagnostic only; the actual uvc_open result decides access.
     typedef CFTypeRef (*CreateTask)(CFAllocatorRef);
@@ -127,6 +129,7 @@ static void ALUVCReceive(uvc_frame_t *frame, void *context) {
     atomic_fetch_add(&_generation, 1);
     dispatch_async(_queue, ^{ [self closeDevice]; });
 }
+- (void)stopAndWait { [self stop]; dispatch_sync(_queue, ^{}); }
 - (void)start {
     uint64_t generation = atomic_fetch_add(&_generation, 1) + 1;
     self.status = @{@"state": @"opening", @"message": @"正在识别外接相机…"};
@@ -147,7 +150,8 @@ static void ALUVCReceive(uvc_frame_t *frame, void *context) {
         result = uvc_get_device_list(self->_context, &devices);
         if (result != UVC_SUCCESS || !devices || !devices[0]) {
             if (devices) uvc_free_device_list(devices, 1);
-            [self setState:@"error" message:@"未发现 UVC 采集卡；检查 OTG、供电，或查看连接诊断中的权限" code:result];
+            [self setState:@"error" message:@"未发现 UVC 采集卡；检查 OTG、供电，或查看连接诊断中的权限"
+                code:result == UVC_SUCCESS ? UVC_ERROR_NO_DEVICE : result];
             [self closeDevice]; return;
         }
         BOOL opened = NO;
@@ -265,6 +269,18 @@ static void ALUVCReceive(uvc_frame_t *frame, void *context) {
     if (!frame || atomic_load(&_generation) != _activeGeneration) return;
     BOOL jpeg = frame->frame_format == UVC_FRAME_FORMAT_MJPEG;
     if (!jpeg && frame->frame_format != UVC_FRAME_FORMAT_YUYV && frame->frame_format != UVC_FRAME_FORMAT_UYVY) return;
+    void (^raw)(NSData *) = self.onRawFrame;
+    if (raw) {
+        if (frame->step > UINT32_MAX) return;
+        NSData *packet = ALUVCPackFrame(frame->data,frame->data_bytes,frame->width,frame->height,(uint32_t)frame->step,
+            jpeg ? ALUVCJPEG : frame->frame_format == UVC_FRAME_FORMAT_UYVY ? ALUVCUYVY : ALUVCYUY2);
+        if (!packet) { @synchronized (self) { _badFrames++; } return; }
+        if (atomic_load(&_generation) != _activeGeneration) return;
+        BOOL first;
+        @synchronized (self) { first = _frameCount++ == 0; _lastFrame = CFAbsoluteTimeGetCurrent(); }
+        if (first) [self setState:@"playing" message:@"已收到采集卡视频数据" code:0];
+        raw(packet); return;
+    }
     CVPixelBufferRef pixel = ALCopyUVCFrame(frame->data, frame->data_bytes, frame->width, frame->height,
         frame->step, jpeg, frame->frame_format == UVC_FRAME_FORMAT_UYVY);
     if (!pixel) { @synchronized (self) { _badFrames++; } return; }

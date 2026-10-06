@@ -1,0 +1,9 @@
+Package: com.applelive.uvchost
+Name: AppleLive USB Capture Service
+Version: 0.1.0
+Architecture: iphoneos-arm64
+Description: Phone-local UVC capture service and pairing utility for AppleLive, iOS 15+ rootless.
+Maintainer: AppleLive
+Author: AppleLive
+Section: Multimedia
+Depends: firmware (>= 15.0)

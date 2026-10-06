@@ -1,0 +1,10 @@
+#!/bin/sh
+PATH=/var/jb/usr/bin:/var/jb/bin:/usr/bin:/bin:/usr/sbin:/sbin
+export PATH
+case "$1" in remove|purge)
+  if command -v uicache >/dev/null 2>&1; then
+    uicache -u /var/jb/Applications/AppleLiveUSB.app >/dev/null 2>&1 || true
+  fi
+  ;;
+esac
+exit 0

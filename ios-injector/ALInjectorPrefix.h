@@ -13,3 +13,4 @@
 #define ALUSBReceiver ALInjectedUSBReceiver
 #define ALExternalCamera ALInjectedExternalCamera
 #define ALUVCSession ALInjectedUVCSession
+#define ALUVCServiceClient ALInjectedUVCServiceClient

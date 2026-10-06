@@ -5,6 +5,7 @@
 #import "ALAudioRing.h"
 #import "ALCyberTheme.h"
 #import "ALSourceSettings.h"
+#import "ALUVCServiceClient.h"
 #import <PhotosUI/PhotosUI.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
@@ -349,10 +350,32 @@ static NSString *ALFriendlyStreamError(NSString *error) {
 }
 - (void)selectExternal {
     UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"外接 UVC 相机（测试）"
-        message:@"相机 → HDMI 采集卡 → OTG → 手机。支持尝试 MJPEG / YUY2 画面；采集卡音频暂不接入。是否能打开取决于采集卡和当前 App 的 USB 权限。"
+        message:@"相机 → HDMI 采集卡 → OTG → 手机。请先安装 AppleLive USB 采集服务并配对。目前仅采集画面，设备兼容性仍需实测。"
         preferredStyle:UIAlertControllerStyleAlert];
     [menu addAction:[UIAlertAction actionWithTitle:@"连接 / 重试" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         [self restoreKey]; self.source[@"kind"] = @"external"; [self saveSource];
+    }]];
+    [menu addAction:[UIAlertAction actionWithTitle:@"配对采集服务" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        UIAlertController *pair=[UIAlertController alertControllerWithTitle:@"配对手机采集服务"
+            message:@"先在桌面的 AppleLive USB 中复制连接码，再粘贴到这里。配对会自动保存。"
+            preferredStyle:UIAlertControllerStyleAlert];
+        [pair addTextFieldWithConfigurationHandler:^(UITextField *field) {
+            field.placeholder=@"粘贴连接码";field.autocapitalizationType=UITextAutocapitalizationTypeNone;
+            field.autocorrectionType=UITextAutocorrectionTypeNo;field.secureTextEntry=YES;
+        }];
+        [pair addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *a) {
+            BOOL valid=[ALUVCServiceClient saveConnectionCode:pair.textFields.firstObject.text];
+            [self restoreKey];
+            if (valid) { self.source[@"kind"]=@"external";[self saveSource]; }
+            else {
+                UIAlertController *error=[UIAlertController alertControllerWithTitle:@"连接码不完整"
+                    message:@"请在 AppleLive USB 中重新复制完整连接码。" preferredStyle:UIAlertControllerStyleAlert];
+                [error addAction:[UIAlertAction actionWithTitle:@"知道了" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *b) { [self restoreKey]; }]];
+                [self.window.rootViewController dismissViewControllerAnimated:YES completion:^{ [self present:error]; }];
+            }
+        }]];
+        [pair addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *a) { [self restoreKey]; }]];
+        [self.window.rootViewController dismissViewControllerAnimated:YES completion:^{ [self restoreKey];[self present:pair]; }];
     }]];
     [menu addAction:[UIAlertAction actionWithTitle:@"连接诊断" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         UIAlertController *report = [UIAlertController alertControllerWithTitle:@"外接相机连接诊断"
@@ -553,7 +576,7 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     [self.playButton setTitle:[state isEqualToString:@"paused"] || [state isEqualToString:@"ended"] ? @"播放" : @"暂停" forState:UIControlStateNormal];
     [self.playButton setImage:[UIImage systemImageNamed:([state isEqualToString:@"paused"] || [state isEqualToString:@"ended"]) ? @"play.fill" : @"pause.fill"] forState:UIControlStateNormal];
     self.playButton.accessibilityLabel = [self.playButton titleForState:UIControlStateNormal];
-    self.audioLabel.hidden = ![self.controls[@"audio"] boolValue];
+    self.audioLabel.hidden = !enabled || ![self.controls[@"audio"] boolValue];
     self.audioLabel.text = [status[@"audio"] boolValue] ? @"内录中 · 手机麦克风已关闭" : @"等待源音频 · 手机麦克风已关闭";
     if (external) self.audioLabel.text = @"外接相机暂仅采集画面 · 手机麦克风已关闭";
     [self layoutControls];

@@ -22,7 +22,7 @@
 #import "ALPreview.h"
 #import "ALSampleAudio.h"
 #import "ALUSBReceiver.h"
-#import "ALExternalCamera.h"
+#import "ALUVCServiceClient.h"
 #import "ALAudioUnitBridge.h"
 #import <ImageIO/ImageIO.h>
 #import <UIKit/UIKit.h>
@@ -70,7 +70,7 @@ static void ALHookMessage(Class cls, SEL selector, IMP replacement, IMP *origina
 @property(nonatomic) NSURL *sourceURL;
 @property(atomic) NSInteger sourceRotation;
 @property(nonatomic) ALUSBReceiver *usbReceiver;
-@property(nonatomic) ALExternalCamera *externalCamera;
+@property(nonatomic) ALUVCServiceClient *externalCamera;
 @property(atomic) BOOL directUSB;
 #endif
 - (BOOL)renderVideoIntoSample:(CMSampleBufferRef)sample;
@@ -636,7 +636,7 @@ static void ALInstallHooks(void) {
     if ([kind isEqualToString:@"usb"]) [self applyConnection:ALConnectionSettings()];
     else if ([kind isEqualToString:@"external"]) {
         if (!self.externalCamera) {
-            self.externalCamera = [ALExternalCamera new];
+            self.externalCamera = [ALUVCServiceClient new];
             __weak typeof(self) weakSelf = self;
             self.externalCamera.onFrame = ^(CVPixelBufferRef frame) {
                 ALVirtualCamera *owner = weakSelf;
