@@ -237,3 +237,22 @@
 - AppleLive USB now configures OBS to publish to `rtmp://127.0.0.1:1935/live/applelive`, starts the bundled MediaMTX server, and feeds the loopback stream to the existing usbmux sender. Virtual camera and VB-Cable discovery were removed from the packaged USB path; USB startup probe was shortened to 1 second.
 - Tests: 17 desktop protocol/dock/transport tests pass, then the full 21-test desktop suite passes. JavaScript syntax and `git diff --check` pass.
 - Rebuilt `artifacts/AppleLive-OBS-Portable.zip` from `D:\OBS定制款\OBS定制款\obs studio`. SHA-256: `D1163DC7783EDE32C96D854BD45614CEAC7A6A395C7FF0158AFE92D22`. Extraction contains the embedded dock/sender/MediaMTX/dylib and no runtime log or status files. The remaining difference from the reference is the FFmpeg/Python hop; native output + native relay is Phase 30's final parity work.
+
+## 2026-10-05 native OBS USB parity
+
+- Added `native-obs-usb/`: a self-contained Windows C++ OBS output module and usbmux relay. The output consumes OBS H.264/AAC encoder packets, waits for SPS/PPS and a keyframe, uses a bounded non-blocking queue, and exposes a loopback control port 28766. The relay listens on 28765, speaks usbmux plist on 27015, connects the first trusted USB device to phone port 8766, and forwards the existing `ALUSB1` framing.
+- Updated the dock to select the native path when both binaries are present. Native USB no longer starts MediaMTX or OBS RTMP; the Python/FFmpeg path remains a fallback for older packages.
+- Added AAC config/audio packet support to the phone stream client. The source still needs an iOS CI build and physical-device validation.
+- Built the native relay and output locally with Visual Studio against the supplied OBS `obs.dll`; both binaries are statically linked to the MSVC runtime. DLL load/import checks passed and the relay status smoke test reported `listening`.
+- Regenerated `artifacts/AppleLive-OBS-Portable-Native.zip`; SHA256 `1390D7F1B51F7CE10111C8FABC8E1725FE89EC61E8EA882757DC493F3827F515`. The archive includes `obs-plugins/64bit/applelive-native-output.dll`, `AppleLiveUsbRelay.exe`, MediaMTX, the dock, sender, and `AppleLive.dylib`.
+- Rebuilt the final package after updater correction. Final portable archive SHA256: `0355D15B503FDB399078244488F6C3796EC984F75F13BC34F440CD2F91488AF4`. Extracted package contains the native updater copy logic and both native binaries.
+
+## 2026-10-06 USB corruption repair and SkyCam audit
+- User confirmed iPhone 11 / iOS 15.6 / Douyin, USB direct mode.
+- Prior native build/package smoke checks were insufficient: corrected OBS ABI, required module exports/start-stop callbacks, encoder media binding, borrowed packet ownership, reversed USB greeting, usbmux port encoding and XML replies, audio/keyframe gating, reconnection, and bounded output queue.
+- Legacy FFmpeg sender now groups all slices of a picture. Phone decodes complete access units and resets/waits for IDR after a sequence gap or decoder error. AAC uses system AudioConverter with validated LC configuration and serialized teardown; USB mapped data has precise lifetime and media packets have a scoped autorelease pool.
+- Static Sky/Cam evidence is in work/skycam-usb-20261006/evidence. Findings describe system decoder and recovery patterns; no competitor code or binaries are included in the implementation/delivery.
+- Windows behavioral relay suite: 4 tests passed. Real OBS 30.2.3 host loaded the DLL and recorded 3 reconnect sessions, each 65 video / 100 AAC packets plus ASC; repeated start/stop passed. FFmpeg decoded native output without errors. Desktop protocol/dock/USB/transport/control checks passed.
+- macOS shared phone decoder test initially caught zero AAC output. Removed incorrect use of raw ASC as an ESDS cookie and supplied AAC-LC ASBD. USB video/audio, 3-slice pictures, missing-frame recovery, concurrent AAC teardown, and reconnect now pass. Successful phone build: reusable job in run 37399330392, source 3b5dcaf. Architectures verified arm64/iOS14 and arm64e/iOS15. Physical iPhone/Douyin confirmation remains outstanding.
+- Fixed the network test's conflation of startup and steady delivery after one independent run missed an initial count threshold while the same-source reusable run passed. Windows CI pinned to windows-2022 to match local VS2022 build tooling.
+- Rebuilt desktop helpers and staged full portable OBS 0.4.3 with fresh scene/profile, automatic dock registration, and fresh first-run local control credentials. Archive verification/delivery in progress.

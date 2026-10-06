@@ -5,8 +5,30 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import json
 import os
+import io
 
-from sender import AnnexBParser, AUDIO_HEADER, VIDEO_HEADER, Broadcaster, audio_command, capture_audio, video_command, write_status
+from sender import AnnexBParser, AUDIO_HEADER, VIDEO_HEADER, Broadcaster, audio_command, capture_audio, capture_video, video_command, write_status
+
+
+def test_capture_preserves_multislice_pictures():
+    fixture = (Path(__file__).resolve().parents[1] / "ios-injector/tests/multislice-usb.alusb").read_bytes()
+    offset, pictures = 0, []
+    while offset < len(fixture):
+        size = struct.unpack_from(">I", fixture, offset)[0]
+        pictures.append(fixture[offset + 4:offset + 4 + size])
+        offset += size + 4
+    # Re-feed actual multi-slice x264 output without AUDs. The legacy sender
+    # must preserve every slice in one frame instead of publishing each slice.
+    output = []
+    capture_video(Namespace(stdout=io.BytesIO(b"".join(p[20:] for p in pictures))),
+                  Namespace(publish=output.append), 320, 180)
+    assert len(output) == 20
+    for index, packet in enumerate(output):
+        assert VIDEO_HEADER.unpack(packet[:20]) == (b"fram", index, 3 if index % 10 == 0 else 2, 320, 180)
+        parser = AnnexBParser()
+        nals = list(parser.feed(packet[20:])) + [parser.flush()]
+        slices = [n for n in nals if n and (n[4 if n.startswith(b"\x00\x00\x00\x01") else 3] & 31) in (1, 5)]
+        assert len(slices) == 3
 
 
 def test_annexb_parser_handles_split_chunks():
@@ -176,6 +198,7 @@ def test_status_reader_lock_does_not_stop_capture():
 
 
 if __name__ == "__main__":
+    test_capture_preserves_multislice_pictures()
     test_annexb_parser_handles_split_chunks()
     test_annexb_large_frames_and_every_start_code_boundary()
     test_headers_are_little_endian_and_ascii_typed()

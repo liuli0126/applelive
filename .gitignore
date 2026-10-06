@@ -6,6 +6,7 @@ packages/
 artifacts/
 .build/
 obs-plugin/*.exe
+obs-plugin/*.dll
 obs-plugin/server/*.exe
 obs-plugin/server/*.log
 obs-plugin/phone-plugin/

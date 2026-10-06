@@ -22,7 +22,7 @@ jobs:
     uses: ./.github/workflows/build-ios-injector.yml
   build-windows:
     needs: build-phone-plugin
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - name: Checkout
         uses: actions/checkout@v4

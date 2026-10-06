@@ -1,20 +1,20 @@
 # AppleLive OBS plugin (Windows desktop v0.4.2)
 
-LAN mode uses the bundled MediaMTX RTMP/RTSP server. USB mode uses the same OBS encoded output through a loopback RTMP path, then sends H.264/AAC through usbmux. It does not capture OBS Virtual Camera, DirectShow, or a VB-Cable device.
+LAN mode uses the bundled MediaMTX RTMP/RTSP server. USB mode uses the native OBS output DLL and the native usbmux relay, matching the reference architecture: OBS encoded packets -> bounded queue -> AppleLiveUsbRelay -> Apple Mobile Device Service -> iPhone. It does not capture OBS Virtual Camera, DirectShow, VB-Cable, Wi-Fi, or OpenSSH.
 
 ## 安装
 
 1. 将 ZIP 解压到 OBS 目录以外的任意文件夹，双击 `安装或更新AppleLive.cmd`。安装程序会定位并关闭 OBS、替换旧版文件、自动添加 Lua 脚本和 AppleLive 停靠窗口、启用 OBS WebSocket，然后重新打开 OBS。
-2. In the dock, choose LAN or USB. LAN keeps the existing Get Stream Key / Start workflow. USB only needs Prepare USB Direct; it starts a loopback MediaMTX input and the OBS local output automatically, with no user OBS Start Streaming click.
+2. In the dock, choose LAN or USB. LAN keeps the existing Get Stream Key / Start workflow. USB only needs Prepare USB Direct; the native OBS output and relay start automatically. There is no OBS Start Streaming click and no MediaMTX/RTMP hop in the USB path.
 3. 局域网模式需要把面板显示的 RTMP 或 RTSP 地址填进手机插件的「检测」入口；USB 模式需要在手机插件里点击「USB 直连」。
 
 `127.0.0.1:18765` 只供 OBS 本机停靠面板使用，不是手机拉流地址。
 
 ## USB 数据线
 
-USB mode requires the iPhone to trust this computer and the latest `AppleLive.dylib`. The media path is `OBS encoder -> 127.0.0.1:1935 MediaMTX -> FFmpeg remux/decode -> usbmux -> AppleLive.dylib`; it does not use OBS Virtual Camera, DirectShow, VB-Cable, Wi-Fi, RTSP, or OpenSSH. Windows must have Apple Mobile Device/usbmux drivers (Apple Devices, iTunes, or 3uTools drivers).
+USB mode requires the iPhone to trust this computer and the matching `AppleLive.dylib`. The media path is `OBS native H.264/AAC encoder -> bounded queue -> AppleLiveUsbRelay -> Apple Mobile Device Service/usbmux -> AppleLive.dylib`. Windows needs the Apple Mobile Device driver. Click Prepare USB Direct in the dock, then USB Direct on the phone. OBS Start Streaming is not required.
 
-The reference package goes one step further: its native OBS C++ output DLL owns the H.264/AAC encoder packets and a non-blocking queue, then a small native relay talks to usbmux. That is the remaining difference for matching its failure boundaries exactly; the portable package now removes the virtual-device dependency and keeps one OBS folder for delivery.
+The native DLL waits for the phone greeting and then SPS/PPS plus an IDR before sending media. Its queue is bounded and its socket worker reconnects automatically. The portable bundle targets OBS 30.2.3 and reports a module startup error if loading fails. Legacy packages without native components can still use the Python/FFmpeg loopback sender, which now groups complete H.264 access units.
 
 ## 地址
 

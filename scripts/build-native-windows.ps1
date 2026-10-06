@@ -40,7 +40,8 @@ $required = @(
 $dump = & $dumpbin.Source /exports $obsDll | Out-String
 $def = @('LIBRARY obs.dll', 'EXPORTS')
 foreach ($name in $required) {
-  if ($dump -notmatch "(?m)^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+$name\s*$") {
+  # Some dumpbin versions append forwarded/export alias information.
+  if ($dump -notmatch "(?m)^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+$name(?=\s|$)") {
     throw "The installed obs.dll does not export $name"
   }
   $def += $name

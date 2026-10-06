@@ -29,6 +29,26 @@ if (-not $SkipDock) {
   Copy-Item -LiteralPath $ffmpeg.Source -Destination (Join-Path $output "ffmpeg.exe") -Force
 }
 
+# Native components are produced against OBS 30.2.3 before packaging.
+# The Python sender remains for legacy installs; a present native module
+# that fails to load is reported as an error by the dock.
+$nativeRelayCandidates = @(
+  (Join-Path $projectRoot 'native-obs-usb\build\Release\AppleLiveUsbRelay.exe'),
+  (Join-Path $projectRoot '.build\native-relay\Release\AppleLiveUsbRelay.exe')
+)
+$nativeRelay = $nativeRelayCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if ($nativeRelay) {
+  Copy-Item -LiteralPath $nativeRelay -Destination (Join-Path $output 'AppleLiveUsbRelay.exe') -Force
+}
+$nativeOutputCandidates = @(
+  (Join-Path $projectRoot 'native-obs-usb\build\Release\applelive-native-output.dll'),
+  (Join-Path $projectRoot '.build\native-obs-output\Release\applelive-native-output.dll')
+)
+$nativeOutput = $nativeOutputCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if ($nativeOutput) {
+  Copy-Item -LiteralPath $nativeOutput -Destination (Join-Path $output 'applelive-native-output.dll') -Force
+}
+
 Copy-Item -LiteralPath (Join-Path $projectRoot "desktop_sender\setup_lan.ps1") `
   -Destination (Join-Path $output "setup_lan.ps1") -Force
 
@@ -40,7 +60,7 @@ New-Item -ItemType Directory -Path $artifactDirectory -Force | Out-Null
 $archive = Join-Path $artifactDirectory "AppleLive-OBS-Windows.zip"
 $stage = Join-Path $build ("package-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
-foreach ($item in @(
+ $packageItems = @(
   (Join-Path $output "AppleLive.lua"),
   (Join-Path $output "AppleLiveDock.exe"),
   (Join-Path $output "AppleLiveSender.exe"),
@@ -50,7 +70,14 @@ foreach ($item in @(
   (Join-Path $output "install_or_update.ps1"),
   (Join-Path $output "VERSION.txt"),
   (Join-Path $output "README.md")
+)
+foreach ($optional in @(
+  (Join-Path $output "AppleLiveUsbRelay.exe"),
+  (Join-Path $output "applelive-native-output.dll")
 )) {
+  if (Test-Path -LiteralPath $optional) { $packageItems += $optional }
+}
+foreach ($item in $packageItems) {
   Copy-Item -LiteralPath $item -Destination $stage -Recurse -Force
 }
 Get-ChildItem -LiteralPath $output -Filter "*.cmd" -File |

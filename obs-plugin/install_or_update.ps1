@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$ObsRoot = "",
   [string]$ConfigRoot = "",
   [switch]$NoElevation,
@@ -30,7 +30,7 @@ function Get-ObsExecutable([string]$root) {
   if ($root.StartsWith('\\?\')) { $root = $root.Substring(4) }
   $bin = Join-Path $root 'bin\64bit'
   $standard = Join-Path $bin 'obs64.exe'
-  if (Test-Path -LiteralPath $standard) { return (Get-Item -LiteralPath $standard).FullName }
+  if ([IO.File]::Exists($standard)) { return [IO.Path]::GetFullPath($standard) }
   if (-not (Test-Path -LiteralPath $bin)) { return $null }
 
   $custom = Get-ChildItem -LiteralPath $bin -Filter '*.exe' -File -ErrorAction SilentlyContinue |
@@ -339,7 +339,7 @@ if ($obsProcesses.Count) {
 $targetPrefix = $target.TrimEnd('\') + '\'
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
   Where-Object {
-    $_.Name -in @('AppleLiveDock.exe', 'AppleLiveSender.exe', 'ffmpeg.exe', 'mediamtx.exe') -and
+    $_.Name -in @('AppleLiveDock.exe', 'AppleLiveSender.exe', 'AppleLiveUsbRelay.exe', 'ffmpeg.exe', 'mediamtx.exe') -and
     $_.ExecutablePath -and $_.ExecutablePath.StartsWith($targetPrefix, [StringComparison]::OrdinalIgnoreCase)
   } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Milliseconds 500
@@ -378,6 +378,17 @@ if (-not $Embedded) {
 )) {
     Remove-Item -LiteralPath (Join-Path $target $stale) -Force -ErrorAction SilentlyContinue
   }
+  $nativeRelay = Join-Path $source 'AppleLiveUsbRelay.exe'
+  if (Test-Path -LiteralPath $nativeRelay) {
+    Copy-Item -LiteralPath $nativeRelay -Destination (Join-Path $target 'AppleLiveUsbRelay.exe') -Force
+  }
+  $nativeOutput = Join-Path $source 'applelive-native-output.dll'
+  if (Test-Path -LiteralPath $nativeOutput) {
+    $nativeTarget = Join-Path $ObsRoot 'obs-plugins\64bit'
+    New-Item -ItemType Directory -Path $nativeTarget -Force | Out-Null
+    Copy-Item -LiteralPath $nativeOutput -Destination (Join-Path $nativeTarget 'applelive-native-output.dll') -Force
+    Unblock-File -LiteralPath (Join-Path $nativeTarget 'applelive-native-output.dll') -ErrorAction SilentlyContinue
+  }
 }
 
 Get-ChildItem -LiteralPath $target -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
@@ -385,9 +396,11 @@ $resolvedConfigRoot = $ConfigRoot
 $registeredScenes = Register-AppleLiveScript $resolvedConfigRoot (Join-Path $target 'AppleLive.lua')
 Register-AppleLiveDock $resolvedConfigRoot
 Enable-ObsWebSocket $resolvedConfigRoot
-$stateDirectory = Join-Path $env:LOCALAPPDATA 'AppleLive'
-New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
-[IO.File]::WriteAllText((Join-Path $stateDirectory 'obs-root.txt'), $ObsRoot, (New-Object Text.UTF8Encoding($false)))
+if (-not ($Embedded -and $NoLaunch)) {
+  $stateDirectory = Join-Path $env:LOCALAPPDATA 'AppleLive'
+  New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
+  [IO.File]::WriteAllText((Join-Path $stateDirectory 'obs-root.txt'), $ObsRoot, (New-Object Text.UTF8Encoding($false)))
+}
 $version = (Get-Content -LiteralPath (Join-Path $source 'VERSION.txt') -Raw).Trim()
 Write-Host "AppleLive $version installed to: $target"
 Write-Host "OBS configured at: $resolvedConfigRoot ($registeredScenes scene collection(s))"

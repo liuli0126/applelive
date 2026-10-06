@@ -63,18 +63,27 @@ static BOOL testSource(NSString *url) {
     player.onAudio = ^(const float *pcm, NSUInteger count) { atomic_fetch_add(&audio, (unsigned)count); };
     [player playURL:[NSURL URLWithString:url]];
     BOOL started = NO, sawError = NO;
+    // Give the demuxer/hardware-decoder probe a bounded startup window before
+    // measuring continuous delivery. A busy hosted runner can spend most of
+    // the old first interval starting playback, despite healthy steady output.
+    for (int i = 0; i < 120; i++) {
+        if (atomic_load(&frames) >= 5 && [player.status[@"state"] isEqualToString:@"playing"]) {
+            started = YES; break;
+        }
+        usleep(50000);
+    }
+    unsigned initialFrames = atomic_load(&frames), initialAudio = atomic_load(&audio);
     unsigned middleFrames = 0, middleAudio = 0;
     for (int i = 0; i < 120; i++) {
         usleep(50000);
         NSString *state = player.status[@"state"];
-        if (!started && atomic_load(&frames) >= 5 && [state isEqualToString:@"playing"]) started = YES;
-        else if (started && [state isEqualToString:@"error"]) sawError = YES;
+        if (started && [state isEqualToString:@"error"]) sawError = YES;
         if (i == 59) { middleFrames = atomic_load(&frames); middleAudio = atomic_load(&audio); }
     }
     unsigned finalFrames = atomic_load(&frames), finalAudio = atomic_load(&audio);
     BOOL passed = started && !sawError && atomic_load(&colorMetadata) &&
-        middleFrames >= 20 && finalFrames - middleFrames >= 20 &&
-        middleAudio >= 20000 && finalAudio - middleAudio >= 20000 &&
+        middleFrames - initialFrames >= 20 && finalFrames - middleFrames >= 20 &&
+        middleAudio - initialAudio >= 20000 && finalAudio - middleAudio >= 20000 &&
         [player.status[@"state"] isEqualToString:@"playing"];
     fprintf(passed ? stdout : stderr,
             "%s passed=%d started=%d sawError=%d middleFrames=%u finalFrames=%u middleAudio=%u finalAudio=%u state=%s\n",

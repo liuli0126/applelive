@@ -91,3 +91,21 @@ Status: in_progress
 - [x] Add regression tests proving USB does not pass `--video-device` or `--audio-device`.
 - [x] Rebuild and extract-verify the full portable archive.
 - [ ] Implement the final native OBS output DLL and native usbmux relay for exact reference architecture.
+
+## Phase 31. Native OBS output and usbmux relay
+Status: in_progress
+
+- [x] Add a Windows native OBS encoded output with a bounded non-blocking queue.
+- [x] Add a Windows usbmux relay using the Apple Mobile Device Service on port 27015.
+- [x] Wire the dock/package to prefer native components while keeping the tested fallback.
+- [x] Add build and protocol checks; regenerate the portable package when binaries are available.
+- [ ] Build the updated AAC receiver dylib on the iOS CI runner and validate with a physical phone.
+
+| Native build script passed literal $libPath to CMake | 1 | Changed the CMake argument to a formatted string; the full script now builds both native targets successfully |
+
+## Phase 32. SkyCam comparison and USB corruption repair (2026-10-06)
+Status: in_progress
+- [ ] Inspect supplied Sky/Cam Mach-O metadata and media architecture.
+- [ ] Fix reproduced ABI, handshake, frame gating and decoder lifecycle bugs.
+- [ ] Run behavioral native and iOS media tests; build matching artifacts.
+- [ ] Refresh delivery package and document what still needs device verification.

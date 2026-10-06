@@ -132,3 +132,11 @@ USB 不是 iOS tweak 自己“看到”的串口。电脑端需要 `usbmuxd`/`py
 - The package includes MediaMTX, SRS, Apple Mobile Device Support, a virtual microphone driver, portable mode marker, installer BAT/PS1 files, and Chinese usage notes. It is designed so users extract once and launch the bundled OBS wrapper.
 - The supplied competitor root has no `obs64.exe` at the inspected top level; `AuxCam.exe` is a license/launcher wrapper whose strings reference a sibling `obs64.exe`. This is useful for packaging pattern, not a complete executable source to reuse.
 - Our current package is an external helper + browser dock installed into an OBS root. It already has portable-compatible `install_or_update.ps1`, MediaMTX, USB sender, and phone dylib. The next implementation is a full portable-root overlay builder that copies the current OBS tree and embeds AppleLive files/configuration, so end users receive one archive.
+
+## 2026-10-06 SkyCam static audit and confirmed native USB defects
+- Sky.dylib SHA256 4e0cef5f40804e1f95c7bd33b1c9110308112f18d3f1ae54a743967240cedad0: arm64, iOS 14 min, no VideoToolbox imports; UI/control wrapper evidence only.
+- Cam.dylib SHA256 0d43b551d427f5873c27bb2f825a3ba241a69c1e652315256340ddcd7c427b76: arm64 iOS14 min; VCamUSBPuller, VCamVTDecoder, VCamAACDecoder, VCamRTSPPuller classes, system VT/AudioConverter imports. USB log strings show sequence gap, keyframe wait, config rejection, session rebuild and memory footprint tracking. Static metadata cannot prove runtime stability or exact code.
+- AppleLive native header hand-declares wrong obs_output_info (missing start/stop) and obs_video_info (pointer replaced with int); get_type_data accesses registration data, not instance. Need verified official ABI, module exports and encoder initialization.
+- Native relay SENDS ALUSB1, whereas phone SENDS ALUSB1 then expects BE32 length. Deterministic protocol mismatch. USB port swap does not truncate 16 bits. ConnectionType is nested in Properties.
+- Native output audio passes keyframe=true, reopening video gate; encoder borrowed packets are released; no reliable reconnect. Shipped phone dylib predates AAC changes. Prior completion claims do not demonstrate end-to-end correctness.
+- User confirmed USB-only issue, same iPhone11/iOS15.6/Douyin.

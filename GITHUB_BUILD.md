@@ -49,3 +49,13 @@ GitHub 要求登录时，使用浏览器登录或 Personal Access Token，不要
 ```
 
 第一次建议先走 LAN 验证画面和音频。USB 监听器还需要完成后再切换 USB，避免把传输和注入问题混在一起排查。
+
+## Native Windows USB components
+
+The native USB ABI is pinned and tested against OBS 30.2.3.
+Run `scripts/build-native-windows.ps1` from a Visual Studio
+Developer PowerShell and pass the OBS root containing `bin\64bit\obs.dll`.
+The script generates the small `obs.lib` import library from that DLL, builds
+`applelive-native-output.dll` and `AppleLiveUsbRelay.exe`, and copies both into
+`obs-plugin/`. The output module declares the OBS 30.2.3 ABI, while the
+relay speaks the Apple usbmux plist protocol on `127.0.0.1:27015`.
