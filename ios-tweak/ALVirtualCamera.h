@@ -18,6 +18,7 @@
 #ifdef APPLELIVE_STANDALONE
 - (void)selectSource:(NSString *)kind URL:(NSURL *)url;
 - (NSDictionary *)mediaStatus;
+- (NSString *)externalCameraReport;
 - (void)setMediaPaused:(BOOL)paused;
 - (void)seekMedia:(NSTimeInterval)seconds;
 - (CVPixelBufferRef)copyPreviewPixelBuffer:(CGSize)size CF_RETURNS_RETAINED;

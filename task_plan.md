@@ -129,3 +129,11 @@ Status: complete (physical phone slider/effect/performance acceptance remains us
 - [x] Add a live 0–100% slider with persisted settings and backward-compatible defaults.
 - [x] Extend the GPU projection to stronger distortion and test bounds, zero/off bypass and strength response.
 - [x] Compile, inspect the rendered comparison and update the same delivery files.
+
+## Phase 36. Camera/capture card attached directly to the phone (2026-10-06)
+Status: in_progress (experimental iOS USB Host implementation; physical device acceptance pending)
+- [x] Inspect current source switching and camera injection boundaries.
+- [x] Identify target iPhone 11/iOS15.6 and HDMI → UVC capture card → OTG topology; exact capture card is still unknown.
+- [x] Research a real iOS USB Host path and implement experimental libusb/libuvc capture with source switching and disconnect handling.
+- [ ] Compile and run decode/lifecycle/media checks before delivering the experimental binary.
+- [ ] Verify the real App's USB access permissions and physical capture on the user's phone.

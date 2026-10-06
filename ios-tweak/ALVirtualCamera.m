@@ -22,6 +22,7 @@
 #import "ALPreview.h"
 #import "ALSampleAudio.h"
 #import "ALUSBReceiver.h"
+#import "ALExternalCamera.h"
 #import "ALAudioUnitBridge.h"
 #import <ImageIO/ImageIO.h>
 #import <UIKit/UIKit.h>
@@ -69,6 +70,7 @@ static void ALHookMessage(Class cls, SEL selector, IMP replacement, IMP *origina
 @property(nonatomic) NSURL *sourceURL;
 @property(atomic) NSInteger sourceRotation;
 @property(nonatomic) ALUSBReceiver *usbReceiver;
+@property(nonatomic) ALExternalCamera *externalCamera;
 @property(atomic) BOOL directUSB;
 #endif
 - (BOOL)renderVideoIntoSample:(CMSampleBufferRef)sample;
@@ -315,18 +317,18 @@ static void ALInstallHooks(void) {
         };
 #ifdef APPLELIVE_STANDALONE
         _mediaPlayer.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) {
-            if ([weakSelf.sourceKind isEqualToString:@"usb"]) return;
+            if (![@[@"local", @"network"] containsObject:weakSelf.sourceKind ?: @""]) return;
             weakSelf.sourceRotation = rotation;
             [weakSelf.frameStore storePixelBuffer:frame sequence:weakSelf.frameStore.latestSequence + 1];
             weakSelf.lastVideoTime = CFAbsoluteTimeGetCurrent();
         };
         _mediaPlayer.onAudio = ^(const float *samples, NSUInteger frames) {
-            if ([weakSelf.sourceKind isEqualToString:@"usb"]) return;
+            if (![@[@"local", @"network"] containsObject:weakSelf.sourceKind ?: @""]) return;
             [weakSelf pushAudioSamples:samples count:frames channels:2 sampleRate:48000];
             weakSelf.lastAudioTime = CFAbsoluteTimeGetCurrent();
         };
         _mediaPlayer.onReset = ^{
-            if ([weakSelf.sourceKind isEqualToString:@"usb"]) return;
+            if (![@[@"local", @"network"] containsObject:weakSelf.sourceKind ?: @""]) return;
             [weakSelf clearAudioSamples];
             if ([weakSelf.sourceKind isEqualToString:@"network"]) [weakSelf.frameStore clear];
         };
@@ -613,8 +615,9 @@ static void ALInstallHooks(void) {
 
 #ifdef APPLELIVE_STANDALONE
 - (void)selectSource:(NSString *)kind URL:(NSURL *)url {
-    [self.mediaPlayer stop];
     self.sourceKind = kind;
+    [self.externalCamera stop];
+    [self.mediaPlayer stop];
     self.sourceURL = url;
     self.sourceRotation = 0;
     self.directUSB = NO;
@@ -631,6 +634,19 @@ static void ALInstallHooks(void) {
     // disconnect or failed reconnect.
     self.frameStore.holdsFrame = [kind isEqualToString:@"local"] || [kind isEqualToString:@"network"];
     if ([kind isEqualToString:@"usb"]) [self applyConnection:ALConnectionSettings()];
+    else if ([kind isEqualToString:@"external"]) {
+        if (!self.externalCamera) {
+            self.externalCamera = [ALExternalCamera new];
+            __weak typeof(self) weakSelf = self;
+            self.externalCamera.onFrame = ^(CVPixelBufferRef frame) {
+                ALVirtualCamera *owner = weakSelf;
+                if (!owner || ![owner.sourceKind isEqualToString:@"external"]) return;
+                [owner.frameStore storePixelBuffer:frame sequence:owner.frameStore.latestSequence + 1];
+                owner.lastVideoTime = CFAbsoluteTimeGetCurrent();
+            };
+        }
+        [self.externalCamera start];
+    }
     else if (url) {
         UIImage *still = url.isFileURL ? [UIImage imageWithContentsOfFile:url.path] : nil;
         if (still.CGImage) {
@@ -650,7 +666,10 @@ static void ALInstallHooks(void) {
         } else [self.mediaPlayer playURL:url];
     }
 }
-- (NSDictionary *)mediaStatus { return self.mediaPlayer.status; }
+- (NSDictionary *)mediaStatus {
+    return [self.sourceKind isEqualToString:@"external"] ? self.externalCamera.status : self.mediaPlayer.status;
+}
+- (NSString *)externalCameraReport { return self.externalCamera.diagnosticReport ?: @"尚未尝试连接外接相机"; }
 - (void)configureAudioBridge {
     ALConfigureAudioUnitBridge(self.unitAudioRing,
         self.enabled && !self.connectionPaused && ![self.sourceKind isEqualToString:@"none"] &&

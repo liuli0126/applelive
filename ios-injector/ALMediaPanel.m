@@ -68,6 +68,7 @@ static NSString *ALFriendlyStreamError(NSString *error) {
 @property(nonatomic) UIButton *fileButton;
 @property(nonatomic) UIButton *streamButton;
 @property(nonatomic) UIButton *usbButton;
+@property(nonatomic) UIButton *externalButton;
 @property(nonatomic) UIButton *playButton;
 @property(nonatomic) UIButton *rotateButton;
 @property(nonatomic) UISwitch *enabledSwitch;
@@ -216,11 +217,12 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     self.streamButton = [self button:@"检测" symbol:@"dot.radiowaves.left.and.right" action:@selector(editStream)];
     ((ALInjectedCyberButton *)self.streamButton).primary = YES;
     self.usbButton = [self button:@"USB 直连" symbol:@"cable.connector" action:@selector(selectUSB)];
+    self.externalButton = [self button:@"外接相机（测试）" symbol:@"camera.on.rectangle" action:@selector(selectExternal)];
     UIStackView *files = [self row:@[self.albumButton, self.fileButton]]; files.distribution = UIStackViewDistributionFillEqually;
     UIStackView *inputs = [self row:@[self.streamButton, self.usbButton]]; inputs.distribution = UIStackViewDistributionFillEqually;
-    UIView *sourceSection = [self section:@"01 / 信号源" views:@[files, inputs]];
+    UIView *sourceSection = [self section:@"01 / 信号源" views:@[files, inputs, self.externalButton]];
     // Keep source selection compact; longer picture settings scroll below it.
-    [sourceSection.heightAnchor constraintEqualToConstant:120].active = YES;
+    [sourceSection.heightAnchor constraintGreaterThanOrEqualToConstant:164].active = YES;
     [sourceSection setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisVertical];
     [sourceSection setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisVertical];
     self.enabledSwitch = [self toggle:@"替换画面"];
@@ -344,6 +346,31 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     }
     self.source[@"kind"] = @"usb";
     [self saveSource];
+}
+- (void)selectExternal {
+    UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"外接 UVC 相机（测试）"
+        message:@"相机 → HDMI 采集卡 → OTG → 手机。支持尝试 MJPEG / YUY2 画面；采集卡音频暂不接入。是否能打开取决于采集卡和当前 App 的 USB 权限。"
+        preferredStyle:UIAlertControllerStyleAlert];
+    [menu addAction:[UIAlertAction actionWithTitle:@"连接 / 重试" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [self restoreKey]; self.source[@"kind"] = @"external"; [self saveSource];
+    }]];
+    [menu addAction:[UIAlertAction actionWithTitle:@"连接诊断" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        UIAlertController *report = [UIAlertController alertControllerWithTitle:@"外接相机连接诊断"
+            message:self.camera.externalCameraReport preferredStyle:UIAlertControllerStyleAlert];
+        [report addAction:[UIAlertAction actionWithTitle:@"复制诊断" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *a) {
+            UIPasteboard.generalPasteboard.string = self.camera.externalCameraReport; [self restoreKey];
+        }]];
+        [report addAction:[UIAlertAction actionWithTitle:@"关闭" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *a) { [self restoreKey]; }]];
+        [self.window.rootViewController dismissViewControllerAnimated:YES completion:^{
+            [self restoreKey]; [self present:report];
+        }];
+    }]];
+    if ([self.source[@"kind"] isEqualToString:@"external"] && [self.controls[@"enabled"] boolValue])
+        [menu addAction:[UIAlertAction actionWithTitle:@"断开外接相机" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            [self restoreKey]; [self restoreCamera];
+        }]];
+    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) { [self restoreKey]; }]];
+    [self present:menu];
 }
 - (void)applySource {
     if (![self.controls[@"enabled"] boolValue]) { [self.camera selectSource:@"none" URL:nil]; return; }
@@ -493,14 +520,17 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     BOOL local = [kind isEqualToString:@"local"];
     BOOL network = [kind isEqualToString:@"network"];
     BOOL usb = [kind isEqualToString:@"usb"];
+    BOOL external = [kind isEqualToString:@"external"];
     BOOL enabled = [self.controls[@"enabled"] boolValue], video = enabled && [status[@"video"] boolValue];
     BOOL emptyStream = network && !ALValidStreamURL(self.source[@"url"]);
     self.sourceLabel.text = local ? self.source[@"name"] ?: @"本地素材"
+        : external ? media[@"device"] ?: @"手机外接 UVC 相机"
         : usb ? @"USB 数据线直连"
         : emptyStream ? @"点击「检测」填写 RTMP / RTSP 地址" : self.source[@"url"];
     self.sourceLabel.numberOfLines = 1; self.sourceLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
     if (self.importing) self.statusLabel.text = @"正在导入…";
     else if (![self.controls[@"enabled"] boolValue]) self.statusLabel.text = @"使用手机摄像头";
+    else if (external) self.statusLabel.text = media[@"message"] ?: @"正在识别外接相机…";
     else if (emptyStream) self.statusLabel.text = @"等待添加信号";
     else if (usb && ![status[@"connected"] boolValue]) self.statusLabel.text = @"等待电脑 USB 连接";
     else if (usb && !video) self.statusLabel.text = @"USB 已连接 · 等待 OBS 画面";
@@ -515,6 +545,7 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     self.signalDot.backgroundColor = video ? self.accent : ALCyberMuted();
     self.streamButton.selected = enabled && !emptyStream && [kind isEqualToString:@"network"];
     self.usbButton.selected = enabled && usb;
+    self.externalButton.selected = enabled && external;
     [self.usbButton setTitle:enabled && usb ? @"断开 USB" : @"USB 直连" forState:UIControlStateNormal];
     self.usbButton.accessibilityLabel = enabled && usb ? @"断开 USB" : @"USB 直连";
     BOOL seekable = local && [media[@"duration"] doubleValue] > 0;
@@ -524,6 +555,7 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     self.playButton.accessibilityLabel = [self.playButton titleForState:UIControlStateNormal];
     self.audioLabel.hidden = ![self.controls[@"audio"] boolValue];
     self.audioLabel.text = [status[@"audio"] boolValue] ? @"内录中 · 手机麦克风已关闭" : @"等待源音频 · 手机麦克风已关闭";
+    if (external) self.audioLabel.text = @"外接相机暂仅采集画面 · 手机麦克风已关闭";
     [self layoutControls];
 }
 @end

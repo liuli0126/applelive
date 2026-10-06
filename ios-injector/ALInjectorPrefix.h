@@ -11,3 +11,5 @@
 #define ALPreviewView ALInjectedPreviewView
 #define ALPreviewTicker ALInjectedPreviewTicker
 #define ALUSBReceiver ALInjectedUSBReceiver
+#define ALExternalCamera ALInjectedExternalCamera
+#define ALUVCSession ALInjectedUVCSession

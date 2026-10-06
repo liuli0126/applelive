@@ -9,6 +9,7 @@ on:
       - "ios-tweak/**"
       - "scripts/verify-injector-dylib.py"
       - "scripts/build-ios-ffmpeg.sh"
+      - "scripts/build-ios-uvc.sh"
       - "scripts/relink-injector.sh"
       - ".github/workflows/build-ios-injector.yml"
 
@@ -18,6 +19,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Test external UVC frame ownership and bounds
+        run: |
+          xcrun clang -fobjc-arc -Iios-injector ios-injector/tests/uvc-frame-test.m ios-injector/ALUVCFrame.m \
+            -framework Foundation -framework CoreVideo -framework ImageIO -framework CoreGraphics \
+            -o "$RUNNER_TEMP/applelive-uvc-frame-test"
+          "$RUNNER_TEMP/applelive-uvc-frame-test"
 
       - name: Test fisheye geometry and persistent toggle
         run: |
@@ -57,6 +65,17 @@ jobs:
           mkdir -p "$THEOS/sdks"
           cp -R "$RUNNER_TEMP/theos-sdks/." "$THEOS/sdks/"
           echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+
+      - name: Build experimental USB Host libraries
+        run: bash scripts/build-ios-uvc.sh
+
+      - name: Test external camera lifecycle with a simulated USB device
+        run: |
+          xcrun clang -fobjc-arc -Iios-injector -I.build/ios-uvc/include \
+            ios-injector/tests/uvc-lifecycle-test.m ios-injector/ALExternalCamera.m ios-injector/ALUVCFrame.m \
+            -framework Foundation -framework CoreVideo -framework ImageIO -framework CoreGraphics \
+            -framework Security -o "$RUNNER_TEMP/applelive-uvc-lifecycle-test"
+          "$RUNNER_TEMP/applelive-uvc-lifecycle-test"
 
       - name: Cache iOS FFmpeg
         id: ffmpeg-cache
@@ -144,13 +163,19 @@ jobs:
           ldid -S injector-artifact/AppleLive.dylib
           cp .build/ios-ffmpeg/universal/FFmpeg-*.txt injector-artifact/
           cp .build/fishhook/LICENSE injector-artifact/fishhook-LICENSE.txt
+          cp .build/ios-uvc/*-LICENSE.txt .build/ios-uvc/USBHost-NOTICE.txt injector-artifact/
           cp scripts/relink-injector.sh relink/
           cp -R .build/ios-ffmpeg/universal/lib .build/ios-ffmpeg/universal/include relink/
           cp .build/ios-ffmpeg/universal/FFmpeg-*.txt relink/
+          cp .build/ios-uvc/lib/libuvc.a .build/ios-uvc/lib/libusb-1.0.a relink/lib/
+          cp .build/ios-uvc/*-LICENSE.txt .build/ios-uvc/USBHost-NOTICE.txt relink/
+          cp -R .build/ios-uvc/include/libuvc relink/include/
+          cp .build/ios-uvc/include/libusb.h relink/include/
+          tar --exclude=.git -czf relink/usbhost-source.tar.gz -C .build/ios-uvc source
           cp -R .build/fishhook relink/
           tar --exclude=.git -czf relink/ffmpeg-source.tar.gz -C .build/ios-ffmpeg source
           mkdir -p relink/source
-          git archive HEAD ios-injector ios-tweak scripts/build-ios-ffmpeg.sh | tar -x -C relink/source
+          git archive HEAD ios-injector ios-tweak scripts/build-ios-ffmpeg.sh scripts/build-ios-uvc.sh | tar -x -C relink/source
           test "$(find relink/objects/arm64 -name '*.o' | wc -l)" -ge 12
           test "$(find relink/objects/arm64e -name '*.o' | wc -l)" -ge 12
           (cd relink && bash relink-injector.sh)
