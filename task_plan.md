@@ -104,8 +104,8 @@ Status: in_progress
 | Native build script passed literal $libPath to CMake | 1 | Changed the CMake argument to a formatted string; the full script now builds both native targets successfully |
 
 ## Phase 32. SkyCam comparison and USB corruption repair (2026-10-06)
-Status: in_progress
-- [ ] Inspect supplied Sky/Cam Mach-O metadata and media architecture.
-- [ ] Fix reproduced ABI, handshake, frame gating and decoder lifecycle bugs.
-- [ ] Run behavioral native and iOS media tests; build matching artifacts.
-- [ ] Refresh delivery package and document what still needs device verification.
+Status: complete (physical iPhone/Douyin acceptance remains user-run)
+- [x] Inspect supplied Sky/Cam Mach-O metadata and media architecture.
+- [x] Fix reproduced ABI, handshake, frame gating and decoder lifecycle bugs.
+- [x] Run behavioral native and iOS media tests; build matching artifacts.
+- [x] Refresh delivery package and document what still needs device verification.

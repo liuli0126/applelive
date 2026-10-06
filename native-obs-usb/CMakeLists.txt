@@ -1,4 +1,4 @@
-锘縞make_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.21)
 project(applelive_native_output LANGUAGES CXX)
 
 if(NOT WIN32)

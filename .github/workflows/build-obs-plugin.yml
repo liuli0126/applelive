@@ -2,6 +2,12 @@ name: Build AppleLive OBS plugin
 
 on:
   workflow_dispatch:
+    inputs:
+      phone_run_id:
+        description: "Reuse a successful matching phone build (optional, for Windows packaging-only changes)"
+        required: false
+        default: ""
+        type: string
   push:
     paths:
       - "desktop_sender/**"
@@ -19,9 +25,11 @@ on:
 
 jobs:
   build-phone-plugin:
+    if: ${{ !inputs.phone_run_id }}
     uses: ./.github/workflows/build-ios-injector.yml
   build-windows:
     needs: build-phone-plugin
+    if: ${{ !cancelled() && (needs.build-phone-plugin.result == 'success' || inputs.phone_run_id != '') }}
     runs-on: windows-2022
     steps:
       - name: Checkout
@@ -61,6 +69,8 @@ jobs:
         with:
           name: AppleLive-Injector-iOS14
           path: obs-plugin/phone-plugin
+          run-id: ${{ inputs.phone_run_id || github.run_id }}
+          github-token: ${{ github.token }}
 
       - name: Build portable plugin
         shell: pwsh
