@@ -10,7 +10,8 @@ static pthread_t worker;
 static uvc_frame_callback_t *callback;
 static void *callbackContext;
 static uvc_device_t *deviceList[] = {(uvc_device_t *)2,NULL};
-static uvc_frame_desc_t frameDescriptor = {.wWidth=640,.wHeight=480};
+static uint32_t intervals[] = {333667,666666,0};
+static uvc_frame_desc_t frameDescriptor = {.wWidth=640,.wHeight=480,.bFrameIntervalType=2,.intervals=intervals};
 static uvc_format_desc_t formatDescriptor = {.bDescriptorSubtype=UVC_VS_FORMAT_UNCOMPRESSED,
     .fourccFormat={'Y','U','Y','2'},.frame_descs=&frameDescriptor};
 

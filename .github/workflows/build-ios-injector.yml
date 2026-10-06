@@ -74,7 +74,7 @@ jobs:
           xcrun clang -fobjc-arc -Iios-injector -I.build/ios-uvc/include \
             ios-injector/tests/uvc-lifecycle-test.m ios-injector/ALExternalCamera.m ios-injector/ALUVCFrame.m \
             -framework Foundation -framework CoreVideo -framework ImageIO -framework CoreGraphics \
-            -framework Security -o "$RUNNER_TEMP/applelive-uvc-lifecycle-test"
+            -framework Security -framework IOKit -o "$RUNNER_TEMP/applelive-uvc-lifecycle-test"
           "$RUNNER_TEMP/applelive-uvc-lifecycle-test"
 
       - name: Cache iOS FFmpeg
