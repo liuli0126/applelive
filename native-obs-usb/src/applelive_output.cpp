@@ -532,5 +532,3 @@ void obs_module_unload(void)
     }
     WSACleanup();
 }
-
-

@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.21)
+锘縞make_minimum_required(VERSION 3.21)
 project(applelive_native_output LANGUAGES CXX)
 
 if(NOT WIN32)
@@ -48,4 +48,3 @@ install(TARGETS AppleLiveUsbRelay RUNTIME DESTINATION .)
 if(APPLELIVE_BUILD_OBS_OUTPUT)
   install(TARGETS applelive-native-output RUNTIME DESTINATION obs-plugins/64bit LIBRARY DESTINATION obs-plugins/64bit)
 endif()
-
