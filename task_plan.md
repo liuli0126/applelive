@@ -146,8 +146,8 @@ Status: service startup and paired diagnostics confirmed on iOS15.4.1; physical 
 - [x] Deliver matching rootless installer and injected dylib with instructions; physical capture still requires user verification.
 
 ## Phase 38. Diagnose Logitech USB enumeration in the actual service (2026-10-06)
-Status: in_progress
+Status: diagnostic service 0.1.1 verified and delivered; real device report and capture acceptance pending
 - [x] Accept user's report that the adapter can carry audio/video; camera brand is Logitech, model/protocol and working App not established.
-- [ ] Inspect both USB device classes and record raw libusb discovery/configuration errors before UVC filtering.
-- [ ] Build and verify a compatible service update without requiring a new pairing or phone plugin injection.
-- [ ] Deliver the diagnostic update and request its concrete device/driver report; do not claim physical capture is fixed without frames.
+- [x] Inspect both USB device classes and record raw libusb discovery/configuration errors before UVC filtering.
+- [x] Build and verify a compatible service update without requiring a new pairing or phone plugin injection (source 8d17011, CI 37419594056).
+- [x] Deliver the diagnostic update and request its concrete device/driver report; do not claim physical capture is fixed without frames.
