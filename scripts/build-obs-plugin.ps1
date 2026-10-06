@@ -86,7 +86,9 @@ New-Item -ItemType Directory -Path (Join-Path $stage "server"), (Join-Path $stag
 foreach ($name in @("mediamtx.exe", "mediamtx.yml", "LICENSE")) {
   Copy-Item -LiteralPath (Join-Path $output "server\$name") -Destination (Join-Path $stage "server\$name") -Force
 }
-foreach ($name in @("FFmpeg-LICENSE.txt", "FFmpeg-SOURCE.txt", "fishhook-LICENSE.txt")) {
+foreach ($name in @("FFmpeg-LICENSE.txt", "FFmpeg-SOURCE.txt", "fishhook-LICENSE.txt",
+    "libusb-LICENSE.txt", "libuvc-LICENSE.txt", "USBHost-NOTICE.txt",
+    "AppleLive-relink.tar.gz", "AppleLive-UVC-Service-rootless.deb")) {
   Copy-Item -LiteralPath (Join-Path $output "phone-plugin\$name") -Destination (Join-Path $stage "phone-plugin\$name") -Force
 }
 Copy-Item -LiteralPath $PhonePlugin -Destination (Join-Path $stage "phone-plugin\AppleLive.dylib") -Force

@@ -139,8 +139,8 @@ Status: experimental build verified; physical device acceptance pending
 - [ ] Verify the real App's USB access permissions and physical capture on the user's phone.
 
 ## Phase 37. Entitled UVC service for Dopamine/rootless (2026-10-06)
-Status: in_progress
+Status: experimental build verified and delivered; physical service startup and UVC capture pending
 - [x] Read actual phone evidence: iOS15.4.1, both USB entitlements undeclared, zero visible IOUSBHostDevice services; do not infer a sole hardware or permission cause.
 - [x] Implement a separately entitled mobile-user capture service, paired loopback transport, and simple setup/export app.
-- [ ] Validate authentication, framing, bounded buffering, disconnect/reconnect, signing and package layout; run existing media checks.
-- [ ] Deliver matching rootless installer and injected dylib with instructions; physical capture still requires user verification.
+- [x] Validate authentication, framing, bounded buffering, disconnect/reconnect, signing and package layout; run existing media checks (CI 37416718860, source 8f84026).
+- [x] Deliver matching rootless installer and injected dylib with instructions; physical capture still requires user verification.
