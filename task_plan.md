@@ -125,7 +125,7 @@ Status: complete (physical phone effect/performance acceptance remains user-run)
 - [x] Refresh the same delivery files and provide the installation location.
 
 ## Phase 35. Adjustable fisheye strength (2026-10-06)
-Status: in_progress
-- [ ] Add a live 0–100% slider with persisted settings and backward-compatible defaults.
-- [ ] Extend the GPU projection to stronger distortion and test bounds, zero/off bypass and strength response.
-- [ ] Compile, inspect the rendered comparison and update the same delivery files.
+Status: complete (physical phone slider/effect/performance acceptance remains user-run)
+- [x] Add a live 0–100% slider with persisted settings and backward-compatible defaults.
+- [x] Extend the GPU projection to stronger distortion and test bounds, zero/off bypass and strength response.
+- [x] Compile, inspect the rendered comparison and update the same delivery files.
