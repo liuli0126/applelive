@@ -30,7 +30,8 @@ static int ALStatusToken(void) {
 
 NSDictionary *ALDefaultControls(NSString *bundleIdentifier) {
     return @{@"enabled": @YES, @"audio": @NO, @"muted": @NO, @"mirror": @NO, @"fill": @NO,
-             @"rotation": @0, @"cameraPortrait": @([bundleIdentifier isEqualToString:@"com.apple.camera"])};
+             @"fisheye": @NO, @"rotation": @0,
+             @"cameraPortrait": @([bundleIdentifier isEqualToString:@"com.apple.camera"])};
 }
 
 #ifndef APPLELIVE_STANDALONE
@@ -41,21 +42,23 @@ static uint64_t ALEncodeControls(NSDictionary *controls) {
         ([controls[@"mirror"] boolValue] ? 4 : 0) |
         ([controls[@"fill"] boolValue] ? 8 : 0) |
         ((uint64_t)([controls[@"rotation"] unsignedIntegerValue] % 4) << 4) |
-        ([controls[@"cameraPortrait"] boolValue] ? 64 : 0);
+        ([controls[@"cameraPortrait"] boolValue] ? 64 : 0) |
+        ([controls[@"fisheye"] boolValue] ? 128 : 0);
 }
 
 static NSDictionary *ALDecodeControls(uint64_t state) {
     if ((state & UINT64_C(0xffffffff00000000)) != kALControlMagic) return nil;
     return @{@"enabled": @((state & 1) != 0), @"audio": @((state & 2) != 0),
              @"mirror": @((state & 4) != 0), @"fill": @((state & 8) != 0),
-             @"rotation": @((state >> 4) & 3), @"cameraPortrait": @((state & 64) != 0)};
+             @"rotation": @((state >> 4) & 3), @"cameraPortrait": @((state & 64) != 0),
+             @"fisheye": @((state & 128) != 0)};
 }
 #endif
 
 NSDictionary *ALLoadAppControls(void) {
     NSMutableDictionary *controls = [ALDefaultControls(NSBundle.mainBundle.bundleIdentifier) mutableCopy];
     NSDictionary *saved = [NSUserDefaults.standardUserDefaults dictionaryForKey:kALSavedControls];
-    for (NSString *key in @[@"enabled", @"audio", @"muted", @"mirror", @"fill", @"rotation"]) {
+    for (NSString *key in @[@"enabled", @"audio", @"muted", @"mirror", @"fill", @"rotation", @"fisheye"]) {
         if ([saved[key] isKindOfClass:NSNumber.class]) controls[key] = saved[key];
     }
 #ifdef APPLELIVE_STANDALONE

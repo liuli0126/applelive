@@ -12,6 +12,7 @@ AppleLive_FILES = ../ios-tweak/Tweak.xm \
     ../ios-tweak/ALControls.m \
     ../ios-tweak/ALConnection.m \
     ../ios-tweak/ALColorPipeline.m \
+    ../ios-tweak/ALVideoEffects.m \
     ALMediaPlayer.m \
     ALMediaPanel.m \
     ALCyberTheme.m \

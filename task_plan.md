@@ -116,3 +116,10 @@ Status: complete (physical color comparison remains user-run)
 - [x] Reproduce range and camera-format metadata mismatches with color patch tests.
 - [x] Correct phone color conversion, build and verify the matching dylib.
 - [x] Refresh the existing latest delivery files; leave physical color comparison to the user.
+
+## Phase 34. Phone fisheye switch (2026-10-06)
+Status: in_progress
+- [ ] Add a default-off, persistent fisheye switch to the existing picture controls.
+- [ ] Apply a cached GPU fisheye warp in the shared picture path, preserving color and audio.
+- [ ] Verify geometry, toggle/persistence and existing media regressions; compile the dylib.
+- [ ] Refresh the same delivery files and provide the installation location.

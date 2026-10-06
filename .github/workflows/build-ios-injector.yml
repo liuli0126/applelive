@@ -19,6 +19,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Test fisheye geometry and persistent toggle
+        run: |
+          xcrun clang -fobjc-arc -DAPPLELIVE_STANDALONE=1 -Iios-tweak \
+            ios-injector/tests/fisheye-test.m ios-tweak/ALVideoEffects.m ios-tweak/ALControls.m \
+            -framework Foundation -framework CoreImage -framework CoreGraphics \
+            -o "$RUNNER_TEMP/applelive-fisheye-test"
+          "$RUNNER_TEMP/applelive-fisheye-test" "$RUNNER_TEMP/applelive-fisheye.png"
+
       - name: Test camera color ranges and immutable sample metadata
         run: |
           xcrun clang -fobjc-arc -Iios-tweak \
@@ -124,6 +132,7 @@ jobs:
       - name: Build injector dylib
         run: |
           mkdir -p injector-artifact
+          cp "$RUNNER_TEMP/applelive-fisheye.png" injector-artifact/
           mkdir -p relink/objects/arm64 relink/objects/arm64e
           make -C ios-injector all FINALPACKAGE=1 ARCHS=arm64 TARGET=iphone:clang:16.5:14.0
           cp ios-injector/.theos/obj/AppleLive.dylib "$RUNNER_TEMP/AppleLive-arm64.dylib"

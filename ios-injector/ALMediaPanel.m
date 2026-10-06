@@ -72,6 +72,7 @@ static NSString *ALFriendlyStreamError(NSString *error) {
 @property(nonatomic) UIButton *rotateButton;
 @property(nonatomic) UISwitch *enabledSwitch;
 @property(nonatomic) UISwitch *mirrorSwitch;
+@property(nonatomic) UISwitch *fisheyeSwitch;
 @property(nonatomic) UISwitch *audioSwitch;
 @property(nonatomic) UISegmentedControl *fitControl;
 @property(nonatomic) UIStackView *playRow;
@@ -215,13 +216,14 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     UIStackView *files = [self row:@[self.albumButton, self.fileButton]]; files.distribution = UIStackViewDistributionFillEqually;
     UIStackView *inputs = [self row:@[self.streamButton, self.usbButton]]; inputs.distribution = UIStackViewDistributionFillEqually;
     UIView *sourceSection = [self section:@"01 / 信号源" views:@[files, inputs]];
-    // The panel has a fixed height. Keep the source selector at its intrinsic
-    // size so the vertical stack cannot stretch it into an empty block.
+    // Keep source selection compact; longer picture settings scroll below it.
     [sourceSection.heightAnchor constraintEqualToConstant:120].active = YES;
     [sourceSection setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisVertical];
     [sourceSection setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisVertical];
     self.enabledSwitch = [self toggle:@"替换画面"];
     self.mirrorSwitch = [self toggle:@"镜像"];
+    self.fisheyeSwitch = [self toggle:@"鱼眼效果"];
+    self.fisheyeSwitch.accessibilityHint = @"打开后画面呈鱼眼弯曲，关闭恢复原画面";
     self.audioSwitch = [self toggle:@"内录"];
     self.playButton = [self button:@"暂停" symbol:@"pause.fill" action:@selector(togglePlayback)];
     UIButton *restore = [self button:@"恢复手机相机" symbol:@"camera" action:@selector(restoreCamera)];
@@ -243,7 +245,9 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     visualToggleRow.spacing = 8;
     UIStackView *formatRow = [self row:@[self.rotateButton, self.fitControl]];
     formatRow.distribution = UIStackViewDistributionFillEqually;
-    UIView *imageSection = [self section:@"02 / 画面控制 · 全部来源" views:@[visualToggleRow, formatRow]];
+    UIStackView *fisheyeRow = [self row:@[[self label:@"鱼眼效果" size:14], self.fisheyeSwitch]];
+    [fisheyeRow.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
+    UIView *imageSection = [self section:@"02 / 画面控制 · 全部来源" views:@[visualToggleRow, fisheyeRow, formatRow]];
     UIView *audioSection = [self section:@"03 / 声音" views:@[
         [self row:@[[self label:@"内录" size:14], self.audioSwitch]], self.audioLabel]];
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[
@@ -251,12 +255,21 @@ static NSString *ALFriendlyStreamError(NSString *error) {
         sourceSection, imageSection, audioSection,
         [self section:@"04 / 播放" views:@[self.playRow]],
     ]]; content.axis = UILayoutConstraintAxisVertical; content.spacing = 3; content.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.panel addSubview:content];
+    UIScrollView *scroll = [UIScrollView new];
+    scroll.translatesAutoresizingMaskIntoConstraints = NO;
+    scroll.alwaysBounceVertical = NO;
+    [self.panel addSubview:scroll];
+    [scroll addSubview:content];
     [NSLayoutConstraint activateConstraints:@[
-        [content.topAnchor constraintEqualToAnchor:self.panel.topAnchor constant:8],
-        [content.bottomAnchor constraintEqualToAnchor:self.panel.bottomAnchor constant:-8],
-        [content.leadingAnchor constraintEqualToAnchor:self.panel.leadingAnchor constant:8],
-        [content.trailingAnchor constraintEqualToAnchor:self.panel.trailingAnchor constant:-8],
+        [scroll.topAnchor constraintEqualToAnchor:self.panel.topAnchor],
+        [scroll.bottomAnchor constraintEqualToAnchor:self.panel.bottomAnchor],
+        [scroll.leadingAnchor constraintEqualToAnchor:self.panel.leadingAnchor],
+        [scroll.trailingAnchor constraintEqualToAnchor:self.panel.trailingAnchor],
+        [content.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:8],
+        [content.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-8],
+        [content.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:8],
+        [content.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-8],
+        [content.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-16],
     ]];
     [self syncControls]; self.window.hidden = NO; [self layoutControls];
 }
@@ -326,6 +339,7 @@ static NSString *ALFriendlyStreamError(NSString *error) {
 - (void)syncControls {
     self.enabledSwitch.on = [self.controls[@"enabled"] boolValue]; self.mirrorSwitch.on = [self.controls[@"mirror"] boolValue];
     self.audioSwitch.on = [self.controls[@"audio"] boolValue];
+    self.fisheyeSwitch.on = [self.controls[@"fisheye"] boolValue];
     self.fitControl.selectedSegmentIndex = [self.controls[@"fill"] boolValue] ? 1 : 0;
     NSString *rotation = [NSString stringWithFormat:@"旋转：%ld°", (long)[self.controls[@"rotation"] integerValue] * 90];
     [self.rotateButton setTitle:rotation forState:UIControlStateNormal];
@@ -335,6 +349,7 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     BOOL previous = [self.controls[@"enabled"] boolValue];
     self.controls[@"enabled"] = @(self.enabledSwitch.on); self.controls[@"mirror"] = @(self.mirrorSwitch.on);
     self.controls[@"audio"] = @(self.audioSwitch.on); self.controls[@"muted"] = @NO;
+    self.controls[@"fisheye"] = @(self.fisheyeSwitch.on);
     self.controls[@"fill"] = @(self.fitControl.selectedSegmentIndex == 1);
     [self saveControls];
     if (previous != self.enabledSwitch.on) [self applySource];

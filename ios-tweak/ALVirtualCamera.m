@@ -6,6 +6,7 @@
 #import "ALControls.h"
 #import "ALConnection.h"
 #import "ALColorPipeline.h"
+#import "ALVideoEffects.h"
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
 #import <CoreMedia/CoreMedia.h>
@@ -505,6 +506,7 @@ static void ALInstallHooks(void) {
         inputBounds = image.extent;
         image = [image imageByApplyingTransform:CGAffineTransformMakeTranslation(
             -inputBounds.origin.x, -inputBounds.origin.y)];
+        image = ALApplyFisheye(image, [controls[@"fisheye"] boolValue]);
         CGFloat scale = [controls[@"fill"] boolValue]
             ? MAX(width / inputBounds.size.width, height / inputBounds.size.height)
             : MIN(width / inputBounds.size.width, height / inputBounds.size.height);

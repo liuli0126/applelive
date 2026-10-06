@@ -46,6 +46,7 @@ static NSDictionary *ALPanelStreamStatus(void) {
 @property(nonatomic) UILabel *hintLabel;
 @property(nonatomic) UISwitch *enabledSwitch;
 @property(nonatomic) UISwitch *mirrorSwitch;
+@property(nonatomic) UISwitch *fisheyeSwitch;
 @property(nonatomic) UISwitch *audioSwitch;
 @property(nonatomic) UISegmentedControl *fitControl;
 @property(nonatomic) UILabel *connectionLabel;
@@ -212,6 +213,7 @@ static NSDictionary *ALPanelStreamStatus(void) {
     self.connectButton = [self button:@"连接电脑" action:@selector(toggleConnection)];
     [self syncConnection];
     self.mirrorSwitch = [self makeSwitch:@"左右镜像"];
+    self.fisheyeSwitch = [self makeSwitch:@"鱼眼效果"];
     self.audioSwitch = [self makeSwitch:@"电脑声音"];
     self.directionLabel = [self label:@"画面方向 · 0°" size:15];
     UIButton *reset = [self button:@"重置" action:@selector(resetControls)];
@@ -235,6 +237,7 @@ static NSDictionary *ALPanelStreamStatus(void) {
         [self row:@[[self label:@"启用插件" size:16], self.enabledSwitch]],
         [self row:@[self.directionLabel, reset]], rotation,
         [self row:@[[self label:@"左右镜像" size:16], self.mirrorSwitch]],
+        [self row:@[[self label:@"鱼眼效果" size:16], self.fisheyeSwitch]],
         self.fitControl,
         [self row:@[[self label:@"电脑声音" size:16], self.audioSwitch]], self.hintLabel,
     ]];
@@ -372,6 +375,7 @@ static NSDictionary *ALPanelStreamStatus(void) {
 - (void)syncControls {
     self.enabledSwitch.on = [self.controls[@"enabled"] boolValue];
     self.mirrorSwitch.on = [self.controls[@"mirror"] boolValue];
+    self.fisheyeSwitch.on = [self.controls[@"fisheye"] boolValue];
     self.audioSwitch.on = [self.controls[@"audio"] boolValue];
     self.fitControl.selectedSegmentIndex = [self.controls[@"fill"] boolValue] ? 1 : 0;
     self.directionLabel.text = [NSString stringWithFormat:@"画面方向 · %ld°", (long)[self.controls[@"rotation"] integerValue] * 90];
@@ -386,6 +390,7 @@ static NSDictionary *ALPanelStreamStatus(void) {
 - (void)controlsChanged:(id)sender {
     self.controls[@"enabled"] = @(self.enabledSwitch.on);
     self.controls[@"mirror"] = @(self.mirrorSwitch.on);
+    self.controls[@"fisheye"] = @(self.fisheyeSwitch.on);
     self.controls[@"audio"] = @(self.audioSwitch.on);
     self.controls[@"fill"] = @(self.fitControl.selectedSegmentIndex == 1);
     [self saveControls];
