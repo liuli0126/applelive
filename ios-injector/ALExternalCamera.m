@@ -2,12 +2,18 @@
 #import "ALUVCFrame.h"
 #import "ALUVCWire.h"
 #import <libuvc/libuvc.h>
+#import <libusb.h>
 #import <dlfcn.h>
 #import <stdatomic.h>
 #import <math.h>
 #import <IOKit/IOKitLib.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
+
+// Read-only access to libuvc's existing context; libuvc still owns event handling.
+extern struct libusb_context *applelive_uvc_usb_context(uvc_context_t *context);
+static __weak ALExternalCamera *usbLogOwner;
 
 @interface ALUVCSession : NSObject
 @property(nonatomic, weak) ALExternalCamera *owner;
@@ -27,13 +33,33 @@
     NSUInteger _frameCount;
     NSUInteger _badFrames;
     NSMutableArray<NSString *> *_diagnostics;
+    NSMutableArray<NSString *> *_usbMessages;
     NSString *_deviceName;
     ALUVCSession *_callbackSession;
     int _lastOpenError;
+    NSInteger _visibleUSBDevices;
+    NSUInteger _descriptorFailures;
+    NSUInteger _USBVideoInterfaces;
+    int _descriptorError;
+    int _enumerationError;
 }
 @property(atomic, copy, readwrite) NSDictionary *status;
 - (void)receiveFrame:(uvc_frame_t *)frame;
+- (void)recordUSBMessage:(NSString *)message;
 @end
+
+static void LIBUSB_CALL ALUSBLog(libusb_context *context, enum libusb_log_level level, const char *message) {
+    (void)context;(void)level;
+    @autoreleasepool {
+        ALExternalCamera *owner;
+        @synchronized (ALExternalCamera.class) { owner=usbLogOwner; }
+        if (owner && message) {
+            // Limit input before constructing an NSString. No device payloads are logged.
+            NSString *text=[[NSString alloc] initWithBytes:message length:strnlen(message,384) encoding:NSUTF8StringEncoding];
+            if (text) [owner recordUSBMessage:text];
+        }
+    }
+}
 
 static void ALUVCReceive(uvc_frame_t *frame, void *context) {
     @autoreleasepool {
@@ -48,13 +74,15 @@ static void ALUVCReceive(uvc_frame_t *frame, void *context) {
         _queue = dispatch_queue_create("com.applelive.external-camera", DISPATCH_QUEUE_SERIAL);
         atomic_init(&_generation, 0);
         _diagnostics = [NSMutableArray new];
+        _usbMessages = [NSMutableArray new];
         self.status = @{@"state": @"stopped", @"message": @"外接相机未连接"};
     }
     return self;
 }
 - (void)log:(NSString *)text {
     @synchronized (self) {
-        [_diagnostics addObject:text ?: @""];
+        NSString *bounded=text ?: @"";
+        [_diagnostics addObject:[bounded substringToIndex:MIN(bounded.length,400)]];
         if (_diagnostics.count > 60) [_diagnostics removeObjectAtIndex:0];
     }
 }
@@ -64,12 +92,25 @@ static void ALUVCReceive(uvc_frame_t *frame, void *context) {
     [self log:[NSString stringWithFormat:@"%@ (%d): %@", state, code, message]];
 }
 - (NSString *)diagnosticReport {
-    @synchronized (self) { return [_diagnostics componentsJoinedByString:@"\n"]; }
+    @synchronized (self) {
+        NSString *base=[_diagnostics componentsJoinedByString:@"\n"];
+        NSString *driver=[_usbMessages componentsJoinedByString:@"\n"];
+        // Stay below both the service's UTF-8 wire limit and the client's text limit.
+        return [NSString stringWithFormat:@"%@\n--- libusb 驱动记录 ---\n%@",
+            [base substringToIndex:MIN(base.length,5500)], [driver substringToIndex:MIN(driver.length,4000)]];
+    }
+}
+- (void)recordUSBMessage:(NSString *)message {
+    @synchronized (self) {
+        NSString *text=[message stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        [_usbMessages addObject:text];
+        if (_usbMessages.count>16) [_usbMessages removeObjectAtIndex:0];
+    }
 }
 - (void)recordAccessContext {
-    [self log:[NSString stringWithFormat:@"AppleLive UVC experiment · %@ · %@",
+    [self log:[NSString stringWithFormat:@"AppleLive USB 探测 0.1.1 · %@ · %@ · uid=%u/euid=%u",
         NSBundle.mainBundle.bundleIdentifier ?: NSProcessInfo.processInfo.processName,
-        NSProcessInfo.processInfo.operatingSystemVersionString]];
+        NSProcessInfo.processInfo.operatingSystemVersionString,(unsigned)getuid(),(unsigned)geteuid()]];
     // Entitlements belong to the executable, not to an injected dylib. Reading
     // them is diagnostic only; the actual uvc_open result decides access.
     typedef CFTypeRef (*CreateTask)(CFAllocatorRef);
@@ -79,7 +120,8 @@ static void ALUVCReceive(uvc_frame_t *frame, void *context) {
     if (!create || !copy) { [self log:@"进程权限查询不可用；将以实际打开结果为准"]; return; }
     CFTypeRef task = create(NULL);
     if (!task) return;
-    for (NSString *key in @[@"com.apple.security.exception.iokit-user-client-class",
+    for (NSString *key in @[@"com.apple.private.security.no-sandbox",@"platform-application",
+                             @"com.apple.security.exception.iokit-user-client-class",
                              @"com.apple.system.diagnostics.iokit-properties"]) {
         CFTypeRef value = copy(task, (__bridge CFStringRef)key, NULL);
         [self log:[NSString stringWithFormat:@"%@ = %@", key, value ? (__bridge id)value : @"未声明"]];
@@ -88,15 +130,25 @@ static void ALUVCReceive(uvc_frame_t *frame, void *context) {
     CFRelease(task);
 }
 - (void)recordUSBInventory {
+    io_registry_entry_t root=IORegistryGetRootEntry(0);
+    [self log:[NSString stringWithFormat:@"IORegistry 根节点可访问: %@（仅诊断，不代表 USB 已授权）",root?@"是":@"否"]];
+    if (root) IOObjectRelease(root);
+    for (NSString *deviceClass in @[@"IOUSBDevice",@"IOUSBHostDevice",@"IOUSBInterface",@"IOUSBHostInterface",@"IOUSBHostController"]) {
     io_iterator_t iterator = 0;
-    kern_return_t result = IOServiceGetMatchingServices(0, IOServiceMatching("IOUSBHostDevice"), &iterator);
-    [self log:[NSString stringWithFormat:@"IOKit 主机枚举: 0x%08x", result]];
-    if (result != KERN_SUCCESS) return;
+    kern_return_t result = IOServiceGetMatchingServices(0, IOServiceMatching(deviceClass.UTF8String), &iterator);
+    if (result != KERN_SUCCESS) {
+        [self log:[NSString stringWithFormat:@"IOKit %@: 0x%08x",deviceClass,result]];
+        if (iterator) IOObjectRelease(iterator);
+        continue;
+    }
     NSUInteger count = 0;
     io_service_t service;
     while ((service = IOIteratorNext(iterator))) {
         NSMutableArray *values = [NSMutableArray new];
-        for (NSString *key in @[@"idVendor", @"idProduct", @"USB Product Name", @"Device Speed"]) {
+        io_name_t name={0};
+        IOObjectGetClass(service,name);
+        [values addObject:[NSString stringWithFormat:@"class=%s",name]];
+        for (NSString *key in @[@"idVendor", @"idProduct", @"USB Product Name", @"bInterfaceClass", @"bInterfaceSubClass"]) {
             CFTypeRef value = IORegistryEntryCreateCFProperty(service, (__bridge CFStringRef)key, NULL, 0);
             if (value) {
                 if (CFGetTypeID(value) == CFStringGetTypeID() || CFGetTypeID(value) == CFNumberGetTypeID())
@@ -105,11 +157,55 @@ static void ALUVCReceive(uvc_frame_t *frame, void *context) {
             }
         }
         IOObjectRelease(service);
-        [self log:[values componentsJoinedByString:@" "]];
-        if (++count >= 32) break;
+        if (count<4) [self log:[values componentsJoinedByString:@" "]];
+        if (++count >= 128) break;
     }
     IOObjectRelease(iterator);
-    [self log:[NSString stringWithFormat:@"可见 USB 主机设备: %lu（不等于已获得视频读取权限）", (unsigned long)count]];
+    [self log:[NSString stringWithFormat:@"IOKit %@: 返回 0x%08x，可见 %lu%@",deviceClass,result,(unsigned long)count,count>=128?@"+":@""]];
+    }
+}
+- (void)recordRawUSBInventory {
+    libusb_device **devices=NULL;
+    libusb_context *usb=applelive_uvc_usb_context(_context);
+    _visibleUSBDevices=-1;_descriptorFailures=0;_USBVideoInterfaces=0;_descriptorError=0;_enumerationError=0;
+    if (!usb) { [self log:@"底层 USB 上下文不可用"];return; }
+    ssize_t count=libusb_get_device_list(usb,&devices);
+    _visibleUSBDevices=count;
+    if (count<0) _enumerationError=(int)count;
+    [self log:[NSString stringWithFormat:@"libusb 原始设备数: %ld%@",(long)count,
+        count<0?[NSString stringWithFormat:@" (%s)",libusb_error_name((int)count)]:@""]];
+    for (ssize_t i=0;devices && i<count && i<8;i++) {
+        struct libusb_device_descriptor descriptor={0};
+        int result=libusb_get_device_descriptor(devices[i],&descriptor);
+        if (result<0) {
+            _descriptorFailures++;
+            _descriptorError=result;
+            [self log:[NSString stringWithFormat:@"USB[%ld] 设备描述符失败: %d (%s)",(long)i,result,libusb_error_name(result)]];
+            continue;
+        }
+        [self log:[NSString stringWithFormat:@"USB[%ld] %04X:%04X%@ class=%02X configs=%u",(long)i,
+            descriptor.idVendor,descriptor.idProduct,descriptor.idVendor==0x046d?@" 罗技/Logitech":@"",
+            descriptor.bDeviceClass,descriptor.bNumConfigurations]];
+        struct libusb_config_descriptor *config=NULL;
+        result=libusb_get_config_descriptor(devices[i],0,&config);
+        if (result<0 || !config) {
+            _descriptorFailures++;
+            _descriptorError=result<0?result:LIBUSB_ERROR_OTHER;
+            [self log:[NSString stringWithFormat:@"USB[%ld] 配置0读取失败: %d (%s)",(long)i,result,libusb_error_name(result)]];
+            continue;
+        }
+        NSMutableArray *interfaces=[NSMutableArray new];
+        for (NSUInteger j=0;j<config->bNumInterfaces && j<32;j++) {
+            const struct libusb_interface *entry=&config->interface[j];
+            if (!entry->altsetting || entry->num_altsetting<1) continue;
+            const struct libusb_interface_descriptor *alt=&entry->altsetting[0];
+            if (alt->bInterfaceClass==14 && alt->bInterfaceSubClass==2) _USBVideoInterfaces++;
+            [interfaces addObject:[NSString stringWithFormat:@"%u:%02X/%02X",alt->bInterfaceNumber,alt->bInterfaceClass,alt->bInterfaceSubClass]];
+        }
+        [self log:[NSString stringWithFormat:@"USB[%ld] 接口号:类/子类 %@ (0E/02=UVC视频，01=音频)",(long)i,[interfaces componentsJoinedByString:@", "]]];
+        libusb_free_config_descriptor(config);
+    }
+    if (devices) libusb_free_device_list(devices,1);
 }
 - (void)closeDevice {
     if (_watchdog) { dispatch_source_cancel(_watchdog); _watchdog = nil; }
@@ -120,6 +216,12 @@ static void ALUVCReceive(uvc_frame_t *frame, void *context) {
     }
     _callbackSession = nil;
     if (_context) { uvc_exit(_context); _context = NULL; }
+    @synchronized (ALExternalCamera.class) {
+        if (usbLogOwner==self) {
+            libusb_set_log_cb(NULL,NULL,LIBUSB_LOG_CB_GLOBAL);
+            usbLogOwner=nil;
+        }
+    }
 }
 - (void)dealloc {
     atomic_fetch_add(&_generation, 1);
@@ -138,20 +240,33 @@ static void ALUVCReceive(uvc_frame_t *frame, void *context) {
         if (atomic_load(&self->_generation) != generation) return;
         self->_activeGeneration = generation;
         self->_deviceName = nil;
-        @synchronized (self) { [self->_diagnostics removeAllObjects]; }
+        @synchronized (self) { [self->_diagnostics removeAllObjects];[self->_usbMessages removeAllObjects]; }
         [self recordAccessContext];
         [self recordUSBInventory];
+        @synchronized (ALExternalCamera.class) { usbLogOwner=self; }
+        libusb_set_log_cb(NULL,ALUSBLog,LIBUSB_LOG_CB_GLOBAL);
+        libusb_set_option(NULL,LIBUSB_OPTION_LOG_LEVEL,LIBUSB_LOG_LEVEL_DEBUG);
         int result = uvc_init(&self->_context, NULL);
         if (result != UVC_SUCCESS) {
             [self setState:@"error" message:@"USB Host 初始化失败，点“连接诊断”查看原因" code:result];
             [self closeDevice]; return;
         }
+        [self recordRawUSBInventory];
         uvc_device_t **devices = NULL;
         result = uvc_get_device_list(self->_context, &devices);
+        // Debug enumeration only; per-transfer logging would burden live capture.
+        libusb_set_option(applelive_uvc_usb_context(self->_context),LIBUSB_OPTION_LOG_LEVEL,LIBUSB_LOG_LEVEL_WARNING);
+        [self log:[NSString stringWithFormat:@"UVC 枚举返回: %d (%s)",result,uvc_strerror(result)]];
         if (result != UVC_SUCCESS || !devices || !devices[0]) {
             if (devices) uvc_free_device_list(devices, 1);
-            [self setState:@"error" message:@"未发现 UVC 采集卡；检查 OTG、供电，或查看连接诊断中的权限"
-                code:result == UVC_SUCCESS ? UVC_ERROR_NO_DEVICE : result];
+            NSString *message=self->_enumerationError<0?@"底层 USB 枚举失败，请复制连接诊断":
+                self->_visibleUSBDevices==0?@"采集服务未枚举到 USB 设备，请复制连接诊断":
+                self->_descriptorFailures?@"USB 设备已枚举，但读取描述符失败，请复制连接诊断":
+                self->_USBVideoInterfaces?@"已发现 UVC 视频接口，但采集库未返回相机，请复制连接诊断":
+                @"已检查 USB 设备，未识别到 UVC 视频接口，请复制连接诊断";
+            [self setState:@"error" message:message
+                code:self->_enumerationError<0?self->_enumerationError:self->_descriptorError<0?self->_descriptorError:
+                    result == UVC_SUCCESS ? UVC_ERROR_NO_DEVICE : result];
             [self closeDevice]; return;
         }
         BOOL opened = NO;

@@ -57,7 +57,7 @@ python3 - "$package/var/jb/Applications/AppleLiveUSB.app/Info.plist" <<'PY'
 import plistlib,sys
 info={'CFBundleIdentifier':'com.applelive.usbsetup','CFBundleExecutable':'AppleLiveUSB',
       'CFBundleName':'AppleLive USB','CFBundleDisplayName':'AppleLive USB',
-      'CFBundlePackageType':'APPL','CFBundleVersion':'1','CFBundleShortVersionString':'0.1.0',
+      'CFBundlePackageType':'APPL','CFBundleVersion':'2','CFBundleShortVersionString':'0.1.1',
       'MinimumOSVersion':'15.0','LSRequiresIPhoneOS':True,'UIDeviceFamily':[1,2],
       'UILaunchScreen':{},'UISupportedInterfaceOrientations':['UIInterfaceOrientationPortrait',
       'UIInterfaceOrientationLandscapeLeft','UIInterfaceOrientationLandscapeRight']}

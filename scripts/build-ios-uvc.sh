@@ -31,6 +31,16 @@ s = usb.read_text()
 s = s.replace('kresult = IOServiceAuthorize (dpriv->service, kIOServiceInteractionAllowed);',
               'kresult = kIOReturnUnsupported; /* AppleLive: no authorization dialog on iOS. */')
 usb.write_text(s)
+init = root / 'source/libuvc/src/init.c'
+s = init.read_text()
+if 'applelive_uvc_usb_context' not in s:
+    s += '''
+/* AppleLive diagnostic accessor. The context remains owned by libuvc. */
+struct libusb_context *applelive_uvc_usb_context(uvc_context_t *ctx) {
+  return ctx ? ctx->usb_ctx : NULL;
+}
+'''
+init.write_text(s)
 uvc = root / 'source/libuvc/src/device.c'
 s = uvc.read_text().replace('ret = libusb_detach_kernel_driver(devh->usb_devh, idx);',
                            'ret = LIBUSB_ERROR_NOT_SUPPORTED; /* AppleLive: preserve iOS drivers. */')

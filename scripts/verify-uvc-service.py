@@ -115,6 +115,7 @@ def verify(package, plugin):
     assert launch['ProgramArguments'] == ['/var/jb/usr/libexec/AppleLiveUVCHost']
     info = plistlib.loads(payload['var/jb/Applications/AppleLiveUSB.app/Info.plist'][1])
     assert info['CFBundleExecutable'] == 'AppleLiveUSB' and info['MinimumOSVersion'] == '15.0'
+    assert info['CFBundleShortVersionString'] == meta['Version'], 'Service/app version mismatch'
     for license in ('libusb-LICENSE.txt', 'libuvc-LICENSE.txt', 'USBHost-NOTICE.txt', 'SOURCE.txt'):
         assert payload['var/jb/usr/share/doc/com.applelive.uvchost/' + license][1]
     print('Verified rootless layout, ownership, permissions, service registration and matched plugin')

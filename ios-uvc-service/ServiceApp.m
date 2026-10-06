@@ -12,7 +12,7 @@ static NSString *const stateDirectory=@"/var/mobile/Library/AppleLiveUVC";
     self.title=@"AppleLive USB";
     UILabel *title=[UILabel new];title.text=@"手机外接相机";title.font=[UIFont preferredFontForTextStyle:UIFontTextStyleLargeTitle];
     UILabel *instructions=[UILabel new];instructions.numberOfLines=0;
-    instructions.text=@"首次使用：复制连接码，打开抖音的 AppleLive 悬浮窗，在“外接相机 → 配对采集服务”中粘贴。以后会记住配对。\n\n相机 → HDMI → UVC 采集卡 → 带供电 OTG → 手机。\n\n连接和断开都在悬浮窗操作。关闭这个工具后，采集服务仍可使用；没有连接时不采集画面。";
+    instructions.text=@"首次使用：复制连接码，打开抖音的 AppleLive 悬浮窗，在“外接相机 → 配对采集服务”中粘贴。以后会记住配对。\n\nUSB 摄像头可通过转接器直接接手机；HDMI 相机需经过 UVC 采集卡。\n\n连接和断开都在悬浮窗操作。关闭这个工具后，采集服务仍可使用；没有连接时不采集画面。\n\n服务 0.1.1：增加设备枚举诊断，兼容此前的手机插件和配对码。";
     instructions.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     self.statusLabel=[UILabel new];self.statusLabel.numberOfLines=0;self.statusLabel.textColor=UIColor.secondaryLabelColor;
     UIButton *copy=[UIButton buttonWithType:UIButtonTypeSystem];[copy setTitle:@"复制连接码" forState:UIControlStateNormal];
