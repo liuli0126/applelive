@@ -118,8 +118,8 @@ Status: complete (physical color comparison remains user-run)
 - [x] Refresh the existing latest delivery files; leave physical color comparison to the user.
 
 ## Phase 34. Phone fisheye switch (2026-10-06)
-Status: in_progress
-- [ ] Add a default-off, persistent fisheye switch to the existing picture controls.
-- [ ] Apply a cached GPU fisheye warp in the shared picture path, preserving color and audio.
-- [ ] Verify geometry, toggle/persistence and existing media regressions; compile the dylib.
-- [ ] Refresh the same delivery files and provide the installation location.
+Status: complete (physical phone effect/performance acceptance remains user-run)
+- [x] Add a default-off, persistent fisheye switch to the existing picture controls.
+- [x] Apply a cached GPU fisheye warp in the shared picture path, preserving color and audio.
+- [x] Verify geometry, toggle/persistence and existing media regressions; compile the dylib.
+- [x] Refresh the same delivery files and provide the installation location.
