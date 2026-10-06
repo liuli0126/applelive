@@ -205,6 +205,7 @@ jobs:
       - name: Verify standalone binary
         run: |
           python3 scripts/verify-injector-dylib.py injector-artifact/AppleLive.dylib
+          python3 scripts/verify-uvc-service.py injector-artifact/AppleLive-UVC-Service-rootless.deb injector-artifact/AppleLive.dylib
           if xcrun nm -u injector-artifact/AppleLive.dylib | grep -E 'MSHook|ellekit|libhooker'; then
             exit 1
           fi

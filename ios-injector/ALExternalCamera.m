@@ -180,7 +180,7 @@ static void ALUVCReceive(uvc_frame_t *frame, void *context) {
         if (atomic_load(&self->_generation) != generation) { [self closeDevice]; return; }
         if (!opened) {
             NSString *message = result == UVC_ERROR_ACCESS
-                ? @"当前 App 没有 USB 访问权限，需要带权限的采集服务；重新注入无法增加权限"
+                ? @"USB 访问被系统拒绝，请复制连接诊断以检查采集进程的实际权限"
                 : @"无法打开或启动采集卡，点“连接诊断”查看格式与权限信息";
             [self setState:@"error" message:message code:result];
             [self closeDevice];
