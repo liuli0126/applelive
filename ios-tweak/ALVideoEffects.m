@@ -9,7 +9,7 @@ CIImage *ALApplyFisheye(CIImage *image, BOOL enabled) {
         !isfinite(extent.origin.x) || !isfinite(extent.origin.y) ||
         !isfinite(extent.size.width) || !isfinite(extent.size.height)) return image;
 
-    static CIWarpKernel *kernel;
+    static CIKernel *kernel;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         // Inverse equidistant projection: a destination radius represents an
@@ -18,14 +18,18 @@ CIImage *ALApplyFisheye(CIImage *image, BOOL enabled) {
         // not get an elliptical lens. In-bounds samples always stay in-bounds.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        kernel = [CIWarpKernel kernelWithString:
-            @"kernel vec2 appleLiveFisheye(vec2 center, float radius) {"
-             "  vec2 delta = destCoord() - center;"
+        kernel = [CIKernel kernelWithString:
+            @"kernel vec4 appleLiveFisheye(sampler source, vec2 center, float radius, vec4 bounds) {"
+             "  vec2 position = destCoord();"
+             "  if (position.x < bounds.x || position.y < bounds.y ||"
+             "      position.x >= bounds.x + bounds.z || position.y >= bounds.y + bounds.w)"
+             "    return vec4(0.0);"
+             "  vec2 delta = position - center;"
              "  float r = length(delta) / radius;"
-             "  if (r < 0.00001) return center;"
              "  float theta = 1.0471975512;"
              "  float sourceRadius = tan(min(r, 1.0) * theta) / 1.7320508076;"
-             "  return center + delta * (sourceRadius / r);"
+             "  vec2 location = center + delta * (sourceRadius / max(r, 0.00001));"
+             "  return sample(source, samplerTransform(source, location));"
              "}"];
 #pragma clang diagnostic pop
         if (!kernel) os_log_error(OS_LOG_DEFAULT, "[AppleLive] fisheye kernel unavailable");
@@ -38,8 +42,8 @@ CIImage *ALApplyFisheye(CIImage *image, BOOL enabled) {
         // the finite input extent avoids seams and missing pixels at tile edges.
         (void)index; (void)rect;
         return extent;
-    } inputImage:image arguments:@[center, @(radius)]];
-    // A warp can still be sampled outside its declared extent during later
-    // compositing. Clip explicitly so "fit" mode keeps its letterbox bars.
-    return warped ? [warped imageByCroppingToRect:extent] : image;
+    } arguments:@[image, center, @(radius), [CIVector vectorWithCGRect:extent]]];
+    // The kernel explicitly returns transparency outside the source rectangle.
+    // A crop matching the declared extent can be optimized away by Core Image.
+    return warped ?: image;
 }
