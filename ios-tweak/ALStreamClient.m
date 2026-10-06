@@ -1,9 +1,12 @@
 #import "ALStreamClient.h"
 #import <CoreMedia/CoreMedia.h>
 #import <os/log.h>
+#import <AudioToolbox/AudioToolbox.h>
 
 const uint32_t ALVideoType = 0x6D617266; // ASCII "fram" read as little-endian
 const uint32_t ALAudioType = 0x69647561; // ASCII "audi" read as little-endian
+const uint32_t ALAACType = 0x61636161; // ASCII "aaca" read as little-endian
+const uint32_t ALAACConfigType = 0x64636161; // ASCII "aacd" read as little-endian
 const NSUInteger ALVideoHeaderLength = 20;
 const NSUInteger ALAudioHeaderLength = 12;
 
@@ -24,6 +27,10 @@ const NSUInteger ALAudioHeaderLength = 12;
     NSUInteger _nextAddressIndex;
     NSUInteger _activeAddressIndex;
     NSUInteger _generation;
+    AudioConverterRef _aacDecoder;
+    uint32_t _aacRate;
+    uint32_t _aacChannels;
+    NSData *_aacConfig;
 }
 @property(atomic, readwrite, getter=isConnected) BOOL connected;
 @property(atomic, copy, readwrite) NSString *address;
@@ -34,11 +41,78 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
            ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
 }
 
+typedef struct {
+    const void *bytes;
+    UInt32 size;
+    UInt32 channels;
+    BOOL supplied;
+    AudioStreamPacketDescription description;
+} ALAACInput;
+static OSStatus ALAACProvide(AudioConverterRef converter, UInt32 *packets,
+                              AudioBufferList *buffers, AudioStreamPacketDescription **descriptions,
+                              void *context) {
+    ALAACInput *input = context;
+    if (input->supplied || !*packets) { *packets = 0; return 'alnd'; }
+    input->supplied = YES;
+    *packets = 1;
+    buffers->mNumberBuffers = 1;
+    buffers->mBuffers[0] = (AudioBuffer){input->channels, input->size, (void *)input->bytes};
+    input->description = (AudioStreamPacketDescription){0, 1024, input->size};
+    if (descriptions) *descriptions = &input->description;
+    (void)converter;
+    return noErr;
+}
+
+static char ALStreamQueueKey;
+
 @implementation ALStreamClient
+
+- (void)dealloc {
+    if (_aacDecoder) AudioConverterDispose(_aacDecoder);
+}
+
+- (void)_resetAACLocked {
+    // USB receive and WebSocket teardown run on different queues. Serialize
+    // converter lifetime with decoding; never dispose a converter in use.
+    @synchronized (self) {
+        if (_aacDecoder) AudioConverterDispose(_aacDecoder);
+        _aacDecoder = NULL; _aacConfig = nil; _aacRate = 0; _aacChannels = 0;
+    }
+}
+
+- (void)_decodeAACLocked:(NSData *)data sampleRate:(uint32_t)rate channels:(uint32_t)channels {
+    if (!_aacConfig || rate != _aacRate || channels != _aacChannels || data.length > 65536) return;
+    if (!_aacDecoder) {
+        AudioStreamBasicDescription input = {0}, output = {0};
+        input.mFormatID = kAudioFormatMPEG4AAC;
+        input.mSampleRate = rate; input.mChannelsPerFrame = channels;
+        input.mFramesPerPacket = 1024;
+        output.mFormatID = kAudioFormatLinearPCM;
+        output.mFormatFlags = kAudioFormatFlagsNativeFloatPacked;
+        output.mSampleRate = rate; output.mChannelsPerFrame = channels;
+        output.mBitsPerChannel = 32; output.mFramesPerPacket = 1;
+        output.mBytesPerFrame = output.mBytesPerPacket = channels * sizeof(float);
+        if (AudioConverterNew(&input, &output, &_aacDecoder) != noErr) { _aacDecoder = NULL; return; }
+        OSStatus status = AudioConverterSetProperty(_aacDecoder, kAudioConverterDecompressionMagicCookie,
+                                                     (UInt32)_aacConfig.length, _aacConfig.bytes);
+        if (status != noErr) { [self _resetAACLocked]; return; }
+    }
+    float pcm[2048];
+    AudioBufferList output = {1, {{channels, sizeof(pcm), pcm}}};
+    ALAACInput input = {data.bytes, (UInt32)data.length, channels, NO, {0}};
+    UInt32 frames = 1024;
+    OSStatus status = AudioConverterFillComplexBuffer(_aacDecoder, ALAACProvide, &input, &frames, &output, NULL);
+    if ((status == noErr || status == 'alnd') && frames > 0 && frames <= 1024 && self.onAudioPCM)
+        self.onAudioPCM(pcm, frames, channels, rate);
+    else if (status != noErr && status != 'alnd') AudioConverterReset(_aacDecoder);
+}
 
 - (instancetype)init {
     self = [super init];
-    if (self) _queue = dispatch_queue_create("com.applelive.stream", DISPATCH_QUEUE_SERIAL);
+    if (self) {
+        _queue = dispatch_queue_create("com.applelive.stream", DISPATCH_QUEUE_SERIAL);
+        dispatch_queue_set_specific(_queue, &ALStreamQueueKey, (__bridge void *)self, NULL);
+    }
     return self;
 }
 
@@ -62,6 +136,7 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
         self->_generation++;
         self->_stopping = NO;
         self->_reconnectScheduled = NO;
+        [self _resetAACLocked];
         [self _stopPreferredProbeLocked];
         self->_addresses = [validAddresses copy];
         self->_nextAddressIndex = 0;
@@ -107,14 +182,16 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
 }
 
 - (void)disconnect {
-    dispatch_async(_queue, ^{
+    dispatch_block_t teardown = ^{
         self->_stopping = YES;
         self->_generation++;
         self->_reconnectScheduled = NO;
         [self _stopPreferredProbeLocked];
         [self _disconnectLocked];
         if (self.onDisconnected) self.onDisconnected();
-    });
+    };
+    if (dispatch_get_specific(&ALStreamQueueKey) == (__bridge void *)self) teardown();
+    else dispatch_sync(_queue, teardown);
 }
 
 - (void)_cancelPreferredAttemptLocked {
@@ -165,6 +242,7 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
     }
     [_session invalidateAndCancel];
     _session = nil;
+    [self _resetAACLocked];
     self.connected = NO;
 }
 
@@ -230,7 +308,11 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
     [self acceptBinaryData:data];
 }
 - (void)acceptBinaryData:(NSData *)data {
-    if (data.length < 4) return;
+    @synchronized (self) { [self _acceptBinaryLocked:data]; }
+}
+
+- (void)_acceptBinaryLocked:(NSData *)data {
+    if (data.length < 4 || data.length > 8 * 1024 * 1024) return;
     const uint8_t *bytes = data.bytes;
     uint32_t type = ALReadLE32(bytes);
     if (type == ALVideoType) {
@@ -255,6 +337,27 @@ static uint32_t ALReadLE32(const uint8_t *bytes) {
             NSUInteger floatCount = payloadLength / sizeof(float);
             self.onAudioPCM(samples, floatCount / channels, channels, rate);
         }
+    } else if (type == ALAACConfigType) {
+        [self _resetAACLocked];
+        if (data.length < ALAudioHeaderLength + 2 || data.length > ALAudioHeaderLength + 64) return;
+        uint32_t rate = ALReadLE32(bytes + 4), channels = ALReadLE32(bytes + 8);
+        const uint8_t *asc = bytes + ALAudioHeaderLength;
+        const uint32_t rates[] = {96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350};
+        unsigned frequency = ((asc[0] & 7) << 1) | (asc[1] >> 7);
+        unsigned configChannels = (asc[1] >> 3) & 15;
+        // The native sender is AAC-LC, mono or stereo. Reject unsupported or
+        // inconsistent headers before creating an AudioConverter.
+        if ((asc[0] >> 3) != 2 || frequency >= 13 || rates[frequency] != rate ||
+            configChannels != channels || (channels != 1 && channels != 2)) return;
+        _aacRate = rate; _aacChannels = channels;
+        _aacConfig = [data subdataWithRange:NSMakeRange(ALAudioHeaderLength, data.length - ALAudioHeaderLength)];
+    } else if (type == ALAACType) {
+        if (data.length < ALAudioHeaderLength + 1) return;
+        uint32_t rate = ALReadLE32(bytes + 4);
+        uint32_t channels = ALReadLE32(bytes + 8);
+        if ((channels != 1 && channels != 2) || rate < 8000 || rate > 192000) return;
+        NSData *aac = [data subdataWithRange:NSMakeRange(ALAudioHeaderLength, data.length - ALAudioHeaderLength)];
+        [self _decodeAACLocked:aac sampleRate:rate channels:channels];
     }
 }
 

@@ -292,7 +292,7 @@ static void ALInstallHooks(void) {
         };
         _client.onVideoNAL = ^(NSData *nal, uint32_t sequence, uint32_t flags,
                                uint32_t width, uint32_t height) {
-            [weakSelf.decoder decodeNAL:nal sequence:sequence];
+            [weakSelf.decoder decodeAccessUnit:nal sequence:sequence flags:flags];
             (void)flags;
             (void)width;
             (void)height;
@@ -340,6 +340,7 @@ static void ALInstallHooks(void) {
         };
         _usbReceiver.onDisconnected = ^{
             weakSelf.directUSB = NO;
+            [weakSelf.client disconnect];
             if (![weakSelf.sourceKind isEqualToString:@"usb"]) return;
             [weakSelf.decoder reset]; [weakSelf.frameStore clear]; [weakSelf clearAudioSamples];
             [weakSelf applyConnection:ALConnectionSettings()];

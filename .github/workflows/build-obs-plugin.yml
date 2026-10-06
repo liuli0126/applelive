@@ -13,6 +13,8 @@ on:
       - "scripts/relink-injector.sh"
       - ".github/workflows/build-ios-injector.yml"
       - "scripts/build-obs-plugin.ps1"
+      - "scripts/build-native-windows.ps1"
+      - "native-obs-usb/**"
       - ".github/workflows/build-obs-plugin.yml"
 
 jobs:
@@ -41,6 +43,18 @@ jobs:
           python desktop_sender/transport_test.py
           python desktop_sender/phone_plugin_test.py
           python desktop_sender/usb_direct_test.py
+
+      - name: Build and test native USB components against OBS 30.2.3
+        shell: pwsh
+        run: |
+          $obsArchive = Join-Path $env:RUNNER_TEMP 'obs.zip'
+          Invoke-WebRequest 'https://github.com/obsproject/obs-studio/releases/download/30.2.3/OBS-Studio-30.2.3-Windows.zip' -OutFile $obsArchive
+          $obsRoot = Join-Path $env:RUNNER_TEMP 'obs'
+          Expand-Archive -LiteralPath $obsArchive -DestinationPath $obsRoot
+          $vsRoot = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          & "$vsRoot\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          ./scripts/build-native-windows.ps1 -ObsRoot $obsRoot
+          python native-obs-usb/tests/relay_test.py
 
       - name: Download phone library
         uses: actions/download-artifact@v4

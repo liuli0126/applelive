@@ -2,6 +2,8 @@
 
 FOUNDATION_EXPORT const uint32_t ALVideoType;
 FOUNDATION_EXPORT const uint32_t ALAudioType;
+FOUNDATION_EXPORT const uint32_t ALAACType;
+FOUNDATION_EXPORT const uint32_t ALAACConfigType;
 FOUNDATION_EXPORT const NSUInteger ALVideoHeaderLength;
 FOUNDATION_EXPORT const NSUInteger ALAudioHeaderLength;
 

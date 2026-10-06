@@ -19,7 +19,7 @@ from obs_websocket import OBSClient, OBSConnectionError
 from phone_plugin import plugin_path
 from stream_server import RTMP_URL, StreamServer
 
-DESKTOP_VERSION = "0.4.2"
+DESKTOP_VERSION = "0.4.3"
 
 
 def _list_dshow_devices(ffmpeg: Path) -> list[tuple[str, str]]:
@@ -85,14 +85,28 @@ class USBSender:
         self.stop_file = runtime_root / "applelive-usb-stop.flag"
         self.log_file = runtime_root / "applelive-usb.log"
         self.process = None
+        self.native_process = None
+        self.native_mode = False
+        self.native_control_port = 28766
+        self.native_relay_port = 28765
         self.input_url = ""
         self.width = 0
         self.height = 0
         self.fps = 30
 
+    def native_available(self) -> bool:
+        relay, output = self._native_paths()
+        return relay.is_file() and output.is_file()
+
     def start(self, input_url: str, video_settings: dict | None = None) -> None:
         if self.process and self.process.poll() is None:
             return
+        if self.native_process and self.native_process.poll() is None:
+            return
+        if self.native_available():
+            if self._start_native():
+                return
+            raise OSError("USB 原生模块未就绪。请关闭后重新打开本套 OBS；若仍失败，请查看 OBS 日志中的 AppleLive 错误。")
         sender = self.directory / "AppleLiveSender.exe"
         ffmpeg = self.directory / "ffmpeg.exe"
         if not sender.is_file() or not ffmpeg.is_file():
@@ -126,7 +140,63 @@ class USBSender:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
 
+    def _native_paths(self) -> tuple[Path, Path]:
+        relay = self.directory / "AppleLiveUsbRelay.exe"
+        obs_root = self.directory.parents[2] if len(self.directory.parents) > 2 else self.directory
+        output = obs_root / "obs-plugins" / "64bit" / "applelive-native-output.dll"
+        return relay, output
+
+    def _native_command(self, command: str) -> str:
+        try:
+            with socket.create_connection(("127.0.0.1", self.native_control_port), timeout=1.5) as connection:
+                connection.sendall(command.encode("ascii"))
+                return connection.recv(64).decode("ascii", errors="replace").strip()
+        except OSError:
+            return ""
+
+    def _start_native(self) -> bool:
+        relay, output = self._native_paths()
+        if not relay.is_file() or not output.is_file():
+            return False
+        self.status_file.parent.mkdir(parents=True, exist_ok=True)
+        self.stop_file.unlink(missing_ok=True)
+        self.status_file.unlink(missing_ok=True)
+        command = [str(relay), "--listen", str(self.native_relay_port),
+                   "--status-file", str(self.status_file)]
+        self.native_process = subprocess.Popen(
+            command, cwd=self.directory, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        for _ in range(20):
+            if self.native_process.poll() is not None:
+                self.native_process = None
+                return False
+            if self._native_command("start") == "ok":
+                self.native_mode = True
+                self.input_url = "OBS native encoded output"
+                return True
+            time.sleep(0.1)
+        self._stop_native()
+        return False
+
+    def _stop_native(self) -> None:
+        if self.native_mode:
+            self._native_command("stop")
+        process, self.native_process = self.native_process, None
+        self.native_mode = False
+        if process and process.poll() is None:
+            try:
+                process.terminate()
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
+
     def stop(self) -> None:
+        if self.native_process:
+            self._stop_native()
+            return
         process, self.process = self.process, None
         if not process or process.poll() is not None:
             return
@@ -143,13 +213,15 @@ class USBSender:
                 process.wait(timeout=2)
 
     def status(self) -> dict:
-        running = bool(self.process and self.process.poll() is None)
+        running = bool((self.process and self.process.poll() is None) or
+                       (self.native_process and self.native_process.poll() is None))
         value = {"state": "stopped", "usb_clients": 0, "error": "", "running": running,
-                 "input_url": self.input_url, "video_device": "OBS local RTMP",
-                 "audio_device": "OBS AAC track"}
+                 "input_url": self.input_url, "video_device": "OBS native encoded output" if self.native_mode else "OBS local RTMP",
+                 "audio_device": "OBS native encoded track" if self.native_mode else "OBS AAC track",
+                 "native": self.native_mode}
         try:
             saved = json.loads(self.status_file.read_text(encoding="utf-8"))
-            if isinstance(saved, dict) and self.process is not None:
+            if isinstance(saved, dict) and (self.process is not None or self.native_process is not None):
                 value.update({key: saved.get(key, value[key]) for key in ("state", "usb_clients", "error")})
         except (OSError, ValueError, TypeError):
             pass
@@ -237,12 +309,14 @@ class DockServer(ThreadingHTTPServer):
         self.stream_server = StreamServer(directory / "server")
         self.usb_sender = USBSender(directory)
         self.usb_stream_owned = False
+        self.native_stream_owned = False
         self.stream_error = ""
         self.firewall_pending = False
         self.firewall_error = ""
 
     def server_close(self):
         self.usb_sender.stop()
+        self.native_stream_owned = False
         if self.usb_stream_owned:
             try:
                 with OBSClient(self.directory) as client:
@@ -412,34 +486,47 @@ class Handler(BaseHTTPRequestHandler):
                     if command["action"] == "configure_stream":
                         self.server.usb_sender.stop()
                         if command["mode"] == "usb":
-                            # USB consumes the same encoded OBS output as LAN.
-                            # MediaMTX is loopback-only for this mode; FFmpeg
-                            # copies H.264 and decodes AAC for the phone. This
-                            # avoids DirectShow, OBS Virtual Camera and
-                            # VB-Cable in the USB hot path.
-                            self.server.ensure_stream_server()
-                            client.configure("127.0.0.1")
-                            client.start()
-                            self.server.usb_stream_owned = True
-                            self.server.usb_sender.start(RTMP_URL, client.video_settings())
+                            if self.server.usb_sender.native_available():
+                                # The native output owns OBS's encoded packet
+                                # path. It talks to the relay directly and
+                                # never starts the LAN RTMP stream.
+                                self.server.usb_sender.start("")
+                                self.server.native_stream_owned = True
+                                self.server.usb_stream_owned = False
+                            else:
+                                # Tested fallback for packages built before
+                                # the native OBS SDK is available.
+                                self.server.ensure_stream_server()
+                                client.configure("127.0.0.1")
+                                client.start()
+                                self.server.usb_stream_owned = True
+                                self.server.native_stream_owned = False
+                                self.server.usb_sender.start(RTMP_URL, client.video_settings())
                         else:
                             if self.server.usb_stream_owned:
                                 client.stop()
                                 self.server.usb_stream_owned = False
+                            if self.server.native_stream_owned:
+                                self.server.native_stream_owned = False
                             client.configure(command["host"])
                             self.server.ensure_stream_server()
                     elif command["action"] == "start_stream":
                         mode = client.stream_state().get("stream_mode")
-                        if self.server.usb_sender.process and self.server.usb_sender.process.poll() is None:
+                        if ((self.server.usb_sender.process and self.server.usb_sender.process.poll() is None) or
+                                (self.server.usb_sender.native_process and self.server.usb_sender.native_process.poll() is None)):
                             mode = "usb"
                         if mode == "usb":
-                            self.server.ensure_stream_server()
-                            if client.stream_state().get("stream_server") != "rtmp://127.0.0.1:1935/live":
-                                client.configure("127.0.0.1")
-                            if not client.stream_state().get("stream_active"):
-                                client.start()
-                            self.server.usb_stream_owned = True
-                            self.server.usb_sender.start(RTMP_URL, client.video_settings())
+                            if self.server.usb_sender.native_available():
+                                self.server.usb_sender.start("")
+                                self.server.native_stream_owned = True
+                            else:
+                                self.server.ensure_stream_server()
+                                if client.stream_state().get("stream_server") != "rtmp://127.0.0.1:1935/live":
+                                    client.configure("127.0.0.1")
+                                if not client.stream_state().get("stream_active"):
+                                    client.start()
+                                self.server.usb_stream_owned = True
+                                self.server.usb_sender.start(RTMP_URL, client.video_settings())
                         else:
                             self.server.ensure_stream_server()
                             client.start()
@@ -448,6 +535,8 @@ class Handler(BaseHTTPRequestHandler):
                         if self.server.usb_stream_owned:
                             client.stop()
                             self.server.usb_stream_owned = False
+                        elif self.server.native_stream_owned:
+                            self.server.native_stream_owned = False
                         else:
                             client.stop()
                         self.server.stop_stream_server()

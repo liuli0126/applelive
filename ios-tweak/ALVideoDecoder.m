@@ -22,7 +22,10 @@ static void ALReportDecodeError(const char *stage, OSStatus status) {
     VTDecompressionSessionRef _session;
     os_unfair_lock _lock;
     BOOL _needsKeyframe;
+    BOOL _hasSequence;
+    uint32_t _lastSequence;
 }
+@property(atomic) OSStatus callbackStatus;
 @end
 
 static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
@@ -39,6 +42,7 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
                    (int)CVPixelBufferGetWidth(imageBuffer), (int)CVPixelBufferGetHeight(imageBuffer));
         }
     } else if (status != noErr) {
+        decoder.callbackStatus = status;
         ALReportDecodeError("callback", status);
     }
     (void)infoFlags;
@@ -73,6 +77,7 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
         CFRelease(_formatDescription);
         _formatDescription = NULL;
     }
+    _hasSequence = NO;
     _sps = nil;
     _pps = nil;
     _needsKeyframe = YES;
@@ -91,6 +96,11 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
         return NO;
     }
 
+    CMVideoDimensions dimensions = CMVideoFormatDescriptionGetDimensions(format);
+    if (dimensions.width <= 0 || dimensions.height <= 0 || dimensions.width > 8192 ||
+        dimensions.height > 8192 || (uint64_t)dimensions.width * dimensions.height > 16777216) {
+        CFRelease(format); return NO;
+    }
     NSDictionary *attributes = @{
         (__bridge NSString *)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
         (__bridge NSString *)kCVPixelBufferIOSurfacePropertiesKey: @{},
@@ -111,11 +121,28 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
     }
     _formatDescription = format;
     _session = session;
+    VTSessionSetProperty(session, kVTDecompressionPropertyKey_RealTime, kCFBooleanTrue);
     return YES;
 }
 
 - (void)decodeNAL:(NSData *)nalData sequence:(uint32_t)sequence {
-    if (!nalData.length) return;
+    [self decodeAccessUnit:nalData sequence:sequence flags:0];
+}
+
+- (void)decodeAccessUnit:(NSData *)data sequence:(uint32_t)sequence flags:(uint32_t)flags {
+    os_unfair_lock_lock(&_lock);
+    // Bit 1 denotes complete access units, with one sequence number per frame.
+    // Legacy per-NAL senders do not provide this guarantee.
+    if (flags & 2) {
+        if (_hasSequence && sequence != (uint32_t)(_lastSequence + 1)) [self resetSessionLocked];
+        _hasSequence = YES; _lastSequence = sequence;
+    } else _hasSequence = NO;
+    [self decodeLocked:data sequence:sequence];
+    os_unfair_lock_unlock(&_lock);
+}
+
+- (void)decodeLocked:(NSData *)nalData sequence:(uint32_t)sequence {
+    if (!nalData.length || nalData.length > 8 * 1024 * 1024) return;
     const uint8_t *bytes = nalData.bytes;
     const size_t length = nalData.length;
     NSMutableArray<NSData *> *slices = [NSMutableArray array];
@@ -154,7 +181,6 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
             if (nalType == 7 || nalType == 8) {
                 // Parameter sets are copied while the input NSData remains
                 // owned by the USB/WebSocket receive callback.
-                os_unfair_lock_lock(&_lock);
                 NSData *parameterSet = [NSData dataWithBytes:payload length:payloadLength];
                 if (nalType == 7 && ![_sps isEqualToData:parameterSet]) {
                     _sps = parameterSet;
@@ -163,7 +189,6 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
                     _pps = parameterSet;
                     [self resetSessionLocked];
                 }
-                os_unfair_lock_unlock(&_lock);
             } else if (nalType == 1 || nalType == 5) {
                 [slices addObject:[NSData dataWithBytes:payload length:payloadLength]];
                 hasKeyframe = hasKeyframe || nalType == 5;
@@ -174,16 +199,13 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
     }
     if (!slices.count) return;
 
-    os_unfair_lock_lock(&_lock);
     // Never decode a delta frame after a reconnect or parameter-set change.
     // Waiting for the next IDR prevents the decoder from displaying blocks
     // and avoids cascading VideoToolbox failures after a dropped USB packet.
     if (_needsKeyframe && !hasKeyframe) {
-        os_unfair_lock_unlock(&_lock);
         return;
     }
     if (![self createSessionIfNeeded]) {
-        os_unfair_lock_unlock(&_lock);
         return;
     }
 
@@ -207,7 +229,6 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
     }
     if (status != kCMBlockBufferNoErr) {
         if (block) CFRelease(block);
-        os_unfair_lock_unlock(&_lock);
         return;
     }
 
@@ -222,18 +243,19 @@ static void ALDecodeCallback(void *refCon, void *frameRefCon, OSStatus status,
                                        1, 1, &timing, 1, &sampleSize, &sample);
     CFRelease(block);
     if (status == noErr && sample) {
+        self.callbackStatus = noErr;
         VTDecodeInfoFlags info = 0;
         OSStatus decodeStatus = VTDecompressionSessionDecodeFrame(_session, sample,
                                            0,
                                            (void *)(uintptr_t)sequence, &info);
-        if (decodeStatus != noErr) {
-            ALReportDecodeError("frame", decodeStatus);
+        if (decodeStatus != noErr || self.callbackStatus != noErr) {
+            ALReportDecodeError("frame", decodeStatus != noErr ? decodeStatus : self.callbackStatus);
+            [self resetSessionLocked];
         } else if (hasKeyframe) {
             _needsKeyframe = NO;
         }
         CFRelease(sample);
     }
-    os_unfair_lock_unlock(&_lock);
 }
 
 - (void)resetSessionLocked {

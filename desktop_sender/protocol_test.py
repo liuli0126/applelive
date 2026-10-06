@@ -77,7 +77,7 @@ def test_local_obs_stream_is_copied_to_usb_packets():
     audio = audio_command(args)
     self_copy = video[video.index("-c:v"):video.index("-c:v") + 2]
     assert self_copy == ["-c:v", "copy"]
-    assert "h264_mp4toannexb" in video
+    assert "h264_mp4toannexb,h264_metadata=aud=insert" in video
     assert "0:v:0" in video
     assert audio is not None and "0:a:0" in audio
     assert "f32le" in audio and "dshow" not in audio

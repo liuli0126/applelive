@@ -41,6 +41,8 @@ MAX_CLIENT_QUEUE = 24
 def video_nal_type(payload: bytes) -> int:
     if not payload.startswith(b"fram") or len(payload) < VIDEO_HEADER.size + 4:
         return 0
+    if struct.unpack_from("<I", payload, 8)[0] & 2:
+        return 5 if struct.unpack_from("<I", payload, 8)[0] & 1 else 1
     start = VIDEO_HEADER.size
     if payload[start:start + 4] == b"\x00\x00\x00\x01":
         offset = start + 4
@@ -101,6 +103,44 @@ class AnnexBParser:
         return None
 
 
+class AccessUnitParser:
+    """Group NALs into complete pictures; cache headers for every IDR."""
+
+    def __init__(self):
+        self.nals = []
+        self.has_slice = False
+        self.keyframe = False
+        self.headers = {}
+
+    def flush(self):
+        if not self.has_slice:
+            return None
+        nals = self.nals
+        if self.keyframe:
+            nals = [self.headers[k] for k in (7, 8) if k in self.headers] + nals
+        result = (b"".join(nals), self.keyframe)
+        self.nals, self.has_slice, self.keyframe = [], False, False
+        return result
+
+    def feed(self, nal):
+        offset = 4 if nal.startswith(b"\x00\x00\x00\x01") else 3
+        body = nal[offset:]
+        if not body:
+            return None
+        kind = body[0] & 31
+        # first_mb_in_slice == 0 encodes as a leading '1' bit. Together with
+        # AUD insertion in FFmpeg this also handles encoders without AUDs.
+        boundary = kind in (6, 7, 8, 9) or (kind in (1, 5) and len(body) > 1 and body[1] & 128)
+        result = self.flush() if self.has_slice and boundary else None
+        if kind in (7, 8):
+            self.headers[kind] = nal
+        elif kind in (1, 5):
+            self.nals.append(nal)
+            self.has_slice = True
+            self.keyframe |= kind == 5
+        return result
+
+
 def video_command(args: argparse.Namespace) -> list[str]:
     if getattr(args, "input_url", None):
         return [
@@ -112,7 +152,7 @@ def video_command(args: argparse.Namespace) -> list[str]:
             "-analyzeduration", "1000000", "-probesize", "1000000",
             "-i", args.input_url,
             "-map", "0:v:0", "-an", "-c:v", "copy",
-            "-bsf:v", "h264_mp4toannexb", "-f", "h264", "pipe:1",
+            "-bsf:v", "h264_mp4toannexb,h264_metadata=aud=insert", "-f", "h264", "pipe:1",
         ]
     gop_frames = max(args.fps // 2, 1)
     command = [args.ffmpeg, "-hide_banner", "-loglevel", "warning"]
@@ -319,10 +359,11 @@ class Broadcaster:
                     client.waiting_for_keyframe = True
                 if nal_type:
                     if client.waiting_for_keyframe:
-                        if nal_type != 5 or not self._sps or not self._pps:
+                        if nal_type != 5 or (not (struct.unpack_from("<I", payload, 8)[0] & 2) and (not self._sps or not self._pps)):
                             continue
-                        client.queue.put_nowait(self._sps)
-                        client.queue.put_nowait(self._pps)
+                        if not (struct.unpack_from("<I", payload, 8)[0] & 2):
+                            client.queue.put_nowait(self._sps)
+                            client.queue.put_nowait(self._pps)
                         client.waiting_for_keyframe = False
                 client.queue.put_nowait(payload)
 
@@ -353,23 +394,24 @@ def drain_stderr(process: subprocess.Popen[bytes], label: str) -> None:
 def capture_video(process: subprocess.Popen[bytes], broadcaster: Broadcaster,
                   width: int, height: int) -> None:
     assert process.stdout is not None
-    parser = AnnexBParser()
+    parser, assembler = AnnexBParser(), AccessUnitParser()
     seq = 0
-    # BufferedReader.read(n) waits for n bytes, adding seconds of latency at
-    # low bitrates. read1 returns currently available pipe data immediately.
+
+    def publish(unit):
+        nonlocal seq
+        if unit is None:
+            return
+        body, keyframe = unit
+        broadcaster.publish(VIDEO_HEADER.pack(b"fram", seq, 2 | int(keyframe), width, height) + body)
+        seq = (seq + 1) & 0xffffffff
+
     for chunk in iter(lambda: process.stdout.read1(64 * 1024), b""):
         for nal in parser.feed(chunk):
-            payload_offset = 4 if nal.startswith(b"\x00\x00\x00\x01") else 3
-            nal_type = nal[payload_offset] & 0x1F if len(nal) > payload_offset else 0
-            if nal_type in (6, 9, 12):
-                continue
-            flags = 1 if nal_type == 5 else 0
-            payload = VIDEO_HEADER.pack(b"fram", seq, flags, width, height) + nal
-            broadcaster.publish(payload)
-            seq += 1
+            publish(assembler.feed(nal))
     trailing = parser.flush()
     if trailing:
-        broadcaster.publish(VIDEO_HEADER.pack(b"fram", seq, 0, width, height) + trailing)
+        publish(assembler.feed(trailing))
+    publish(assembler.flush())
 
 
 def capture_audio(process: subprocess.Popen[bytes], broadcaster: Broadcaster,

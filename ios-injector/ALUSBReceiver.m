@@ -10,9 +10,13 @@
     CFAbsoluteTime _lastPacketTime;
 }
 @end
+static char ALUSBQueueKey;
 @implementation ALUSBReceiver
 - (instancetype)init {
-    if ((self = [super init])) _queue = dispatch_queue_create("com.applelive.usb", DISPATCH_QUEUE_SERIAL);
+    if ((self = [super init])) {
+        _queue = dispatch_queue_create("com.applelive.usb", DISPATCH_QUEUE_SERIAL);
+        dispatch_queue_set_specific(_queue, &ALUSBQueueKey, (__bridge void *)self, NULL);
+    }
     return self;
 }
 - (void)cancelConnection {
@@ -76,11 +80,13 @@
     });
 }
 - (void)stop {
-    dispatch_async(_queue, ^{
+    dispatch_block_t teardown = ^{
         self->_generation++;
         if (self->_listener) { nw_listener_cancel(self->_listener); self->_listener = nil; }
         [self cancelConnection];
-    });
+    };
+    if (dispatch_get_specific(&ALUSBQueueKey) == (__bridge void *)self) teardown();
+    else dispatch_sync(_queue, teardown);
 }
 - (void)receiveHeader:(nw_connection_t)connection {
     __weak typeof(self) weakSelf = self;
