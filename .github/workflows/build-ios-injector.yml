@@ -19,6 +19,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Test camera color ranges and immutable sample metadata
+        run: |
+          xcrun clang -fobjc-arc -Iios-tweak \
+            ios-injector/tests/color-pipeline-test.m ios-tweak/ALColorPipeline.m \
+            -framework Foundation -framework CoreVideo -framework CoreMedia -framework CoreImage -framework CoreGraphics \
+            -o "$RUNNER_TEMP/applelive-color-test"
+          "$RUNNER_TEMP/applelive-color-test"
+
       - name: Test USB decoding and reconnect lifecycle
         run: |
           xcrun clang -fobjc-arc -Iios-tweak \
@@ -89,14 +97,6 @@ jobs:
             -framework AudioToolbox -framework Security -framework CoreFoundation \
             -o "$RUNNER_TEMP/applelive-media-test"
           "$RUNNER_TEMP/applelive-media-test" ios-injector/tests/fixture.mp4
-
-      - name: Test BT.709 video-range rendering
-        run: |
-          xcrun clang -fobjc-arc -Iios-tweak \
-            ios-injector/tests/color-pipeline-test.m ios-tweak/ALColorPipeline.m \
-            -framework Foundation -framework CoreVideo -framework CoreImage -framework CoreGraphics \
-            -o "$RUNNER_TEMP/applelive-color-test"
-          "$RUNNER_TEMP/applelive-color-test"
 
       - name: Test RTMP and RTSP sources through MediaMTX
         run: |

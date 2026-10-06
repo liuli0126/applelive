@@ -140,3 +140,9 @@ USB 不是 iOS tweak 自己“看到”的串口。电脑端需要 `usbmuxd`/`py
 - Native relay SENDS ALUSB1, whereas phone SENDS ALUSB1 then expects BE32 length. Deterministic protocol mismatch. USB port swap does not truncate 16 bits. ConnectionType is nested in Properties.
 - Native output audio passes keyframe=true, reopening video gate; encoder borrowed packets are released; no reliable reconnect. Shipped phone dylib predates AAC changes. Prior completion claims do not demonstrate end-to-end correctness.
 - User confirmed USB-only issue, same iPhone11/iOS15.6/Douyin.
+
+## 2026-10-06 USB color follow-up
+- User confirms USB video/audio now work, but phone picture looks washed out compared with OBS. Preview location clarification pending.
+- Active OBS profile/log confirms NV12, Rec.709, Partial; native x264 uses this output without an override.
+- ALRenderVideoImage unconditionally overwrites target primaries, transfer and matrix with 709. ALVirtualCamera mutates the original camera pixel buffer while returning the same CMSampleBuffer, whose immutable format description still describes the original camera. This can disagree with full-range/601/BGRA camera contracts.
+- Existing color test covers only 420v -> 420v neutral 64/192, missing full-range destinations, saturated colors, BGRA and immutable sample metadata. Need measured regression coverage before claiming a fix for this user's visual observation.

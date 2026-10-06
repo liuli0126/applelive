@@ -259,3 +259,7 @@
 
 - Delivery ZIP CRC and embedded binary hashes verified. Full OBS bundle 0.4.3: 385832486 bytes, SHA256 700501cb6416bdb02be068d91c9d4da877e84e97e00459d2f694a11d65ea58e8. Phone SHA256 f3a4d889462564aab39917f4db810e942651ca8799c34f8e8094e094fa8b3cf3. Fixed latest-name delivery files refreshed; no device install performed.
 - Final CI: independent phone run 37400092160 passed all checks. Clean Windows build/package run 37401329307 passed native compilation, relay behavioral tests, desktop regressions, and packaging. Corrected an accidentally transcoded CMake BOM caught by CI; local CMake configuration verified. Added optional reuse of an already validated phone artifact for Windows-only packaging changes. Duplicate run 37400092329 hung in the existing media test; cancellation and force-cancellation were requested, and a fresh phone run completed successfully.
+
+## 2026-10-06 USB color follow-up
+- User resolved the WebSocket startup issue and requested no work on it; no source modifications were made for that issue.
+- User now confirms working video/audio but reports washed-out phone color compared with OBS. Investigating phone color conversion and original camera sample metadata; will preserve current functioning transport.
