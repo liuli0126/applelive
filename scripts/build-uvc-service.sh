@@ -21,14 +21,22 @@ xcrun lipo -create "$root/bin/host-arm64" "$root/bin/host-arm64e" -output "$root
 xcrun lipo -create "$root/bin/setup-arm64" "$root/bin/setup-arm64e" -output "$root/bin/AppleLiveUSB"
 ldid -Sios-uvc-service/USBHost.entitlements "$root/bin/AppleLiveUVCHost"
 ldid -Sios-uvc-service/Setup.entitlements "$root/bin/AppleLiveUSB"
-ldid -e "$root/bin/AppleLiveUVCHost" > "$root/host-signed-entitlements.plist"
-python3 - "$root/host-signed-entitlements.plist" <<'PY'
+for binary in AppleLiveUVCHost AppleLiveUSB; do
+  entitlement=USBHost
+  if [ "$binary" = AppleLiveUSB ]; then entitlement=Setup; fi
+  for arch in arm64 arm64e; do
+    # ldid -e on a fat binary concatenates XML documents; validate each slice.
+    xcrun lipo "$root/bin/$binary" -thin "$arch" -output "$root/bin/check-$binary-$arch"
+    ldid -e "$root/bin/check-$binary-$arch" > "$root/$binary-$arch-entitlements.plist"
+    python3 - "$root/$binary-$arch-entitlements.plist" "ios-uvc-service/$entitlement.entitlements" <<'PY'
 import plistlib,sys
 with open(sys.argv[1],'rb') as f: actual=plistlib.load(f)
-with open('ios-uvc-service/USBHost.entitlements','rb') as f: expected=plistlib.load(f)
-assert actual == expected, 'Signed host entitlements differ'
-print('USB Host executable entitlements verified')
+with open(sys.argv[2],'rb') as f: expected=plistlib.load(f)
+assert actual == expected, 'Signed executable entitlements differ'
+print('Verified signed entitlements:', sys.argv[1])
 PY
+  done
+done
 package="$root/package"
 mkdir -p "$package/var/jb/usr/libexec" "$package/var/jb/Applications/AppleLiveUSB.app" \
   "$package/var/jb/Library/LaunchDaemons" "$package/var/jb/Library/AppleLive"
