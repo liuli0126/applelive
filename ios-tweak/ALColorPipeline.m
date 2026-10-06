@@ -22,19 +22,30 @@ static CGColorSpaceRef ALSRGBColorSpace(void) {
 static CFTypeRef ALVideoColorAttachment(CVPixelBufferRef pixelBuffer, CFStringRef key) {
     return CVBufferGetAttachment(pixelBuffer, key, NULL);
 }
+
+static CGColorSpaceRef ALCopyVideoColorSpace(CVPixelBufferRef pixelBuffer) {
+    // Let CoreVideo interpret the actual primaries/transfer (including sRGB
+    // and P3 camera buffers). Treating every non-sRGB frame as 709 changes
+    // the colors before it ever reaches the app.
+    CFDictionaryRef attachments = CVBufferGetAttachments(pixelBuffer, kCVAttachmentMode_ShouldPropagate);
+    CGColorSpaceRef space = attachments ? CVImageBufferCreateColorSpaceFromAttachments(attachments) : NULL;
+    if (space) return space;
+    CFTypeRef transfer = ALVideoColorAttachment(pixelBuffer, kCVImageBufferTransferFunctionKey);
+    BOOL rgb = CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_32BGRA;
+    return CGColorSpaceRetain((rgb && !transfer) ||
+        (transfer && CFEqual(transfer, kCVImageBufferTransferFunction_sRGB))
+        ? ALSRGBColorSpace() : ALBT709ColorSpace());
+}
 #pragma clang diagnostic pop
 
 CIImage *ALVideoImageFromPixelBuffer(CVPixelBufferRef pixelBuffer) {
     if (!pixelBuffer) return nil;
-    CFTypeRef transfer = ALVideoColorAttachment(pixelBuffer, kCVImageBufferTransferFunctionKey);
-    OSType format = CVPixelBufferGetPixelFormatType(pixelBuffer);
-    BOOL bgraWithoutMetadata = format == kCVPixelFormatType_32BGRA && !transfer;
-    CGColorSpaceRef sourceColorSpace = bgraWithoutMetadata ||
-        (transfer && CFEqual(transfer, kCVImageBufferTransferFunction_sRGB))
-        ? ALSRGBColorSpace() : ALBT709ColorSpace();
-    return [CIImage imageWithCVPixelBuffer:pixelBuffer options:@{
+    CGColorSpaceRef sourceColorSpace = ALCopyVideoColorSpace(pixelBuffer);
+    CIImage *image = [CIImage imageWithCVPixelBuffer:pixelBuffer options:@{
         kCIImageColorSpace: (__bridge id)sourceColorSpace,
     }];
+    CGColorSpaceRelease(sourceColorSpace);
+    return image;
 }
 
 CIContext *ALCreateVideoRenderContext(void) {
@@ -65,8 +76,9 @@ void ALSetVideoColorAttachments(CVPixelBufferRef pixelBuffer,
 
 void ALSetDefaultVideoColorAttachments(CVPixelBufferRef pixelBuffer) {
     if (!pixelBuffer) return;
+    BOOL rgb = CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_32BGRA;
     BOOL hd = CVPixelBufferGetWidth(pixelBuffer) >= 1280 || CVPixelBufferGetHeight(pixelBuffer) > 576;
-    CFStringRef primaries = hd ? kCVImageBufferColorPrimaries_ITU_R_709_2
+    CFStringRef primaries = hd || rgb ? kCVImageBufferColorPrimaries_ITU_R_709_2
                                : kCVImageBufferColorPrimaries_SMPTE_C;
     CFStringRef matrix = hd ? kCVImageBufferYCbCrMatrix_ITU_R_709_2
                             : kCVImageBufferYCbCrMatrix_ITU_R_601_4;
@@ -74,18 +86,22 @@ void ALSetDefaultVideoColorAttachments(CVPixelBufferRef pixelBuffer) {
         ALSetAttachmentIfPresent(pixelBuffer, kCVImageBufferColorPrimariesKey, primaries);
     if (!ALVideoColorAttachment(pixelBuffer, kCVImageBufferTransferFunctionKey))
         ALSetAttachmentIfPresent(pixelBuffer, kCVImageBufferTransferFunctionKey,
-                                 kCVImageBufferTransferFunction_ITU_R_709_2);
-    if (!ALVideoColorAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey))
+                                 rgb ? kCVImageBufferTransferFunction_sRGB
+                                     : kCVImageBufferTransferFunction_ITU_R_709_2);
+    if (!rgb && !ALVideoColorAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey))
         ALSetAttachmentIfPresent(pixelBuffer, kCVImageBufferYCbCrMatrixKey, matrix);
 }
 
 void ALRenderVideoImage(CIContext *context, CIImage *image,
                         CVPixelBufferRef target, CGRect bounds) {
     if (!context || !image || !target) return;
-    ALSetVideoColorAttachments(target,
-                               kCVImageBufferColorPrimaries_ITU_R_709_2,
-                               kCVImageBufferTransferFunction_ITU_R_709_2,
-                               kCVImageBufferYCbCrMatrix_ITU_R_709_2);
+    // The app still owns the original CMSampleBuffer and its immutable format
+    // description. Convert into that camera's color space/range; relabeling
+    // the pixels as 709 leaves the app interpreting them with stale metadata.
+    // CoreImage uses the destination's 420v/420f format for range conversion
+    // and its YCbCr matrix for the RGB -> YUV step. Do not replace either.
+    CGColorSpaceRef targetSpace = ALCopyVideoColorSpace(target);
     [context render:image toCVPixelBuffer:target bounds:bounds
-          colorSpace:ALBT709ColorSpace()];
+          colorSpace:targetSpace];
+    CGColorSpaceRelease(targetSpace);
 }

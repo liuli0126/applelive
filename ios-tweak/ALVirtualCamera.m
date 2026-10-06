@@ -673,6 +673,9 @@ static void ALInstallHooks(void) {
     NSDictionary *attributes = @{(id)kCVPixelBufferIOSurfacePropertiesKey: @{}};
     if (CVPixelBufferCreate(NULL, (size_t)size.width, (size_t)size.height, kCVPixelFormatType_32BGRA,
             (__bridge CFDictionaryRef)attributes, &target) != kCVReturnSuccess) return NULL;
+    // Own preview buffers use sRGB. Set metadata before making the immutable
+    // sample format, just as a camera does, rather than relabeling after render.
+    ALSetDefaultVideoColorAttachments(target);
     CMSampleBufferRef sample = ALCreateVideoSample(target, NULL);
     if (!sample) { CVPixelBufferRelease(target); return NULL; }
     CMRemoveAttachment(sample, CFSTR("applelive_virtual"));

@@ -130,6 +130,10 @@ int main(void) {
             kCVImageBufferColorPrimaries_ITU_R_709_2,
             kCVImageBufferTransferFunction_ITU_R_709_2,
             kCVImageBufferYCbCrMatrix_ITU_R_709_2);
+        ALSetVideoColorAttachments(target,
+            kCVImageBufferColorPrimaries_ITU_R_709_2,
+            kCVImageBufferTransferFunction_ITU_R_709_2,
+            kCVImageBufferYCbCrMatrix_ITU_R_709_2);
 
         CIContext *context = ALCreateVideoRenderContext();
         CIImage *image = ALVideoImageFromPixelBuffer(source);

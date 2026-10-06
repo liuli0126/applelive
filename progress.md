@@ -263,3 +263,4 @@
 ## 2026-10-06 USB color follow-up
 - User resolved the WebSocket startup issue and requested no work on it; no source modifications were made for that issue.
 - User now confirms working video/audio but reports washed-out phone color compared with OBS. Investigating phone color conversion and original camera sample metadata; will preserve current functioning transport.
+- Added independent analytical YUV color patch checks for limited/full 709 and full 601 plus immutable BGRA sample metadata. The old implementation fails the 601 target-format check in CI 37406249875; 709 range conversion passes. Git HTTPS push failed; existing SSH access worked.
