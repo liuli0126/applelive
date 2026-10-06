@@ -111,8 +111,8 @@ Status: complete (physical iPhone/Douyin acceptance remains user-run)
 - [x] Refresh delivery package and document what still needs device verification.
 
 ## Phase 33. Preserve camera color during USB injection (2026-10-06)
-Status: in_progress
+Status: complete (physical color comparison remains user-run)
 - [x] Confirm user now has working USB video/audio and inspect active OBS color settings.
-- [ ] Reproduce range and camera-format metadata mismatches with color patch tests.
-- [ ] Correct phone color conversion, build and verify the matching dylib.
-- [ ] Refresh the existing latest delivery files; leave physical color comparison to the user.
+- [x] Reproduce range and camera-format metadata mismatches with color patch tests.
+- [x] Correct phone color conversion, build and verify the matching dylib.
+- [x] Refresh the existing latest delivery files; leave physical color comparison to the user.
