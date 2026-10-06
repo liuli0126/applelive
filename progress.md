@@ -269,3 +269,6 @@
 
 ## 2026-10-06 fisheye feature
 - Adding a single phone picture-control switch, persistent per App and disabled by default. Target remains the same standalone injected dylib and current desktop transport.
+- Source 59046a7 adds a cached equidistant CIWarpKernel in the common render path, persistent control and native phone switches. Standalone panel content now scrolls on small/landscape screens.
+- Complete macOS build 37408111766 passed: actual Core Image geometry and defaults/persistence/off-restoration tests (landscape, portrait with translated origin, square), previous color patches, USB H264/AAC/reconnect, source migration, audio and RTMP/RTSP. Both iOS architectures compiled/verified. Downloading artifact for visual inspection and delivery refresh.
+- Visual inspection of the real GPU comparison revealed warped pixels spilling beyond the image rectangle during compositing. Added an explicit crop and a padded-canvas alpha test so fit-mode letterbox margins stay clear. Rebuilding before delivery; the first artifact has not replaced user files.

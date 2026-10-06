@@ -39,5 +39,7 @@ CIImage *ALApplyFisheye(CIImage *image, BOOL enabled) {
         (void)index; (void)rect;
         return extent;
     } inputImage:image arguments:@[center, @(radius)]];
-    return warped ?: image;
+    // A warp can still be sampled outside its declared extent during later
+    // compositing. Clip explicitly so "fit" mode keeps its letterbox bars.
+    return warped ? [warped imageByCroppingToRect:extent] : image;
 }

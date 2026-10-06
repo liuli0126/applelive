@@ -58,6 +58,17 @@ static void testGeometry(CIContext *context, size_t width, size_t height, CGPoin
         if(abs(out[p]-input[p])>3 || abs(out[p+1]-input[p+1])>3) changed++;
     }
     require(changed>width*height/2,"fisheye visibly changes the picture beyond its center");
+    // The production path may fit the warped image over a larger black canvas.
+    // Declared extent alone must not let the warp leak into letterbox margins.
+    size_t paddedWidth=width+32, paddedHeight=height+32;
+    uint8_t *padded=calloc(paddedWidth*paddedHeight,4);
+    [context render:warped toBitmap:padded rowBytes:paddedWidth*4
+        bounds:CGRectInset(image.extent,-16,-16) format:kCIFormatRGBA8 colorSpace:NULL];
+    for(size_t y=0;y<paddedHeight;y++) for(size_t x=0;x<paddedWidth;x++) {
+        if(x<16 || y<16 || x>=width+16 || y>=height+16)
+            require(padded[(y*paddedWidth+x)*4+3]==0,"fisheye must not paint outside the source rectangle");
+    }
+    free(padded);
     size_t center=(height/2*width+width/2)*4;
     require(abs(out[center]-input[center])<=1 && abs(out[center+1]-input[center+1])<=1,
             "center stays fixed");
