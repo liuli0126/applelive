@@ -94,7 +94,7 @@ static char ALUSBQueueKey;
         ALUSBReceiver *owner = weakSelf;
         if (!owner || connection != owner->_connection) return;
         const void *bytes = NULL; size_t size = 0;
-        dispatch_data_t map = content ? dispatch_data_create_map(content, &bytes, &size) : nil;
+        __attribute__((objc_precise_lifetime)) dispatch_data_t map = content ? dispatch_data_create_map(content, &bytes, &size) : nil;
         if (error || size != 4) { [owner cancelConnection]; return; }
         const uint8_t *header = bytes;
         uint32_t length = ((uint32_t)header[0] << 24) | ((uint32_t)header[1] << 16) | ((uint32_t)header[2] << 8) | header[3];
@@ -109,7 +109,7 @@ static char ALUSBQueueKey;
         ALUSBReceiver *owner = weakSelf;
         if (!owner || connection != owner->_connection) return;
         const void *bytes = NULL; size_t size = 0;
-        dispatch_data_t map = content ? dispatch_data_create_map(content, &bytes, &size) : nil;
+        __attribute__((objc_precise_lifetime)) dispatch_data_t map = content ? dispatch_data_create_map(content, &bytes, &size) : nil;
         if (error || size != length) { [owner cancelConnection]; return; }
         NSData *packet = [NSData dataWithBytes:bytes length:size]; (void)map;
         owner->_lastPacketTime = CFAbsoluteTimeGetCurrent();

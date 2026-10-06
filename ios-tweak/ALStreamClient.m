@@ -85,6 +85,7 @@ static char ALStreamQueueKey;
     if (!_aacDecoder) {
         AudioStreamBasicDescription input = {0}, output = {0};
         input.mFormatID = kAudioFormatMPEG4AAC;
+        input.mFormatFlags = kMPEG4Object_AAC_LC;
         input.mSampleRate = rate; input.mChannelsPerFrame = channels;
         input.mFramesPerPacket = 1024;
         output.mFormatID = kAudioFormatLinearPCM;
@@ -92,10 +93,14 @@ static char ALStreamQueueKey;
         output.mSampleRate = rate; output.mChannelsPerFrame = channels;
         output.mBitsPerChannel = 32; output.mFramesPerPacket = 1;
         output.mBytesPerFrame = output.mBytesPerPacket = channels * sizeof(float);
-        if (AudioConverterNew(&input, &output, &_aacDecoder) != noErr) { _aacDecoder = NULL; return; }
-        OSStatus status = AudioConverterSetProperty(_aacDecoder, kAudioConverterDecompressionMagicCookie,
-                                                     (UInt32)_aacConfig.length, _aacConfig.bytes);
-        if (status != noErr) { [self _resetAACLocked]; return; }
+        OSStatus status = AudioConverterNew(&input, &output, &_aacDecoder);
+        if (status != noErr) {
+            os_log_error(OS_LOG_DEFAULT, "[AppleLive] AAC converter creation failed: %d", (int)status);
+            _aacDecoder = NULL; return;
+        }
+        // AAC-LC is fully described by the validated ASC's rate and channel
+        // count above. Raw FFmpeg ASC bytes are not an AudioConverter ESDS
+        // magic cookie; passing them as one causes parameter errors on macOS.
     }
     float pcm[2048];
     AudioBufferList output = {1, {{channels, sizeof(pcm), pcm}}};
@@ -104,7 +109,13 @@ static char ALStreamQueueKey;
     OSStatus status = AudioConverterFillComplexBuffer(_aacDecoder, ALAACProvide, &input, &frames, &output, NULL);
     if ((status == noErr || status == 'alnd') && frames > 0 && frames <= 1024 && self.onAudioPCM)
         self.onAudioPCM(pcm, frames, channels, rate);
-    else if (status != noErr && status != 'alnd') AudioConverterReset(_aacDecoder);
+    else if (status != noErr && status != 'alnd') {
+        static uint64_t errors = 0;
+        uint64_t count = __sync_add_and_fetch(&errors, 1);
+        if (count <= 3 || count % 300 == 0)
+            os_log_error(OS_LOG_DEFAULT, "[AppleLive] AAC decode failed: %d", (int)status);
+        AudioConverterReset(_aacDecoder);
+    }
 }
 
 - (instancetype)init {
@@ -308,7 +319,9 @@ static char ALStreamQueueKey;
     [self acceptBinaryData:data];
 }
 - (void)acceptBinaryData:(NSData *)data {
-    @synchronized (self) { [self _acceptBinaryLocked:data]; }
+    @autoreleasepool {
+        @synchronized (self) { [self _acceptBinaryLocked:data]; }
+    }
 }
 
 - (void)_acceptBinaryLocked:(NSData *)data {

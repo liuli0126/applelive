@@ -19,6 +19,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Test USB decoding and reconnect lifecycle
+        run: |
+          xcrun clang -fobjc-arc -Iios-tweak \
+            ios-injector/tests/usb-decode-test.m ios-tweak/ALStreamClient.m \
+            ios-tweak/ALVideoDecoder.m ios-tweak/ALColorPipeline.m \
+            -framework Foundation -framework CoreVideo -framework CoreMedia \
+            -framework CoreImage -framework CoreGraphics -framework VideoToolbox \
+            -framework AudioToolbox -o "$RUNNER_TEMP/applelive-usb-test"
+          "$RUNNER_TEMP/applelive-usb-test" ios-injector/tests/native-usb.alusb ios-injector/tests/multislice-usb.alusb
+
       - name: Install build tools
         run: brew install ldid make perl
 
@@ -87,16 +97,6 @@ jobs:
             -framework Foundation -framework CoreVideo -framework CoreImage -framework CoreGraphics \
             -o "$RUNNER_TEMP/applelive-color-test"
           "$RUNNER_TEMP/applelive-color-test"
-
-      - name: Test USB decoding and reconnect lifecycle
-        run: |
-          xcrun clang -fobjc-arc -Iios-tweak \
-            ios-injector/tests/usb-decode-test.m ios-tweak/ALStreamClient.m \
-            ios-tweak/ALVideoDecoder.m ios-tweak/ALColorPipeline.m \
-            -framework Foundation -framework CoreVideo -framework CoreMedia \
-            -framework CoreImage -framework CoreGraphics -framework VideoToolbox \
-            -framework AudioToolbox -o "$RUNNER_TEMP/applelive-usb-test"
-          "$RUNNER_TEMP/applelive-usb-test" ios-injector/tests/native-usb.alusb ios-injector/tests/multislice-usb.alusb
 
       - name: Test RTMP and RTSP sources through MediaMTX
         run: |
