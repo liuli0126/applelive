@@ -1,4 +1,5 @@
 #import "ALCyberTheme.h"
+#import "ALBrandImage.h"
 #import <QuartzCore/QuartzCore.h>
 #include <math.h>
 
@@ -17,40 +18,7 @@ static UIBezierPath *ALCutPanel(CGRect r, CGFloat cut) {
     return [UIBezierPath bezierPathWithRoundedRect:r cornerRadius:14];
 }
 
-UIImage *ALCyberMarkImage(CGSize size) {
-    CGFloat d = MAX(24, MIN(size.width, size.height));
-    UIGraphicsBeginImageContextWithOptions(CGSizeMake(d, d), NO, 0);
-    CGContextRef context = UIGraphicsGetCurrentContext();
-    CGPoint center = CGPointMake(d / 2, d / 2);
-    [ALCyberBackground() setFill];
-    [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(1, 1, d - 2, d - 2)] fill];
-    [ALHex(0xA8C9DF) setStroke];
-    UIBezierPath *rim = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(2, 2, d - 4, d - 4)];
-    rim.lineWidth = 1; [rim stroke];
-    [ALCyberRed() setStroke];
-    for (NSInteger i = 0; i < 3; i++) {
-        CGFloat start = -M_PI_2 + i * 2 * M_PI / 3;
-        UIBezierPath *arc = [UIBezierPath bezierPathWithArcCenter:center radius:d / 2 - 2
-            startAngle:start endAngle:start + M_PI / 3 clockwise:YES];
-        arc.lineWidth = MAX(1.5, d * 0.035); [arc stroke];
-    }
-    UIBezierPath *star = [UIBezierPath bezierPath];
-    for (NSInteger i = 0; i < 10; i++) {
-        CGFloat a = -M_PI_2 + i * M_PI / 5, radius = d * (i % 2 ? 0.115 : 0.285);
-        CGPoint p = CGPointMake(center.x + cos(a) * radius, center.y + sin(a) * radius);
-        if (i) [star addLineToPoint:p]; else [star moveToPoint:p];
-    }
-    [star closePath];
-    CGContextSetShadowWithColor(context, CGSizeZero, d * 0.10, [ALCyberRed() colorWithAlphaComponent:0.25].CGColor);
-    [ALCyberRed() setFill]; [star fill];
-    CGContextSetShadowWithColor(context, CGSizeZero, 0, NULL);
-    UIBezierPath *slash = [UIBezierPath bezierPath];
-    [slash moveToPoint:CGPointMake(d * 0.29, d * 0.67)];
-    [slash addLineToPoint:CGPointMake(d * 0.72, d * 0.36)];
-    slash.lineWidth = MAX(1.2, d * 0.035); [ALCyberText() setStroke]; [slash stroke];
-    UIImage *image = UIGraphicsGetImageFromCurrentImageContext(); UIGraphicsEndImageContext();
-    return [image imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
-}
+UIImage *ALCyberMarkImage(CGSize size) { return ALFuxingBrandImage(size); }
 
 @implementation ALInjectedCyberSurface
 - (instancetype)initWithFrame:(CGRect)frame {

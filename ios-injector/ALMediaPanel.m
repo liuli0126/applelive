@@ -179,7 +179,7 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     self.bubble.backgroundColor = UIColor.clearColor; self.bubble.tintColor = self.accent;
     self.bubble.layer.cornerRadius = 28; self.bubble.clipsToBounds = YES;
     [self.bubble setImage:ALCyberMarkImage(CGSizeMake(56, 56)) forState:UIControlStateNormal];
-    self.bubble.accessibilityLabel = @"打开 AppleLive 控制面板";
+    self.bubble.accessibilityLabel = @"打开福煋推流插件";
     self.bubble.accessibilityHint = @"双击打开，拖动可移动悬浮按钮";
     [self.bubble addTarget:self action:@selector(togglePanel) forControlEvents:UIControlEventTouchUpInside];
     [self.bubble addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragBubble:)]];
@@ -190,8 +190,8 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     UIImageView *brand = [[UIImageView alloc] initWithImage:ALCyberMarkImage(CGSizeMake(36, 36))];
     [brand.widthAnchor constraintEqualToConstant:36].active = YES;
     [brand.heightAnchor constraintEqualToConstant:36].active = YES;
-    UILabel *title = [self label:@"AppleLive" size:21]; title.font = [UIFont systemFontOfSize:21 weight:UIFontWeightBold];
-    UILabel *subtitle = [self label:@"ICE BLUE / ALL SOURCES" size:8];
+    UILabel *title = [self label:@"福煋推流插件" size:19]; title.font = [UIFont systemFontOfSize:19 weight:UIFontWeightBold];
+    UILabel *subtitle = [self label:@"画面与声音控制" size:8];
     subtitle.font = [UIFont monospacedSystemFontOfSize:9 weight:UIFontWeightMedium]; subtitle.textColor = self.accent;
     UIStackView *wordmark = [[UIStackView alloc] initWithArrangedSubviews:@[title, subtitle]];
     wordmark.axis = UILayoutConstraintAxisVertical; wordmark.spacing = 2;

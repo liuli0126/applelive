@@ -174,7 +174,7 @@ static NSDictionary *ALPanelStreamStatus(void) {
     self.bubble.layer.shadowRadius = 8;
     self.bubble.layer.shadowOffset = CGSizeMake(0, 3);
     [self.bubble setImage:ALBrandMarkImage(CGSizeMake(56, 56)) forState:UIControlStateNormal];
-    self.bubble.accessibilityLabel = @"AppleLive 画面控制，点按打开";
+    self.bubble.accessibilityLabel = @"福煋推流插件，点按打开";
     [self.bubble addTarget:self action:@selector(togglePanel) forControlEvents:UIControlEventTouchUpInside];
     [self.bubble addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragBubble:)]];
     [root.view addSubview:self.bubble];
@@ -200,7 +200,7 @@ static NSDictionary *ALPanelStreamStatus(void) {
     UIImageView *brand = [[UIImageView alloc] initWithImage:ALBrandMarkImage(CGSizeMake(34, 34))];
     [brand.widthAnchor constraintEqualToConstant:34].active = YES;
     [brand.heightAnchor constraintEqualToConstant:34].active = YES;
-    UILabel *title = [self label:@"AppleLive" size:22];
+    UILabel *title = [self label:@"福煋推流插件" size:19];
     self.statusLabel = [self label:@"正在连接电脑…" size:13];
     self.statusLabel.textColor = UIColor.lightGrayColor;
     UIStackView *heading = [[UIStackView alloc] initWithArrangedSubviews:@[title, self.statusLabel]];
