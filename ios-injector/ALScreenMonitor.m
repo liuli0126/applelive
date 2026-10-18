@@ -14,6 +14,7 @@ static NSString *const kALMonitorDeviceKey = @"AppleLive.Monitor.Device.v1";
 static NSString *const kALMonitorAccountKey = @"AppleLive.Monitor.Account.v1";
 static NSString *const kALMonitorEndpointKey = @"AppleLive.Monitor.Endpoint.v1";
 static NSString *const kALMonitorPendingKey = @"AppleLive.Monitor.Pending.v1";
+static NSString *const kALMonitorEnabledKey = @"AppleLive.Monitor.Enabled.v1";
 static NSString *const kALDefaultMonitorEndpoint = AL_DEFAULT_MONITOR_ENDPOINT;
 
 @implementation ALMonitorTextLine
@@ -42,8 +43,27 @@ static BOOL ALButtonMatches(NSString *value) {
     return NO;
 }
 
+static BOOL ALLiveRoomNoticeMatches(NSArray<ALMonitorTextLine *> *lines, CGSize size) {
+    for (ALMonitorTextLine *line in lines) {
+        NSString *text = ALNormalizedText(line.text);
+        CGFloat top = CGRectGetMinY(line.bounds) * size.height;
+        // Live-room status notices are rendered in the main content area. A
+        // matching chat message near the bottom should not trigger the alert.
+        if (top < size.height * 0.15 || top > size.height * 0.68) continue;
+        if ([text rangeOfString:@"主播违规整改中"].location != NSNotFound ||
+            [text rangeOfString:@"主播暂时离开"].location != NSNotFound) return YES;
+        if ([text rangeOfString:@"主播离开一会儿"].location != NSNotFound &&
+            [text rangeOfString:@"耐心等候"].location != NSNotFound) return YES;
+    }
+    return NO;
+}
+
 BOOL ALMonitorPopupMatches(NSArray<ALMonitorTextLine *> *lines, CGSize size) {
     if (size.width < 1 || size.height < 1) return NO;
+    // Douyin can show a full-screen live-room remediation notice instead of
+    // the account-security dialog. It is an independent alert condition and
+    // does not have the title/button layout used by the dialog below.
+    if (ALLiveRoomNoticeMatches(lines, size)) return YES;
     for (ALMonitorTextLine *title in lines) {
         NSString *titleText = ALNormalizedText(title.text);
         if ([titleText rangeOfString:@"保障账号安全"].location == NSNotFound) continue;
@@ -176,6 +196,7 @@ static UIImage *ALCaptureWindowImage(void) {
     [NSUserDefaults.standardUserDefaults setObject:device forKey:kALMonitorDeviceKey];
     [NSUserDefaults.standardUserDefaults setObject:account forKey:kALMonitorAccountKey];
     [NSUserDefaults.standardUserDefaults setObject:url forKey:kALMonitorEndpointKey];
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:kALMonitorEnabledKey];
     self.running = YES; self.latched = NO; self.positive = 0; self.clear = 0; self.lastPositive = -1; self.clearSince = -1;
     [self.retryTimer invalidate]; self.retryTimer = nil; [self.timer invalidate];
     self.timer = [NSTimer scheduledTimerWithTimeInterval:kALMonitorInterval target:self selector:@selector(tick) userInfo:nil repeats:YES];
@@ -185,9 +206,22 @@ static UIImage *ALCaptureWindowImage(void) {
 }
 
 - (void)stop {
+    [NSUserDefaults.standardUserDefaults setBool:NO forKey:kALMonitorEnabledKey];
     if (!self.running && !self.timer) return;
     self.running = NO; [self.timer invalidate]; self.timer = nil; [self.retryTimer invalidate]; self.retryTimer = nil;
     self.recognitionPending = NO; [self publish:@"监控已停止"];
+}
+
+- (void)pauseForBackground {
+    if (!self.running && !self.timer) return;
+    self.running = NO; [self.timer invalidate]; self.timer = nil; [self.retryTimer invalidate]; self.retryTimer = nil;
+    self.recognitionPending = NO; [self publish:@"等待直播间回到前台"];
+}
+
+- (void)resumeIfEnabled {
+    if (self.running || ![NSUserDefaults.standardUserDefaults boolForKey:kALMonitorEnabledKey] ||
+        self.deviceName.length == 0 || self.accountName.length == 0) return;
+    [self startWithDeviceName:self.deviceName accountName:self.accountName endpoint:@""];
 }
 
 - (void)tick {
@@ -228,7 +262,7 @@ static UIImage *ALCaptureWindowImage(void) {
     NSTimeInterval now = NSDate.date.timeIntervalSince1970;
     if (match) {
         self.clear = 0; self.clearSince = -1;
-        if (self.latched) { [self publish:@"已识别安全验证，请手动处理"]; return; }
+        if (self.latched) { [self publish:@"已识别直播间提示，请手动处理"]; return; }
         // A single completed OCR match is enough to notify. The latch below
         // prevents duplicate notifications while the same popup remains on
         // screen; it is cleared only after the popup has disappeared.
@@ -245,13 +279,13 @@ static UIImage *ALCaptureWindowImage(void) {
 }
 
 - (void)enqueueAlert {
-    if (self.pendingPayload) { [self publish:@"已识别安全验证，上一条群提醒仍在重试"]; return; }
+    if (self.pendingPayload) { [self publish:@"已识别直播间提示，上一条群提醒仍在重试"]; return; }
     NSISO8601DateFormatter *formatter = [NSISO8601DateFormatter new];
     formatter.formatOptions = NSISO8601DateFormatWithInternetDateTime | NSISO8601DateFormatWithColonSeparatorInTimeZone;
     self.pendingPayload = @{@"eventId": NSUUID.UUID.UUIDString.lowercaseString, @"deviceName": self.deviceName,
         @"accountName": self.accountName, @"kind": @"security_verification", @"occurredAt": [formatter stringFromDate:NSDate.date]};
     [NSUserDefaults.standardUserDefaults setObject:self.pendingPayload forKey:kALMonitorPendingKey];
-    [self publish:@"已识别安全验证，正在提交群提醒"]; [self sendPendingAlert];
+    [self publish:@"已识别直播间提示，正在提交群提醒"]; [self sendPendingAlert];
 }
 
 - (void)sendPendingAlert {

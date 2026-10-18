@@ -24,6 +24,8 @@ BOOL ALMonitorPopupMatches(NSArray<ALMonitorTextLine *> *lines, CGSize size);
 @property(nonatomic, copy, readonly) NSString *endpoint;
 @property(nonatomic, copy, nullable) ALScreenMonitorStatusHandler onStatus;
 - (void)startWithDeviceName:(NSString *)deviceName accountName:(NSString *)accountName endpoint:(NSString *)endpoint;
+- (void)resumeIfEnabled;
+- (void)pauseForBackground;
 - (void)stop;
 @end
 

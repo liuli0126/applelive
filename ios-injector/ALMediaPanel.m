@@ -119,6 +119,15 @@ static NSString *ALFriendlyStreamError(NSString *error) {
                 [weakInstance refresh];
             });
         };
+        if ([NSUserDefaults.standardUserDefaults boolForKey:@"AppleLive.Monitor.Enabled.v1"] &&
+            instance.monitor.deviceName.length && instance.monitor.accountName.length) {
+            // Resume a previously configured monitor after the target app is
+            // relaunched. The monitor itself keeps running independently of
+            // whether the floating panel is expanded.
+            [instance.monitor startWithDeviceName:instance.monitor.deviceName
+                                      accountName:instance.monitor.accountName
+                                          endpoint:@""];
+        }
         [instance applySource]; [instance refresh];
     });
 }
@@ -545,9 +554,10 @@ static NSString *ALFriendlyStreamError(NSString *error) {
         if (oldFile.length && ![oldFile isEqualToString:filename]) [NSFileManager.defaultManager removeItemAtURL:[ALMediaDirectory() URLByAppendingPathComponent:oldFile] error:nil];
     });
 }
-- (void)background { [self.monitor stop]; self.window.hidden = YES; [self restoreKey]; [self.camera selectSource:@"none" URL:nil]; }
+- (void)background { [self.monitor pauseForBackground]; self.window.hidden = YES; [self restoreKey]; [self.camera selectSource:@"none" URL:nil]; }
 - (void)refresh {
     if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) { self.window.hidden = YES; return; }
+    [self.monitor resumeIfEnabled];
     if (!self.window) [self buildWindow];
     if (self.window.hidden) [self applySource];
     self.window.hidden = NO;
