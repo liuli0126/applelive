@@ -366,15 +366,12 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     self.source[@"kind"] = @"usb";
     [self saveSource];
 }
-- (void)toggleMonitor {
-    if (self.monitor.running) { [self.monitor stop]; [self refresh]; return; }
+- (void)presentMonitorSetup {
     NSString *device = self.monitor.deviceName.length ? self.monitor.deviceName : UIDevice.currentDevice.name;
     NSString *account = self.monitor.accountName ?: @"";
-    if (device.length && account.length) {
-        [self.monitor startWithDeviceName:device accountName:account endpoint:@""]; [self refresh]; return;
-    }
-    UIAlertController *setup = [UIAlertController alertControllerWithTitle:@"开启账号监控"
-        message:@"监控当前抖音画面，识别到安全验证弹窗后立即发送一次群提醒。弹窗持续存在时不会重复发送；消失后会重新布防。只上传设备名、账号名和事件时间，不上传截图。"
+    BOOL editing = device.length && account.length;
+    UIAlertController *setup = [UIAlertController alertControllerWithTitle:editing ? @"修改账号监控" : @"开启账号监控"
+        message:@"监控当前抖音画面，识别到安全验证弹窗后立即发送一次群提醒。手机名称和直播账号可以随时修改；预警服务由插件内置。"
         preferredStyle:UIAlertControllerStyleAlert];
     [setup addTextFieldWithConfigurationHandler:^(UITextField *field) {
         field.text = device; field.placeholder = @"手机名称，例如：前台手机"; field.accessibilityLabel = @"手机名称";
@@ -382,12 +379,34 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     [setup addTextFieldWithConfigurationHandler:^(UITextField *field) {
         field.text = account; field.placeholder = @"直播账号或昵称"; field.accessibilityLabel = @"直播账号";
     }];
-    [setup addAction:[UIAlertAction actionWithTitle:@"开始监控" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+    [setup addAction:[UIAlertAction actionWithTitle:editing ? @"保存并开始" : @"开始监控" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         [self.monitor startWithDeviceName:setup.textFields[0].text accountName:setup.textFields[1].text endpoint:@""];
         [self restoreKey]; [self refresh];
     }]];
     [setup addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) { [self restoreKey]; }]];
     [self present:setup];
+}
+- (void)toggleMonitor {
+    if (self.monitor.running) {
+        UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"账号监控已开启"
+            message:@"可以修改手机名称和直播账号，保存后会重新开始监控。"
+            preferredStyle:UIAlertControllerStyleAlert];
+        [menu addAction:[UIAlertAction actionWithTitle:@"修改信息" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            [self.monitor stop];
+            [self.window.rootViewController dismissViewControllerAnimated:YES completion:^{
+                [self restoreKey]; [self presentMonitorSetup];
+            }];
+        }]];
+        [menu addAction:[UIAlertAction actionWithTitle:@"停止监控" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+            [self.monitor stop]; [self restoreKey]; [self refresh];
+        }]];
+        [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) {
+            [self restoreKey];
+        }]];
+        [self present:menu];
+        return;
+    }
+    [self presentMonitorSetup];
 }
 - (void)applySource {
     if (![self.controls[@"enabled"] boolValue]) { [self.camera selectSource:@"none" URL:nil]; return; }
@@ -569,8 +588,9 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     self.audioLabel.hidden = !enabled || ![self.controls[@"audio"] boolValue];
     self.audioLabel.text = [status[@"audio"] boolValue] ? @"内录中 · 手机麦克风已关闭" : @"等待源音频 · 手机麦克风已关闭";
     BOOL monitoring = self.monitor.running;
-    [self.monitorButton setTitle:monitoring ? @"停止监控" : @"开始监控" forState:UIControlStateNormal];
-    self.monitorButton.accessibilityLabel = monitoring ? @"停止监控" : @"开始监控";
+    NSString *monitorTitle = monitoring ? @"监控设置" : (self.monitor.deviceName.length && self.monitor.accountName.length ? @"修改监控" : @"开始监控");
+    [self.monitorButton setTitle:monitorTitle forState:UIControlStateNormal];
+    self.monitorButton.accessibilityLabel = monitoring ? @"打开账号监控设置" : monitorTitle;
     self.monitorButton.selected = monitoring;
     self.monitorLabel.text = self.monitor.status.length ? self.monitor.status : @"未开启监控";
     [self layoutControls];
