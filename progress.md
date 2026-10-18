@@ -360,6 +360,10 @@
 
 2026-10-17 DEB source handoff: added docs/handoff/04-DEB插件源码说明.md and scripts/package-deb-source.py. Created 101-file 福煋DEB插件源码-最新版.zip (25,102,132 bytes, SHA256 a028974c22e0ac06f0ef2c58b290ed11013edcf23e406885606b8fe2c21857bd); updated full 197-file source handoff (141,394,636 bytes, SHA256 1150911f71e6786e8084ff4f64ef3da742b15070148a3b284edbd8f1db240f47). ZIP CRC, required entries and per-file hashes pass; Python packaging/build verifier syntax passes.
 # 2026-10-18 private source upload
+- Completed: d43cbf7 uploaded to main and codex/mobile-loop-lan-ui through authenticated GitHub APIs. Verified 185 paths/modes/blob hashes, private visibility and default main; audit saved locally in .build/github-source-upload-result.json.
+- Source checks: 31 Python files parse; staged diff whitespace check passes; credential pattern scan found no credential values; compiled outputs and private local config excluded. No new build or phone runtime test was performed for this upload task.
+- Added current source/build handoff entry, corrected README local links, and inherited the existing monitor secret in the combined Windows/phone workflow.
+- Routine check corrections: removed trailing blank lines flagged by git diff; PyYAML was unavailable, so no YAML-parser result is claimed. First API helper request used an invalid trailing slash; corrected endpoint before successful upload.
 - Confirmed authenticated account and changed the existing applelive repository to PRIVATE.
 - Reviewing the full working-tree source snapshot before staging. No cleanup/reset or build requested.
 - Initial Git fetch timed out; repository metadata through gh remains reachable.

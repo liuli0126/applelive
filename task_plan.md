@@ -3,8 +3,9 @@
 ## Current task: private GitHub source handoff (2026-10-18)
 - [x] Confirm account/repository and change liuli0126/applelive to PRIVATE as requested.
 - [x] Include current desktop, native OBS, mobile dylib/DEB sources, assets, tests and build documentation; exclude local deliveries and credentials.
-- [ ] Commit and upload the source snapshot, then verify default branch, source tree and private visibility remotely.
-- Network observation: initial Git HTTPS fetch timed out; GitHub CLI repository requests work. Diagnose before retrying transport.
+- [x] Commit and upload the source snapshot, then verify default branch, source tree and private visibility remotely.
+- Complete: source commit d43cbf7 uploaded to main and codex/mobile-loop-lan-ui. All 185 remote file paths, modes and Git blob hashes match the local tree; PRIVATE and default main confirmed.
+- Transport: Git HTTPS and an independent GitHub website probe timed out. Authenticated GitHub Git Data API succeeded with exact tree/commit hashes and non-forced branch updates.
 
 ## Goal
 在越狱 iPhone 上提供一个可注入直播 App 的虚拟摄像头/麦克风源，接收 Windows 电脑采集的画面和声音；支持局域网直连，并为 USB 端口转发保留同一协议入口。

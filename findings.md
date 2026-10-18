@@ -230,6 +230,9 @@ Phase43 results: desktop native shutdown fix only; phone dylib, media codec para
 
 2026-10-17 DEB handoff scope: standalone rootless injector, full rootless injector+UVC service, and legacy rootless/rootful tweak sources are all in the dedicated package. The current phone UVC service binary in obs-plugin/phone-plugin is not paired with the current dylib according to verify-uvc-service.py, so the source handoff deliberately documents rebuilding the service with the same dylib rather than presenting that stale binary as a verified current installer.
 # 2026-10-18 private source upload
+- Verified main contains the complete 185-file source tree at d43cbf7, including the current phone monitor and previously uncommitted desktop fixes. Both main and the active development branch were fast-forwarded; existing history retained.
+- Windows reusable build now passes repository secrets to the phone workflow with `secrets: inherit`; the mobile endpoint remains in the existing Actions Secret and outside Git source.
+- GitHub Git Data API reproduced the exact local tree and commit hashes, providing a working upload route while github.com Git HTTPS was unreachable.
 - Existing repository liuli0126/applelive owns the requested name; GitHub CLI confirmed PRIVATE after the authorized visibility change.
 - Current branch codex/mobile-loop-lan-ui includes phone monitor changes. Desktop launcher, startup, shutdown and branding work remains uncommitted and must be included from the working tree.
 - Exclude local work/delivery folders, generated libraries/installers and ALMonitorConfig.h. Keep source assets and media test fixtures.
