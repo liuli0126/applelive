@@ -177,3 +177,59 @@ USB 不是 iOS tweak 自己“看到”的串口。电脑端需要 `usbmuxd`/`py
 - The read-only inventory queries IOUSBHostDevice; pinned libusb Darwin queries IOUSBDevice. This is a diagnostic coverage gap, not evidence that changing the backend class fixes this phone: neither class's actual device tree is available yet. Upstream UVCDisplay uses the same combination, so its README does not resolve this device's enumeration failure.
 - User confirms the pictured powered adapter carries audio/video and identifies the camera brand as Logitech. The phrase "other device interface" is not an identified protocol; no working App name or camera model was supplied. Logitech USB webcams often expose UVC, so do not infer MFi or a proprietary driver solely from that reply. Focus on software discovery and preserve the existing physical setup.
 - Pinned libuvc's discovery silently skips devices when configuration/device descriptors cannot be read, then returns an empty success list. Current wrapper turns that into a generic no-device error, losing the distinction between no USB nodes and descriptor access failures. The next service update must expose raw USB descriptors/errors and both IOKit matching classes before interpreting UVC results.
+- Sileo rejected its cached local 0.1.1 deb import with "Unsupported file"; the xz package payload was valid, but local direct import appears more fragile than prior user flows. Repacked the identical 0.1.1 payload as a gzip deb: control.tar.gz/data.tar.gz, SHA256 f6c3bd6cd3533d94692176cf22c940c90f2aacfb6684d1af502ea97f95c50433. The package members, scripts, service binaries, setup app, launchd plist and embedded dylib bytes match the original. The flat APT source was regenerated with the new hash and remains a fallback. Automatic approval previously blocked our LAN launch without a specific reason.
+
+## 2026-10-06 remote portable OBS readiness
+- Screenshot a9168e3f8266ac642318c0f63bf98b9f.jpg shows dock v0.4.3 loaded in OBS30.2.3 modified portable mode, USB selected, and the translated OBS WebSocket 207 message. This establishes a responding dock and unavailable stream control, not a failed phone connection.
+- DockServer.status currently gates readiness on GetStreamStatus. Handler wraps even native USB start/stop in OBSClient, and app.js disables both buttons on that shared state. Native USB actually has an independent localhost control endpoint; this dependency is unnecessary and reproducible without the other computer. The underlying remote OBS 207 cause remains unverified without its log.
+- v0.4.4 verified with unavailable WebSocket/207 fixtures, real native H264/AAC encoding, moved Chinese path and isolated account directories. The bundled executable starts with no Python in PATH and can handle native USB commands while WebSocket is disabled. The full customer RAR is updated; remote hardware acceptance remains user-run.
+
+## 2026-10-11 WeChat Channels USB audio report
+- User reports USB video works in WeChat Channels but no sound; current WeChat internal-recording setting and viewer-side result have not yet been supplied.
+- Current source ALDefaultControls sets audio to NO. ALLoadAppControls/ALSaveAndPublishControls use each host App's standardUserDefaults, so Douyin audio settings do not automatically enable WeChat's injection.
+- Native USB uses ffmpeg_aac with mixer index 0 (OBS track 1). Phone pushes decoded PCM to separate capture-delegate and AudioUnit rings. The panel audio label only uses lastAudioTime < 2 seconds; it confirms received PCM, not consumption by WeChat's capture path or viewer audibility.
+- ALAudioUnitBridge handles RemoteIO/VoiceProcessingIO via AudioUnitRender bus1 and caches input formats after initialize/set-property. It does not hook AudioQueue input. Its render replacement currently preserves all original render flags, including any OutputIsSilence flag. These are audit observations, not proof of this user's cause; do not assert WeChat uses an unobserved path.
+- First check WeChat's own internal-recording switch and panel audio status with a viewer-side listening test; no source/binary or live OBS changes were made in this diagnostic turn. Hindsight tools were not exposed in this session.
+
+## 2026-10-11 live OBS audio routing identified
+- User clarified Douyin is now also silent. Read-only live inspection shows OBS PID43424 running from D:\OBS定制款\OBS定制款\obs studio; its HTTP dock reports AppleLive0.4.1, not the delivered0.4.4. Sender commands capture HD Camera video and CABLE Output (VB-Audio Virtual Cable) PCM with DirectShow.
+- Active profile is AppData\Roaming\obs-studio\basic\profiles\未命名. Its monitoring device is 耳机 (High Definition Audio Device). Actual OBS log confirms that device and logs audio_monitor_init_wasapi: Failed to get device:80070490 when monitor-and-output was enabled for 媒体源.
+- Read-only WebSocket inspection: media source unmuted, volume1.0, all tracks enabled, monitoring MONITOR_AND_OUTPUT. The old USB sender listens to the virtual cable rather than this headphone endpoint. A2-second capture of CABLE Output in memory produced192096 float samples, peak0.00005736/RMS0.00001441 (near-silence); no audio recording was retained.
+- Immediate repair for this currently running legacy setup is select CABLE Input (VB-Audio Virtual Cable) as OBS monitoring output and apply, retaining monitor-and-output on the media source. Native0.4.4 avoids this virtual-cable dependency, but the user is not currently running that helper. No OBS settings or phone binaries were changed during inspection.
+
+## 2026-10-11 legacy USB silence recovered after monitor reinitialization
+- User still heard silence after choosing CABLE Input. Live GetProfileParameter confirmed the new cable endpoint; OBS InputVolumeMeters measured media peak0.34598 while simultaneous CABLE Output capture remained near-silent (peak0.000057, RMS0.000014). Media was playing, unmuted, all tracks enabled, monitor-and-output selected.
+- Reinitialized only the currently monitored media source via SetInputAudioMonitorType NONE then restored its original MONITOR_AND_OUTPUT in a finally block. No OBS restart, source media change, driver change or phone installation.
+- Immediately after reinitialization, CABLE Output 3-second capture measured peak0.48123/RMS0.072561 across288288 float samples, establishing restored audio at the legacy USB sender's capture endpoint. All cable Windows endpoints report OK. Temporary samples existed only in memory.
+- Actual live-audience audibility still requires user confirmation. The current old0.4.1 sender remains connected to the phone; native0.4.4 avoids this monitoring-device dependency.
+- Final dock snapshot after the measurement reports running=true but usb_clients=0 and no error; the phone is no longer attached to the sender at that instant. User must reconnect USB in the phone panel before checking viewer audio.
+
+## 2026-10-11 USB choppy audio cadence
+- Current old0.4.1 uses DirectShow without audio_buffer_size. Seven-second live capture delivered audio in half-second bursts: maximum516.71ms,14 gaps above200ms. The phone ALAudioRing stores at most9600 frames (200ms at48kHz), so this exceeds its capacity even before USB scheduling.
+- Same device with audio_buffer_size20 and flush_packets1: maximum33.26ms, no gaps over100ms, continuous nonzero audio. Timing/frame-count evidence is stored in .build/audio-cadence-current.json and .build/audio-cadence-low_latency.json; no audio contents retained.
+- Fix the desktop capture cadence while retaining the existing PCM format, ring capacity and source settings. Do not infer multiple senders from the two PyInstaller parent/child processes.
+
+### 2026-10-11 — customer startup distribution discrepancy
+- Delivered extracted folder still has older launcher invoking elevated embedded updater, FirstRun=true, a non-AppleLive browser dock, and operator profile; it differs from the staged0.4.4 ZIP.
+- Existing verification invokes PowerShell updater directly and helper separately; does not exercise the real end-user entry or actual OBS UI startup.
+- Shell-to-Python here-strings need explicit UTF-8 OutputEncoding for Chinese paths. Initial read failed before changes.
+
+### Startup source findings
+- OBS30.2.3 General.FirstRun=false means setup has NOT been completed; with no LastVersion it launches the auto-configuration wizard. Fresh packages must set FirstRun=true.
+- ExtraBrowserDocks alone creates hidden docks. Without DockState, OBS resets layout and hides extra browser docks. Add a verified visible right-hand dock layout for first use.
+- Development-only build retries: Git HTTPS reset; subprocess JSON decoded as GBK; nested here-string parse failed before edits; PyInstaller icon needed absolute path relative to spec. Corrected without changing running user OBS.
+
+### 2026-10-12 crash investigation
+Both Oct12 crashes end during shutdown after AppleLive USB stopping; same pthread fault offset0x5277. Native unload stops output after obs_shutdown has already stopped video/audio. Inspect early frontend shutdown callback. OBS30.2.3 obs.c fetched from official source, next GitHub raw download reset10054; using GitHub API instead.
+
+Confirmed root cause: export mapping identifies crash as audio_output_disconnect +0xd7 -> pthread_mutex_unlock +0x27; main thread is obs_module_unload -> obs_output_release. OBS30.2.3 obs_shutdown calls stop_audio (audio_output_close) BEFORE free_module. Isolated real-libobs baseline with active USB shutdown reproduced 0xC0000005 (-1073741819), saved .build/obs-shutdown-regression/before.log. Fix uses frontend SCRIPTING_SHUTDOWN/EXIT plus registered output free_type_data fallback before media teardown; reject new commands once shutdown begins.
+
+Phase43 results: desktop native shutdown fix only; phone dylib, media codec parameters, customer scenes and settings not changed. Existing stable transport test passes 3 sessions x65 frames with >=101 audio records each,25 restarts; GUI early callback executes before scene cleanup and module unloading, exactly once. Updated delivery folder/ZIP, live ready confirmed. Long-duration physical-phone use remains a user acceptance check; this fix is supported for the two captured shutdown-crash signatures, not a claim that all future crash causes are impossible.
+
+2026-10-13 handoff: sources must be copied from current working tree, not git HEAD; important launcher/icon/crash fix files are uncommitted. Phone relink archived source has78 byte-exact plus9 newline-only matches; only build-uvc-service.sh has local optional packaging changes. Latest DLL/phone hashes confirmed against delivery and runtime ZIP. Cleanup permissions blocked all execution/writing destructive script attempts; do not claim reclaimed space.
+
+2026-10-17 DEB handoff scope: standalone rootless injector, full rootless injector+UVC service, and legacy rootless/rootful tweak sources are all in the dedicated package. The current phone UVC service binary in obs-plugin/phone-plugin is not paired with the current dylib according to verify-uvc-service.py, so the source handoff deliberately documents rebuilding the service with the same dylib rather than presenting that stale binary as a verified current installer.
+# 2026-10-18 private source upload
+- Existing repository liuli0126/applelive owns the requested name; GitHub CLI confirmed PRIVATE after the authorized visibility change.
+- Current branch codex/mobile-loop-lan-ui includes phone monitor changes. Desktop launcher, startup, shutdown and branding work remains uncommitted and must be included from the working tree.
+- Exclude local work/delivery folders, generated libraries/installers and ALMonitorConfig.h. Keep source assets and media test fixtures.

@@ -58,6 +58,32 @@ std::mutex g_mutex;
 obs_output_t *g_active = nullptr;
 std::atomic<bool> g_control_stop{false};
 std::thread g_control_thread;
+std::atomic<bool> g_shutdown{false};
+bool g_frontend_exiting = false;
+using FrontendCallback = void (*)(int, void *);
+using FrontendEventRegistration = void (*)(FrontendCallback, void *);
+FrontendEventRegistration g_remove_frontend_callback = nullptr;
+
+// OBS 30.2.3 obs-frontend-api.h; dynamically resolved so libobs-only hosts
+// can still use this output without loading the Qt frontend.
+constexpr int kFrontendExit = 17;
+constexpr int kFrontendScriptingShutdown = 36;
+void shutdown_native();
+
+void frontend_event(int event, void *)
+{
+    if (event == kFrontendScriptingShutdown || event == kFrontendExit) {
+        g_frontend_exiting = true;
+        shutdown_native();
+    }
+}
+
+void free_output_type(void *)
+{
+    // libobs calls this before stop_audio()/module unload. It is also the
+    // early shutdown path for hosts with no frontend event API.
+    shutdown_native();
+}
 
 void log(const char *level, const std::string &message)
 {
@@ -438,6 +464,8 @@ obs_output_info output_info()
     info.start = output_start;
     info.stop = output_stop;
     info.encoded_packet = output_packet;
+    info.type_data = &g_shutdown;
+    info.free_type_data = free_output_type;
     info.encoded_video_codecs = "h264";
     info.encoded_audio_codecs = "aac";
     return info;
@@ -477,6 +505,10 @@ void control_loop()
         int received = recv(client, command, sizeof(command) - 1, 0);
         std::string value(command, received > 0 ? received : 0);
         std::lock_guard lock(g_mutex);
+        if (g_shutdown.load()) {
+            send_control_response(client, "stopping\n");
+            continue;
+        }
         if (value.rfind("start", 0) == 0) {
             if (!g_active) {
                 obs_data_t *settings = obs_data_create();
@@ -505,6 +537,25 @@ void control_loop()
     closesocket(listener);
 }
 
+void shutdown_native()
+{
+    if (g_shutdown.exchange(true)) return;
+    g_control_stop.store(true);
+    // Drain any command already in progress before touching g_active. The
+    // listener and partial-command receive both have bounded timeouts.
+    if (g_control_thread.joinable()) g_control_thread.join();
+    std::lock_guard lock(g_mutex);
+    if (g_active) {
+        obs_output_t *output = g_active;
+        g_active = nullptr;
+        obs_output_stop(output);
+        // libobs waits for its end_data_capture thread here. Audio/video
+        // must still be alive until that thread has disconnected encoders.
+        obs_output_release(output);
+    }
+    log("I", "native USB shutdown complete before OBS media teardown");
+}
+
 } // namespace
 
 bool obs_module_load(void)
@@ -513,22 +564,29 @@ bool obs_module_load(void)
     if (const char *port = std::getenv("APPLELIVE_TEST_CONTROL_PORT")) kControlPort = static_cast<unsigned short>(std::atoi(port));
     WSADATA data{};
     if (WSAStartup(MAKEWORD(2, 2), &data) != 0) return false;
+    g_shutdown.store(false);
+    g_frontend_exiting = false;
     obs_register_output(&kOutputInfo);
+    if (HMODULE frontend = GetModuleHandleW(L"obs-frontend-api.dll")) {
+        auto add = reinterpret_cast<FrontendEventRegistration>(
+            GetProcAddress(frontend, "obs_frontend_add_event_callback"));
+        g_remove_frontend_callback = reinterpret_cast<FrontendEventRegistration>(
+            GetProcAddress(frontend, "obs_frontend_remove_event_callback"));
+        if (add && g_remove_frontend_callback) add(frontend_event, nullptr);
+    }
     g_control_stop.store(false);
     g_control_thread = std::thread(control_loop);
-    blog(LOG_INFO, "[AppleLive] native USB output loaded on control port %u", kControlPort);
+    blog(LOG_INFO, "[AppleLive] native USB output loaded on control port %u (lifecycle fix 2026-10-12)", kControlPort);
     return true;
 }
 
 void obs_module_unload(void)
 {
-    g_control_stop.store(true);
-    if (g_control_thread.joinable()) g_control_thread.join();
-    std::lock_guard lock(g_mutex);
-    if (g_active) {
-        obs_output_stop(g_active);
-        obs_output_release(g_active);
-        g_active = nullptr;
-    }
+    // The normal frontend has already destroyed its callback registry after
+    // EXIT. Remove only when unload happens while that registry still exists.
+    if (g_remove_frontend_callback && !g_frontend_exiting)
+        g_remove_frontend_callback(frontend_event, nullptr);
+    g_remove_frontend_callback = nullptr;
+    shutdown_native();
     WSACleanup();
 }

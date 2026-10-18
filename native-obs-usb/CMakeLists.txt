@@ -48,3 +48,10 @@ install(TARGETS AppleLiveUsbRelay RUNTIME DESTINATION .)
 if(APPLELIVE_BUILD_OBS_OUTPUT)
   install(TARGETS applelive-native-output RUNTIME DESTINATION obs-plugins/64bit LIBRARY DESTINATION obs-plugins/64bit)
 endif()
+
+# Self-contained GUI bootstrap (static runtime); shared by every shipped entry.
+configure_file(src/applelive_launcher.rc.in ${CMAKE_CURRENT_BINARY_DIR}/applelive_launcher.rc @ONLY)
+add_executable(AppleLiveLauncher WIN32 src/applelive_launcher.cpp ${CMAKE_CURRENT_BINARY_DIR}/applelive_launcher.rc)
+target_compile_definitions(AppleLiveLauncher PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(AppleLiveLauncher PRIVATE /utf-8)
+target_link_libraries(AppleLiveLauncher PRIVATE ws2_32 shell32 user32)

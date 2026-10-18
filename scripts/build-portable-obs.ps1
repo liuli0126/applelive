@@ -19,7 +19,8 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$ObsRoot,
   [string]$Output = "",
-  [switch]$KeepStage
+  [switch]$KeepStage,
+  [switch]$SkipArchive
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,6 +30,8 @@ $pluginRoot = Join-Path $projectRoot 'obs-plugin'
 function Find-ObsLauncher([string]$root) {
   $bin = Join-Path $root 'bin\64bit'
   if (-not (Test-Path -LiteralPath $bin)) { return $null }
+  $hostExe = Join-Path $bin 'AppleLiveOBS.exe'
+  if ([IO.File]::Exists($hostExe)) { return [IO.Path]::GetFullPath($hostExe) }
   $standard = Join-Path $bin 'obs64.exe'
   if ([IO.File]::Exists($standard)) { return [IO.Path]::GetFullPath($standard) }
   $normal = Get-ChildItem -LiteralPath $bin -Filter '*.exe' -File -ErrorAction SilentlyContinue |
@@ -111,7 +114,7 @@ $launcher = Find-ObsLauncher $ObsRoot
 if (-not $launcher) {
   throw 'No obs64.exe or recognized OBS launcher was found.'
 }
-foreach ($required in @('AppleLiveDock.exe', 'AppleLiveSender.exe', 'AppleLiveUsbRelay.exe', 'applelive-native-output.dll', 'ffmpeg.exe', 'server\mediamtx.exe', 'phone-plugin\AppleLive.dylib')) {
+foreach ($required in @('AppleLiveLauncher.exe', 'AppleLiveDock.exe', 'AppleLiveSender.exe', 'AppleLiveUsbRelay.exe', 'applelive-native-output.dll', 'ffmpeg.exe', 'server\mediamtx.exe', 'phone-plugin\AppleLive.dylib')) {
   if (-not (Test-Path -LiteralPath (Join-Path $pluginRoot $required))) {
     throw "AppleLive package is missing $required"
   }
@@ -121,7 +124,7 @@ $buildRoot = Join-Path $projectRoot '.build\portable-obs'
 New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
 $id = [Guid]::NewGuid().ToString('N')
 $stageRoot = Join-Path $buildRoot $id
-$stage = Join-Path $stageRoot 'AppleLive OBS'
+$stage = Join-Path $stageRoot '福煋OBS'
 Copy-Tree $ObsRoot $stage
 Copy-AppleLive $stage
 
@@ -134,25 +137,25 @@ $profile = Join-Path $config 'basic\profiles\AppleLive'
 New-Item -ItemType Directory -Path $scenes, $profile -Force | Out-Null
 $utf8 = New-Object Text.UTF8Encoding($false)
 $scene = [ordered]@{
-  name = 'AppleLive'; current_scene = 'Scene'; current_program_scene = 'Scene'
-  scene_order = @(@{name='Scene'})
-  sources = @(@{name='Scene'; id='scene'; versioned_id='scene'; settings=@{id_counter=0;items=@()}; enabled=$true; volume=1.0; mixers=0})
+  name = '福煋OBS'; current_scene = '场景'; current_program_scene = '场景'
+  scene_order = @(@{name='场景'})
+  sources = @(@{name='场景'; id='scene'; versioned_id='scene'; settings=@{id_counter=0;items=@()}; enabled=$true; volume=1.0; mixers=0})
   modules = @{}
 }
 [IO.File]::WriteAllText((Join-Path $scenes 'AppleLive.json'), (ConvertTo-Json $scene -Depth 10), $utf8)
 $globalIni = @'
 [General]
 Language=zh-CN
-FirstRun=false
+FirstRun=true
 [Basic]
-Profile=AppleLive
+Profile=福煋OBS
 ProfileDir=AppleLive
-SceneCollection=AppleLive
+SceneCollection=福煋OBS
 SceneCollectionFile=AppleLive
 '@
 $profileIni = @'
 [General]
-Name=AppleLive
+Name=福煋OBS
 [Video]
 BaseCX=1920
 BaseCY=1080
@@ -186,29 +189,41 @@ $websocket = ConvertFrom-Json ([IO.File]::ReadAllText($websocketPath))
 $websocket.server_password = ''
 [IO.File]::WriteAllText($websocketPath, (ConvertTo-Json $websocket), $utf8)
 
-$launcherScript = @'
-@echo off
-setlocal
-title AppleLive OBS
-set "ROOT=%~dp0"
-set "UPDATER=%ROOT%data\obs-plugins\AppleLive\install_or_update.ps1"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%UPDATER%" -ObsRoot "%ROOT%." -Embedded
-exit /b %ERRORLEVEL%
-'@
-[IO.File]::WriteAllText((Join-Path $stage 'AppleLive-Launcher.cmd'), $launcherScript, (New-Object Text.UTF8Encoding($false)))
-
+# Every customer-facing entry prepares this package, including old bin shortcuts.
+$bin = Join-Path $stage 'bin\64bit'
+$stageObs = Find-ObsLauncher $stage
+$hostExe = Join-Path $bin 'AppleLiveOBS.exe'
+if (-not $stageObs.Equals($hostExe, [StringComparison]::OrdinalIgnoreCase)) {
+  Copy-Item -LiteralPath $stageObs -Destination $hostExe -Force
+}
+$aliases = @(Get-ChildItem -LiteralPath $bin -Filter '*.exe' -File | Where-Object {
+  $_.Name -ne 'AppleLiveOBS.exe' -and ($_.VersionInfo.ProductName -in @('OBS Studio', '福煋OBS') -or
+  ($_.Name -match '^(obs|AuxCam).*\.exe$' -and $_.Name -notmatch '(?i)(test|browser|ffmpeg|nvenc|qsv)'))
+} | Select-Object -ExpandProperty FullName)
+$aliases += (Join-Path $bin 'obs64.exe')
+foreach ($alias in $aliases | Select-Object -Unique) {
+  Copy-Item -LiteralPath (Join-Path $pluginRoot 'AppleLiveLauncher.exe') -Destination $alias -Force
+}
+Copy-Item -LiteralPath (Join-Path $pluginRoot 'AppleLiveLauncher.exe') -Destination (Join-Path $stage '福煋OBS.exe') -Force
+foreach ($staleEntry in @('AppleLive-Launcher.cmd', 'AppleLive-README.txt')) {
+  Remove-Item -LiteralPath (Join-Path $stage $staleEntry) -Force -ErrorAction SilentlyContinue
+}
 $usage = @'
-AppleLive OBS portable package
+福煋OBS 0.4.5
 
-1. Keep the folder structure intact and run AppleLive-Launcher.cmd.
-2. In the AppleLive dock choose LAN or USB.
-3. LAN uses the RTMP/RTSP addresses shown in the dock. USB uses Prepare USB Direct, then USB Direct on the phone; the native OBS output and usbmux relay start automatically.
-4. Allow Windows Firewall and trust the iPhone when prompted.
+1. 将整个压缩包解压到电脑本地文件夹。
+2. 双击“福煋OBS.exe”。停靠面板会随 OBS 打开，所需配置自动完成。
+3. 在 OBS 添加画面和声音来源。
+4. USB：安装苹果设备驱动，手机插线并信任电脑；电脑点“准备 USB 直连”，手机的福煋推流插件选 USB 并连接。
+5. 局域网：电脑选择局域网，点“获取推流码”后开播，手机填写面板上的拉流地址。
 
-The package embeds the AppleLive dock, sender, MediaMTX, phone dylib and OBS configuration. Users do not need to replace plugin files manually.
-USB requires Apple's Mobile Device driver (Apple Devices/iTunes). No virtual camera or virtual audio driver is required. Driver installers are not included.
+整个文件夹可以搬到其他目录，仍从“福煋OBS.exe”打开。
+再次打开会保留你的场景与素材配置。手机插件可在电脑面板中下载。
+USB 直连无需点击 OBS 开始直播。发生错误时，将 config\applelive-startup.log 发给我们。
 '@
-[IO.File]::WriteAllText((Join-Path $stage 'AppleLive-README.txt'), $usage, (New-Object Text.UTF8Encoding($false)))
+[IO.File]::WriteAllText((Join-Path $stage '使用说明.txt'), $usage, (New-Object Text.UTF8Encoding($true)))
+[IO.File]::WriteAllText((Join-Path $buildRoot 'latest-stage.txt'), $stage, $utf8)
+if ($SkipArchive) { Write-Host "Prepared portable OBS: $stage"; exit 0 }
 
 if (-not $Output) {
   $Output = Join-Path $projectRoot 'artifacts\AppleLive-OBS-Portable.zip'

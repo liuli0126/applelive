@@ -1,4 +1,4 @@
-<#!
+﻿<#!
 .SYNOPSIS
   Build the native AppleLive OBS output and usbmux relay against an existing OBS tree.
 
@@ -55,7 +55,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Failed to generate obs.lib' }
 $relayBuild = Join-Path $projectRoot '.build\native-relay'
 cmake -S (Join-Path $projectRoot 'native-obs-usb') -B $relayBuild -G 'Visual Studio 17 2022' -A x64 -DAPPLELIVE_BUILD_OBS_OUTPUT=OFF
 if ($LASTEXITCODE -ne 0) { throw 'Relay CMake configure failed' }
-cmake --build $relayBuild --config $Configuration --target AppleLiveUsbRelay -- /m:2
+cmake --build $relayBuild --config $Configuration --target AppleLiveUsbRelay AppleLiveLauncher -- /m:2
 if ($LASTEXITCODE -ne 0) { throw 'Relay build failed' }
 
 cmake -S (Join-Path $projectRoot 'native-obs-usb') -B $buildRoot -G 'Visual Studio 17 2022' -A x64 `
@@ -65,6 +65,7 @@ cmake --build $buildRoot --config $Configuration --target applelive-native-outpu
 if ($LASTEXITCODE -ne 0) { throw 'Native output build failed' }
 
 $output = Join-Path $projectRoot 'obs-plugin'
+Copy-Item -LiteralPath (Join-Path $relayBuild "$Configuration\AppleLiveLauncher.exe") -Destination (Join-Path $output 'AppleLiveLauncher.exe') -Force
 Copy-Item -LiteralPath (Join-Path $relayBuild "$Configuration\AppleLiveUsbRelay.exe") -Destination (Join-Path $output 'AppleLiveUsbRelay.exe') -Force
 Copy-Item -LiteralPath (Join-Path $buildRoot "$Configuration\applelive-native-output.dll") -Destination (Join-Path $output 'applelive-native-output.dll') -Force
 Write-Host "Native AppleLive components copied to $output"

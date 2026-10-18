@@ -31,6 +31,7 @@ jobs:
   build-phone-plugin:
     if: ${{ !inputs.phone_run_id }}
     uses: ./.github/workflows/build-ios-injector.yml
+    secrets: inherit
   build-windows:
     needs: build-phone-plugin
     if: ${{ !cancelled() && (needs.build-phone-plugin.result == 'success' || inputs.phone_run_id != '') }}
@@ -52,6 +53,7 @@ jobs:
           python desktop_sender/protocol_test.py
           python desktop_sender/dock_test.py
           python desktop_sender/obs_websocket_test.py
+          node --test desktop_sender/dock_ui_test.js
           python desktop_sender/transport_test.py
           python desktop_sender/phone_plugin_test.py
           python desktop_sender/usb_direct_test.py

@@ -1,0 +1,53 @@
+{
+  "handoff_date": "2026-10-13",
+  "desktop_display_name": "福煋OBS",
+  "phone_display_name": "福煋推流插件",
+  "desktop_version": "0.4.5 + 2026-10-12 native shutdown hotfix",
+  "obs_abi": "30.2.3 x64",
+  "phone_cloud_run": "38126000459",
+  "phone_cloud_source_commit": "473bea9f8b0be94af1b4457101811e93261ad655",
+  "local_head": "2261fc6d3a7f1a93f10cbd1898cfb643571cb612",
+  "snapshot": "working tree including uncommitted fixes; not an export of HEAD",
+  "verification": {
+    "old_dll_active_shutdown_exit": -1073741819,
+    "fixed_stop_start_cycles": 25,
+    "reconnect_captures": 3,
+    "video_frames_per_capture": 65,
+    "gui_active_usb_close_exit": 0,
+    "gui_reconnect_poll_close_exit": 0,
+    "physical_phone_long_duration_retest": "pending"
+  },
+  "known_source_delta_from_phone_cloud_build": [
+    "scripts/build-uvc-service.sh: local optional service packaging changes; core phone implementation matches after line-ending normalization"
+  ],
+  "artifacts": {
+    "obs-plugin/applelive-native-output.dll": {
+      "sha256": "45d17cab187019e099ebf578713a0fb9a34435c1cd81425cc6d2bf1674d2e885",
+      "bytes": 177152
+    },
+    "obs-plugin/AppleLiveLauncher.exe": {
+      "sha256": "9ca1f6a694fd93eedcc5faf6a746376dc61c1fbdb1fd4c13f3d9d878ea398d25",
+      "bytes": 192512
+    },
+    "obs-plugin/AppleLiveDock.exe": {
+      "sha256": "c5bc41b33e8dadc1041f219524eec1b9b1ad17988fb9c232212d5e4e906e7e94",
+      "bytes": 16169534
+    },
+    "obs-plugin/AppleLiveUsbRelay.exe": {
+      "sha256": "eda5e2256814fddfba549308e72bca7a6026c3ad873a7f711d1d8517b37ecdd0",
+      "bytes": 317440
+    },
+    "obs-plugin/phone-plugin/AppleLive.dylib": {
+      "sha256": "e97fef0ee2f1ea3275db43366c5ad1fbbe8d09ed9c46d89e142585fbd6fea4b5",
+      "bytes": 10753296
+    },
+    "obs-plugin/phone-plugin/AppleLive-relink.tar.gz": {
+      "sha256": "80d98278500bf2986341d03770e038f940632ce3b540e99665047ef92b53d75f",
+      "bytes": 24248565
+    },
+    "交付文件/福煋OBS.zip": {
+      "sha256": "ff14bab74ca0ac2fcc0c6e4133b07b49b401a2520160d2ae08553f034a09346b",
+      "bytes": 436811234
+    }
+  }
+}

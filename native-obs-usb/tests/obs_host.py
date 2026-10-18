@@ -3,6 +3,7 @@
 Usage: python native-obs-usb/tests/obs_host.py OBS_ROOT OUTPUT_DIRECTORY
 The second directory receives exact ALUSB frames for the macOS decoder test.
 """
+import argparse
 import ctypes as C
 import os
 from pathlib import Path
@@ -13,7 +14,15 @@ import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
-obsroot, dest = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("obsroot", type=Path)
+parser.add_argument("dest", type=Path)
+parser.add_argument("--output-dll", type=Path, default=ROOT / "obs-plugin/applelive-native-output.dll")
+parser.add_argument("--shutdown-active", action="store_true")
+parser.add_argument("--stop-cycles", type=int, default=1)
+args = parser.parse_args()
+obsroot, dest = args.obsroot.resolve(), args.dest.resolve()
+output_dll = args.output_dll.resolve()
 dest.mkdir(parents=True, exist_ok=True)
 binpath = obsroot / "bin/64bit"
 dllpath = os.add_dll_directory(str(binpath))
@@ -128,7 +137,7 @@ video = Video(b"libobs-d3d11.dll", 30, 1, 640, 360, 640, 360, 2, 0, True, 2, 1, 
 assert api("obs_reset_video", C.c_int, C.POINTER(Video))(C.byref(video)) == 0
 load("obs-x264")
 load("obs-ffmpeg")
-load("applelive-native-output", ROOT / "obs-plugin/applelive-native-output.dll")
+load("applelive-native-output", output_dll)
 settings = api("obs_data_create", P)()
 api("obs_data_set_string", None, P, S, S)(settings, b"local_file", str(ROOT / "ios-injector/tests/fixture.mp4").encode())
 for key in (b"is_local_file", b"looping"):
@@ -148,11 +157,20 @@ try:
     assert len(captures) == 3, captures
     assert command("stop") == b"ok"
     assert command("status") == b"stopped"
-    assert command("start") == b"ok", "restart failed"
-    assert command("stop") == b"ok"
+    for cycle in range(args.stop_cycles):
+        assert command("start") == b"ok", f"restart {cycle} failed"
+        time.sleep(.06)
+        assert command("stop") == b"ok"
+    if args.shutdown_active:
+        assert command("start") == b"ok"
+        time.sleep(.2)
+        assert command("status") == b"running"
+        print("Closing libobs while USB encoding is active", flush=True)
 finally:
     listener.close()
     api("obs_set_output_source", None, U, P)(0, None)
     api("obs_source_release", None, P)(source)
+    started_shutdown = time.monotonic()
     api("obs_shutdown", None)()
+    assert time.monotonic() - started_shutdown < 8, "USB shutdown stalled"
 print("PASS real OBS encoding, fragmented greeting, reconnect, start/stop:", captures)

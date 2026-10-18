@@ -17,3 +17,26 @@ obs-plugin/applelive-*.flag
 obs-plugin/applelive-*.log
 obs-plugin/applelive-*.tmp
 ios-injector/ALMonitorConfig.h
+
+# Local work, deliveries and editor settings
+/work/
+/交付文件/
+/.vscode/
+
+# Compiled outputs and archives (keep source assets and test fixtures)
+*.dylib
+*.exe
+*.dll
+*.ipa
+*.zip
+*.rar
+*.7z
+
+# Local credentials and signing material
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.mobileprovision
+*.key

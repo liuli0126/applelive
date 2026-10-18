@@ -227,12 +227,15 @@ def audio_command(args: argparse.Namespace) -> list[str] | None:
             "-i", args.input_url, "-map", "0:a:0",
         ]
     elif args.audio_device:
-        command += ["-f", "dshow", "-i", f"audio={args.audio_device}"]
+        # DirectShow may default to half-second batches. The phone keeps only
+        # 200 ms of PCM, so these bursts cause alternating overflow and silence.
+        command += ["-f", "dshow", "-audio_buffer_size", "20",
+                    "-i", f"audio={args.audio_device}"]
     else:
         return None
     command += [
         "-vn", "-ac", str(args.channels), "-ar", str(args.sample_rate),
-        "-f", "f32le", "pipe:1",
+        "-flush_packets", "1", "-f", "f32le", "pipe:1",
     ]
     return command
 

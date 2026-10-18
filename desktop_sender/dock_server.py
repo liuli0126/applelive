@@ -13,13 +13,13 @@ import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from obs_websocket import OBSClient, OBSConnectionError
 from phone_plugin import plugin_path
 from stream_server import RTMP_URL, StreamServer
 
-DESKTOP_VERSION = "0.4.3"
+DESKTOP_VERSION = "0.4.5"
 
 
 def _list_dshow_devices(ffmpeg: Path) -> list[tuple[str, str]]:
@@ -87,8 +87,8 @@ class USBSender:
         self.process = None
         self.native_process = None
         self.native_mode = False
-        self.native_control_port = 28766
-        self.native_relay_port = 28765
+        self.native_control_port = int(os.environ.get("APPLELIVE_TEST_CONTROL_PORT", "28766"))
+        self.native_relay_port = int(os.environ.get("APPLELIVE_TEST_RELAY_PORT", "28765"))
         self.input_url = ""
         self.width = 0
         self.height = 0
@@ -97,6 +97,15 @@ class USBSender:
     def native_available(self) -> bool:
         relay, output = self._native_paths()
         return relay.is_file() and output.is_file()
+
+    def control_state(self) -> dict:
+        """Probe the native endpoint, independently of OBS's streaming service."""
+        available = self.native_available()
+        response = self._native_command("status") if available else ""
+        ready = response in {"running", "stopped"}
+        return {"native_available": available, "ready": ready,
+                "control_error": "" if ready or not available else
+                "USB 原生模块未连接，请关闭本套 OBS 后通过福煋OBS.exe 重新打开"}
 
     def start(self, input_url: str, video_settings: dict | None = None) -> None:
         if self.process and self.process.poll() is None:
@@ -290,8 +299,8 @@ def validate_command(value: dict) -> dict:
                 raise ValueError("电脑局域网 IP 无效") from None
         else:
             host = "127.0.0.1"
-    elif host or mode:
-        raise ValueError("此操作不需要 IP")
+    elif host or mode not in {"", "lan", "usb"}:
+        raise ValueError("此操作不需要 IP，连接方式须为局域网或 USB")
     return {"action": value["action"], "host": host, "mode": mode}
 
 
@@ -366,6 +375,11 @@ class DockServer(ThreadingHTTPServer):
                 ready = True
         except OBSConnectionError as error:
             obs_error = str(error)
+        usb = self.usb_sender.status()
+        usb.update(self.usb_sender.control_state())
+        if not usb["native_available"]:
+            usb["ready"] = ready  # Legacy packages still use OBS's RTMP output.
+            usb["control_error"] = obs_error
         path = self.stream_server.path_status()
         return {"ready": ready, "bridge": bridge, "obs_error": obs_error,
                 "addresses": self.addresses, "token": self.token, "pending": False,
@@ -374,8 +388,64 @@ class DockServer(ThreadingHTTPServer):
                 "firewall_ready": self.firewall_access_enabled(),
                 "firewall_pending": self.firewall_pending, "firewall_error": self.firewall_error,
                 "stream_path": path,
-                "usb": self.usb_sender.status(),
+                "usb": usb,
                 "phone_plugin": {"available": plugin_path(self.directory).is_file()}}
+
+    def execute_command(self, command: dict) -> None:
+        action, mode = command["action"], command["mode"]
+        wants_usb = mode == "usb" or (not mode and self.native_stream_owned)
+        if wants_usb and (self.usb_sender.native_available() or self.native_stream_owned):
+            # Native USB does not need a streaming service, a WebSocket
+            # connection, or OBS's StartStream/StopStream requests.
+            if action == "stop_stream":
+                self.usb_sender.stop()
+                self.native_stream_owned = False
+            else:
+                if self.usb_stream_owned:
+                    with OBSClient(self.directory) as client:
+                        client.stop()
+                    self.usb_stream_owned = False
+                if not self.usb_sender.native_available():
+                    raise OSError("USB 原生组件缺失，请重新解压完整 AppleLive OBS 包")
+                self.usb_sender.start("")
+                self.native_stream_owned = True
+            return
+
+        with OBSClient(self.directory) as client:
+            if action == "configure_stream":
+                self.usb_sender.stop()
+                self.native_stream_owned = False
+                if mode == "usb":
+                    self.ensure_stream_server()
+                    client.configure("127.0.0.1")
+                    client.start()
+                    self.usb_stream_owned = True
+                    self.usb_sender.start(RTMP_URL, client.video_settings())
+                else:
+                    if self.usb_stream_owned:
+                        client.stop()
+                        self.usb_stream_owned = False
+                    client.configure(command["host"])
+                    self.ensure_stream_server()
+            elif action == "start_stream":
+                if not mode:
+                    mode = "usb" if self.usb_stream_owned else client.stream_state().get("stream_mode")
+                if mode == "usb":
+                    self.ensure_stream_server()
+                    if client.stream_state().get("stream_server") != "rtmp://127.0.0.1:1935/live":
+                        client.configure("127.0.0.1")
+                    client.start()
+                    self.usb_stream_owned = True
+                    self.usb_sender.start(RTMP_URL, client.video_settings())
+                else:
+                    self.ensure_stream_server()
+                    client.start()
+            elif action == "stop_stream":
+                self.usb_sender.stop()
+                client.stop()
+                self.usb_stream_owned = False
+                self.native_stream_owned = False
+                self.stop_stream_server()
 
     def request_firewall_access(self) -> None:
         if os.name != "nt":
@@ -414,7 +484,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         if filename:
-            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.send_header("Content-Disposition", f'attachment; filename="AppleLive.dylib"; filename*=UTF-8\'\'{quote(filename)}')
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'")
@@ -441,11 +511,12 @@ class Handler(BaseHTTPRequestHandler):
             except OSError:
                 self.json_reply(404, {"error": "手机插件文件缺失，请安装完整 OBS 插件包"})
                 return
-            self.reply(200, body, "application/octet-stream", "AppleLive.dylib")
+            self.reply(200, body, "application/octet-stream", "福煋推流插件.dylib")
             return
         files = {"/": ("index.html", "text/html; charset=utf-8"),
                  "/app.js": ("app.js", "text/javascript; charset=utf-8"),
-                 "/style.css": ("style.css", "text/css; charset=utf-8")}
+                 "/style.css": ("style.css", "text/css; charset=utf-8"),
+                 "/brand.png": ("brand.png", "image/png")}
         if self.path not in files:
             self.json_reply(404, {"error": "Not found"})
             return
@@ -482,64 +553,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.json_reply(400, {"error": "请选择这台电脑的局域网 IP"})
                 return
             try:
-                with OBSClient(self.server.directory) as client:
-                    if command["action"] == "configure_stream":
-                        self.server.usb_sender.stop()
-                        if command["mode"] == "usb":
-                            if self.server.usb_sender.native_available():
-                                # The native output owns OBS's encoded packet
-                                # path. It talks to the relay directly and
-                                # never starts the LAN RTMP stream.
-                                self.server.usb_sender.start("")
-                                self.server.native_stream_owned = True
-                                self.server.usb_stream_owned = False
-                            else:
-                                # Tested fallback for packages built before
-                                # the native OBS SDK is available.
-                                self.server.ensure_stream_server()
-                                client.configure("127.0.0.1")
-                                client.start()
-                                self.server.usb_stream_owned = True
-                                self.server.native_stream_owned = False
-                                self.server.usb_sender.start(RTMP_URL, client.video_settings())
-                        else:
-                            if self.server.usb_stream_owned:
-                                client.stop()
-                                self.server.usb_stream_owned = False
-                            if self.server.native_stream_owned:
-                                self.server.native_stream_owned = False
-                            client.configure(command["host"])
-                            self.server.ensure_stream_server()
-                    elif command["action"] == "start_stream":
-                        mode = client.stream_state().get("stream_mode")
-                        if ((self.server.usb_sender.process and self.server.usb_sender.process.poll() is None) or
-                                (self.server.usb_sender.native_process and self.server.usb_sender.native_process.poll() is None)):
-                            mode = "usb"
-                        if mode == "usb":
-                            if self.server.usb_sender.native_available():
-                                self.server.usb_sender.start("")
-                                self.server.native_stream_owned = True
-                            else:
-                                self.server.ensure_stream_server()
-                                if client.stream_state().get("stream_server") != "rtmp://127.0.0.1:1935/live":
-                                    client.configure("127.0.0.1")
-                                if not client.stream_state().get("stream_active"):
-                                    client.start()
-                                self.server.usb_stream_owned = True
-                                self.server.usb_sender.start(RTMP_URL, client.video_settings())
-                        else:
-                            self.server.ensure_stream_server()
-                            client.start()
-                    elif command["action"] == "stop_stream":
-                        self.server.usb_sender.stop()
-                        if self.server.usb_stream_owned:
-                            client.stop()
-                            self.server.usb_stream_owned = False
-                        elif self.server.native_stream_owned:
-                            self.server.native_stream_owned = False
-                        else:
-                            client.stop()
-                        self.server.stop_stream_server()
+                self.server.execute_command(command)
             except (OBSConnectionError, OSError, RuntimeError, ValueError) as error:
                 self.json_reply(503, {"error": str(error)})
                 return
@@ -579,7 +593,8 @@ def main():
         else:
             last_seen = started
             while time.time() - last_seen < 120:
-                if server.status()["ready"]:
+                state = server.status()
+                if state["ready"] or state["usb"]["ready"]:
                     last_seen = time.time()
                 time.sleep(2)
         server.shutdown()

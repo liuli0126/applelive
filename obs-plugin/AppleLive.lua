@@ -34,10 +34,10 @@ if directory:sub(-1) ~= "\\" and directory:sub(-1) ~= "/" then directory = direc
 local dock_started = false
 
 local function launch_dock()
-    if dock_started then return true end
+    if dock_started or os.getenv("APPLELIVE_DOCK_PRESTARTED") == "1" then return true end
     local path = directory:gsub("[/\\]+$", "")
     local command = '"' .. directory .. 'AppleLiveDock.exe" --directory "' .. path ..
-        '" --obs-pid ' .. (kernel and tonumber(kernel.GetCurrentProcessId()) or 0)
+        '" --port ' .. (tonumber(os.getenv("APPLELIVE_TEST_DOCK_PORT")) or 18765) .. ' --obs-pid ' .. (kernel and tonumber(kernel.GetCurrentProcessId()) or 0)
     if not kernel then
         local result = os.execute(command)
         if result then dock_started = true end
@@ -65,7 +65,7 @@ local function frontend_event(event)
     if event == obs.OBS_FRONTEND_EVENT_FINISHED_LOADING then launch_dock() end
 end
 
-function script_description() return "AppleLive：OBS 推本地 RTMP，iPhone 拉 RTSP。" end
+function script_description() return "福煋OBS：OBS 推本地 RTMP，iPhone 拉 RTSP。" end
 function script_properties()
     local props = obs.obs_properties_create()
     obs.obs_properties_add_text(props, "dock_url", "停靠窗口：http://127.0.0.1:18765/", obs.OBS_TEXT_INFO)

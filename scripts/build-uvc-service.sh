@@ -67,7 +67,7 @@ find "$package" -type d -exec chmod 755 '{}' \;
 find "$package" -type f -exec chmod 644 '{}' \;
 chmod 755 "$package/DEBIAN/postinst" "$package/DEBIAN/prerm" "$package/DEBIAN/postrm" \
   "$package/var/jb/usr/libexec/AppleLiveUVCHost" "$package/var/jb/Applications/AppleLiveUSB.app/AppleLiveUSB"
-dpkg-deb --root-owner-group --build "$package" injector-artifact/AppleLive-UVC-Service-rootless.deb
+dpkg-deb -Zgzip --root-owner-group --build "$package" injector-artifact/AppleLive-UVC-Service-rootless.deb
 mkdir -p relink/uvc-service
 cp -R "$root/objects" relink/uvc-service/
 cp ios-uvc-service/USBHost.entitlements relink/uvc-service/

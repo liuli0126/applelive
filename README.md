@@ -1,8 +1,10 @@
 # AppleLive 越狱虚拟摄像头
 
+> **当前源码交接（2026-10-18）**：电脑端福煋 OBS、手机端福煋推流插件（dylib / DEB）及构建脚本已整理到本仓库。请先阅读 [GitHub 源码目录与构建入口](docs/GITHUB_SOURCE.md)。以下保留早期链路说明；当前 USB 原生输出见 [native-obs-usb](native-obs-usb/README.md)，账号监控和现行目录以交接说明及源码为准。
+
 这是一个面向越狱 iPhone 的桌面画面/声音输入方案：Windows 端用 FFmpeg 采集桌面并编码为 H.264，iOS tweak 通过 WebSocket 接收，在 VideoToolbox 解码后替换相机帧；音频使用 float32 PCM ring buffer 替换音频采集帧。
 
-完整下载和环境准备清单见 [DOWNLOADS.md](E:\1\applelive\DOWNLOADS.md)。
+完整下载和环境准备清单见 [DOWNLOADS.md](DOWNLOADS.md)。
 
 ## 当前目录
 
@@ -43,9 +45,9 @@ make package FINALPACKAGE=1
 
 没有 Mac 时，可以把项目上传到 GitHub，运行 `.github/workflows/build-ios-tweak.yml`，从 Actions artifact 下载 rootless `.deb`。这个方式适合第一次构建；真实设备上的相机私有 API 调试仍需要反复安装和查看日志。
 
-没有 GitHub 账号时，使用 [WINDOWS_WSL_BUILD.md](E:\1\applelive\WINDOWS_WSL_BUILD.md) 在 Windows WSL2 Ubuntu 中本地编译。
+没有 GitHub 账号时，使用 [WINDOWS_WSL_BUILD.md](WINDOWS_WSL_BUILD.md) 在 Windows WSL2 Ubuntu 中本地编译。
 
-有 GitHub 账号时，直接按 [GITHUB_BUILD.md](E:\1\applelive\GITHUB_BUILD.md) 上传项目并运行 Actions，无需 Mac。
+有 GitHub 账号时，直接按 [GITHUB_BUILD.md](GITHUB_BUILD.md) 上传项目并运行 Actions，无需 Mac。
 
 ## iOS 13.3 / unc0ver
 

@@ -8,6 +8,7 @@ import unittest
 from unittest import mock
 
 from dock_server import DockServer, USBSender, local_addresses
+from obs_websocket import OBSConnectionError
 from phone_plugin import plugin_path
 
 
@@ -124,6 +125,54 @@ class DockTests(unittest.TestCase):
                 {"outputWidth": 1280, "outputHeight": 720, "fpsNumerator": 30, "fpsDenominator": 1},
             )
             media.assert_called_once_with()
+
+    def test_native_usb_works_with_unavailable_websocket(self):
+        for error in (OBSConnectionError("OBS WebSocket unavailable"),
+                      OBSConnectionError("OBS is not ready to perform the request.", 207)):
+            with self.subTest(error=str(error)), \
+                    mock.patch("dock_server.OBSClient", side_effect=error) as websocket, \
+                    mock.patch.object(self.server.usb_sender, "native_available", return_value=True), \
+                    mock.patch.object(self.server.usb_sender, "_native_command", return_value="stopped"), \
+                    mock.patch.object(self.server.usb_sender, "start") as start, \
+                    mock.patch.object(self.server.usb_sender, "stop") as stop, \
+                    mock.patch.object(self.server, "ensure_stream_server") as media:
+                state = self.server.status()
+                self.assertFalse(state["ready"])
+                self.assertTrue(state["usb"]["ready"])
+                self.assertEqual(state["usb"]["control_error"], "")
+                websocket.reset_mock()
+                for action in ("configure_stream", "stop_stream", "start_stream", "stop_stream"):
+                    code, body = self.request({"action": action, "mode": "usb"})
+                    self.assertEqual(code, 202, body)
+                self.assertEqual(start.call_count, 2)
+                self.assertEqual(stop.call_count, 2)
+                self.assertFalse(self.server.native_stream_owned)
+                websocket.assert_not_called()
+                media.assert_not_called()
+
+    def test_native_missing_endpoint_is_not_reported_ready(self):
+        with mock.patch.object(self.server.usb_sender, "native_available", return_value=True), \
+                mock.patch.object(self.server.usb_sender, "_native_command", return_value=""), \
+                mock.patch.object(self.server.usb_sender, "_start_native", return_value=False):
+            state = self.server.status()
+            self.assertTrue(state["ready"])  # LAN control still works.
+            self.assertFalse(state["usb"]["ready"])
+            self.assertIn("USB", state["usb"]["control_error"])
+            code, body = self.request({"action": "configure_stream", "mode": "usb"})
+            self.assertEqual(code, 503)
+            self.assertIn("USB", body["error"])
+            self.assertFalse(self.server.native_stream_owned)
+            self.assertFalse(self.obs.calls)
+
+    def test_native_control_does_not_hide_lan_failure(self):
+        error = OBSConnectionError("OBS is not ready to perform the request.", 207)
+        with mock.patch("dock_server.OBSClient", side_effect=error), \
+                mock.patch.object(self.server.usb_sender, "native_available", return_value=True), \
+                mock.patch.object(self.server.usb_sender, "start") as start:
+            code, body = self.request({"action": "start_stream", "mode": "lan"})
+            self.assertEqual(code, 503)
+            self.assertIn("not ready", body["error"])
+            start.assert_not_called()
 
     def test_status_and_phone_download(self):
         self.assertTrue(self.server.status()["ready"])

@@ -29,6 +29,8 @@ function Get-ObsExecutable([string]$root) {
   if (-not $root) { return $null }
   if ($root.StartsWith('\\?\')) { $root = $root.Substring(4) }
   $bin = Join-Path $root 'bin\64bit'
+  $hostExe = Join-Path $bin 'AppleLiveOBS.exe'
+  if ([IO.File]::Exists($hostExe)) { return [IO.Path]::GetFullPath($hostExe) }
   $standard = Join-Path $bin 'obs64.exe'
   if ([IO.File]::Exists($standard)) { return [IO.Path]::GetFullPath($standard) }
   if (-not (Test-Path -LiteralPath $bin)) { return $null }
@@ -186,10 +188,12 @@ function Register-AppleLiveDock([string]$root) {
   $value = Get-IniValue $path 'BasicWindow' 'ExtraBrowserDocks'
   $docks = @()
   $uuid = $null
+  $dockPort = if ($env:APPLELIVE_TEST_DOCK_PORT) { [int]$env:APPLELIVE_TEST_DOCK_PORT } else { 18765 }
+  $dockUrl = "http://127.0.0.1:$dockPort/"
   if ($value) {
     $parsedDocks = ConvertFrom-Json $value
     foreach ($dock in $parsedDocks) {
-      if ($dock.title -eq 'AppleLive' -or $dock.url -eq 'http://127.0.0.1:18765/') {
+      if ($dock.title -in @('AppleLive', '福煋OBS') -or $dock.url -eq $dockUrl -or $dock.url -eq 'http://127.0.0.1:18765/') {
         if (-not $uuid -and $dock.uuid) { $uuid = [string]$dock.uuid }
       } else {
         $docks += $dock
@@ -198,8 +202,8 @@ function Register-AppleLiveDock([string]$root) {
   }
   if (-not $uuid) { $uuid = [Guid]::NewGuid().ToString('N') }
   $docks += [pscustomobject][ordered]@{
-    title = 'AppleLive'
-    url = 'http://127.0.0.1:18765/'
+    title = '福煋OBS'
+    url = $dockUrl
     uuid = $uuid
   }
   $json = ConvertTo-Json -InputObject @($docks) -Compress
@@ -208,6 +212,20 @@ function Register-AppleLiveDock([string]$root) {
     Copy-Item -LiteralPath $path -Destination $backup
   }
   Set-IniValue $path 'BasicWindow' 'ExtraBrowserDocks' $json
+  # OBS hides extra browser docks when it resets an absent DockState. Seed a
+  # visible left-hand dock on first use; retain an existing customer layout.
+  $layout = Get-IniValue $path 'BasicWindow' 'DockState'
+  $layoutText = ''
+  if ($layout) {
+    try { $layoutText = [Text.Encoding]::BigEndianUnicode.GetString([Convert]::FromBase64String($layout)) } catch {}
+  }
+  if (-not $layoutText.Contains('福煋OBS_extraBrowser')) {
+    $template = Join-Path $PSScriptRoot 'dock\default-layout.txt'
+    if (Test-Path -LiteralPath $template) {
+      Set-IniValue $path 'BasicWindow' 'DockState' ([IO.File]::ReadAllText($template).Trim())
+    }
+  }
+
 }
 
 function Enable-ObsWebSocket([string]$root) {
@@ -221,6 +239,7 @@ function Enable-ObsWebSocket([string]$root) {
   }
   Set-JsonProperty $config 'server_enabled' $true
   Set-JsonProperty $config 'first_load' $false
+  if ($env:APPLELIVE_TEST_WEBSOCKET_PORT) { Set-JsonProperty $config 'server_port' ([int]$env:APPLELIVE_TEST_WEBSOCKET_PORT) }
   if (-not $config.PSObject.Properties['server_port']) { Set-JsonProperty $config 'server_port' 4455 }
   if (-not $config.PSObject.Properties['auth_required']) { Set-JsonProperty $config 'auth_required' $true }
   if ($config.auth_required -and -not $config.server_password) {
@@ -393,6 +412,9 @@ if (-not $Embedded) {
 
 Get-ChildItem -LiteralPath $target -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
 $resolvedConfigRoot = $ConfigRoot
+if ($Embedded) {
+  Set-IniValue (Join-Path $resolvedConfigRoot 'global.ini') 'General' 'FirstRun' 'true'
+}
 $registeredScenes = Register-AppleLiveScript $resolvedConfigRoot (Join-Path $target 'AppleLive.lua')
 Register-AppleLiveDock $resolvedConfigRoot
 Enable-ObsWebSocket $resolvedConfigRoot

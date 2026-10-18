@@ -2,12 +2,13 @@
 
 目标：用户自行完成越狱后，通过统一入口安装 AppleLive；插件自动选择适配模块，用户只操作连接、断开、画质和方向。
 
-## 当前实际能力（2026-10-01）
+## 当前实际能力（截至 2026-10-12）
 
 | 环境 | 当前状态 |
 |---|---|
 | iPhone 11 / iOS 13.3 / unc0ver + Substitute / rootful | 0.1.11 实机验证：OBS 视频替换、USB/LAN、连接/断开按钮；用户确认画面流畅 |
 | iPhone 11 / iOS 15.6 (19G71) / Dopamine rootless + ElleKit 1.2 | 0.1.12 安装通过，插件已加载；局域网地址配置与 App 画面正在验证 |
+| iPhone 11 / iOS 17.5.1 / Dopamine rootless / Sileo | 用户报告通过 Sileo 安装 `AppleLive-USB-WeChat-Dopamine-rootless.deb`，在抖音和微信中均实测 USB 直连画面替换正常；音频、UVC 摄像头直插和长时间稳定性未单独确认。包 SHA-256：`D2FA53A9BFF8375D3DA0A73F12F59048B0B9BF381AE26FDE835903EC9CF65BFC` |
 | 现代 rootless 包，部署目标 iOS 15.0 | arm64/arm64e 构建通过，其他设备尚未实测 |
 | iOS 14 rootful | 需要单独配置现代 arm64e 构建和实机验证 |
 | 其他机型、系统小版本、越狱注入环境 | 未验证，不能由上述结果推断支持 |

@@ -1,4 +1,12 @@
-# AppleLive OBS plugin (Windows desktop v0.4.2)
+# 福煋OBS 0.4.5
+
+## 整套 OBS 便携版
+
+完整解压后双击根目录的 `福煋OBS.exe`。启动器自动配置当前目录的脚本、WebSocket 和停靠面板，并先启动本地面板服务。旧的 bin/64bit OBS 入口同样会走自动配置。再次打开保留用户场景；重复双击只回到现有 OBS。电脑图标与手机悬浮图标使用同一份用户提供的品牌资源。手机端名称为“福煋推流插件”。
+
+Windows 需要安装苹果设备驱动；手机需信任电脑。USB 直连不依赖 OBS 开始直播。协议、设置键和媒体路径保留兼容。
+
+以下内容为插件单独安装与开发说明。
 
 LAN mode uses the bundled MediaMTX RTMP/RTSP server. USB mode uses the native OBS output DLL and the native usbmux relay, matching the reference architecture: OBS encoded packets -> bounded queue -> AppleLiveUsbRelay -> Apple Mobile Device Service -> iPhone. It does not capture OBS Virtual Camera, DirectShow, VB-Cable, Wi-Fi, or OpenSSH.
 

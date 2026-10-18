@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$Python = "python",
   [string]$PhonePlugin = "",
   [switch]$SkipDock
@@ -16,7 +16,7 @@ if ($LASTEXITCODE -ne 0) { throw "Phone library verification failed" }
 
 if (-not $SkipDock) {
   & $Python -m PyInstaller --noconfirm --clean --onefile --noconsole `
-  --name AppleLiveDock --distpath $output --workpath (Join-Path $build "dock") `
+  --name AppleLiveDock --icon (Join-Path $projectRoot "assets\brand\fuxing.ico") --distpath $output --workpath (Join-Path $build "dock") `
   --specpath $build (Join-Path $projectRoot "desktop_sender\dock_server.py")
   if ($LASTEXITCODE -ne 0) { throw "Dock build failed" }
   & $Python -m PyInstaller --noconfirm --clean --onefile --noconsole `

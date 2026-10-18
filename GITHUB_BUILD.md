@@ -1,5 +1,7 @@
 # GitHub Actions 构建步骤
 
+> 当前项目已在私有仓库 `liuli0126/applelive` 整理，直接阅读 [当前源码构建入口](docs/GITHUB_SOURCE.md) 并在 Actions 选择所需流程即可。下方创建仓库和旧安装步骤为早期记录。
+
 ## 1. 创建空仓库
 
 在 GitHub 新建一个仓库，例如 `applelive`。可以设为 Private，不要勾选自动生成 README、`.gitignore` 或 License。
