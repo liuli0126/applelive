@@ -18,5 +18,12 @@ NSDictionary *ALMigrateMediaSource(NSDictionary *saved, NSString *defaultURL) {
         source[@"kind"] = @"network";
         if (!ALValidStreamURL(source[@"url"])) source[@"url"] = ALValidStreamURL(defaultURL) ? defaultURL : @"";
     }
+    // External-camera input is no longer a supported user source. Clear any
+    // legacy selection so an upgrade cannot keep the removed UVC path active.
+    if ([kind isEqualToString:@"external"]) {
+        source[@"kind"] = @"none";
+        [source removeObjectForKey:@"url"];
+        [source removeObjectForKey:@"device"];
+    }
     return source;
 }

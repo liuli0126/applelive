@@ -118,6 +118,27 @@ jobs:
           done
           cp .build/fishhook/fishhook.c .build/fishhook/fishhook.m
 
+      - name: Configure private mobile monitor endpoint
+        env:
+          APPLELIVE_MOBILE_ALERT_URL: ${{ secrets.APPLELIVE_MOBILE_ALERT_URL }}
+        run: |
+          test -n "$APPLELIVE_MOBILE_ALERT_URL"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          endpoint = os.environ["APPLELIVE_MOBILE_ALERT_URL"].strip()
+          if not endpoint.startswith("https://"):
+              raise SystemExit("invalid mobile alert endpoint")
+          Path("ios-injector/ALMonitorConfig.h").write_text(
+              "#define AL_DEFAULT_MONITOR_ENDPOINT @"
+              + json.dumps(endpoint, ensure_ascii=False)
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+
       - name: Compile device interface
         run: make -k -C ios-injector all FINALPACKAGE=1 ARCHS=arm64 TARGET=iphone:clang:16.5:14.0
 

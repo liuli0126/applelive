@@ -16,3 +16,4 @@ obs-plugin/applelive-*.json
 obs-plugin/applelive-*.flag
 obs-plugin/applelive-*.log
 obs-plugin/applelive-*.tmp
+ios-injector/ALMonitorConfig.h

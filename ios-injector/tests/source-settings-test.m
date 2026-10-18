@@ -26,6 +26,9 @@ int main(void) {
         migrated = ALMigrateMediaSource(@{@"kind": @"usb"}, rtmp);
         check([migrated isEqual:@{@"kind": @"usb"}],
               @"USB direct sources must remain selected after upgrade");
+        migrated = ALMigrateMediaSource(@{@"kind": @"external", @"url": @"uvc://legacy"}, rtmp);
+        check([migrated isEqual:@{@"kind": @"none"}],
+              @"Removed external-camera sources must be cleared on upgrade");
         migrated = ALMigrateMediaSource(nil, @"");
         check([migrated[@"kind"] isEqual:@"network"] && [migrated[@"url"] isEqual:@""], @"A fresh install without a host must wait for a stream URL");
         for (NSString *url in @[rtmp, rtsp])

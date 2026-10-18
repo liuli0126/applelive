@@ -2,12 +2,19 @@
 #import <Vision/Vision.h>
 #include <math.h>
 
+#if __has_include("ALMonitorConfig.h")
+#import "ALMonitorConfig.h"
+#else
+#define AL_DEFAULT_MONITOR_ENDPOINT @""
+#endif
+
 static NSTimeInterval const kALMonitorInterval = 1.5;
 static NSTimeInterval const kALMonitorRetryInterval = 30.0;
 static NSString *const kALMonitorDeviceKey = @"AppleLive.Monitor.Device.v1";
 static NSString *const kALMonitorAccountKey = @"AppleLive.Monitor.Account.v1";
 static NSString *const kALMonitorEndpointKey = @"AppleLive.Monitor.Endpoint.v1";
 static NSString *const kALMonitorPendingKey = @"AppleLive.Monitor.Pending.v1";
+static NSString *const kALDefaultMonitorEndpoint = AL_DEFAULT_MONITOR_ENDPOINT;
 
 @implementation ALMonitorTextLine
 + (instancetype)lineWithText:(NSString *)text bounds:(CGRect)bounds {
@@ -140,7 +147,8 @@ static UIImage *ALCaptureWindowImage(void) {
         _status = @"未开启监控";
         _deviceName = [NSUserDefaults.standardUserDefaults stringForKey:kALMonitorDeviceKey] ?: @"";
         _accountName = [NSUserDefaults.standardUserDefaults stringForKey:kALMonitorAccountKey] ?: @"";
-        _endpoint = [NSUserDefaults.standardUserDefaults stringForKey:kALMonitorEndpointKey] ?: @"";
+        NSString *storedEndpoint = [NSUserDefaults.standardUserDefaults stringForKey:kALMonitorEndpointKey];
+        _endpoint = kALDefaultMonitorEndpoint.length ? kALDefaultMonitorEndpoint : (storedEndpoint ?: @"");
         NSDictionary *pending = [NSUserDefaults.standardUserDefaults dictionaryForKey:kALMonitorPendingKey];
         _pendingPayload = [pending isKindOfClass:NSDictionary.class] ? pending : nil;
         _lastPositive = -1; _clearSince = -1;
@@ -159,9 +167,11 @@ static UIImage *ALCaptureWindowImage(void) {
     if (self.running) return;
     NSString *device = [deviceName stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     NSString *account = [accountName stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    NSString *url = [endpoint stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSString *candidate = kALDefaultMonitorEndpoint.length ? kALDefaultMonitorEndpoint : endpoint;
+    if (candidate.length == 0) candidate = self.endpoint;
+    NSString *url = [candidate stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (device.length == 0 || account.length == 0) { [self publish:@"请填写手机名称和直播账号"]; return; }
-    if (!ALValidEndpoint(url)) { [self publish:@"预警地址无效：需要 HTTPS /mobile-alerts/<令牌>"]; return; }
+    if (!ALValidEndpoint(url)) { [self publish:@"预警服务不可用，请联系管理员"]; return; }
     self.deviceName = device; self.accountName = account; self.endpoint = url;
     [NSUserDefaults.standardUserDefaults setObject:device forKey:kALMonitorDeviceKey];
     [NSUserDefaults.standardUserDefaults setObject:account forKey:kALMonitorAccountKey];

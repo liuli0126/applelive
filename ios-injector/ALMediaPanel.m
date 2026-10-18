@@ -5,7 +5,6 @@
 #import "ALAudioRing.h"
 #import "ALCyberTheme.h"
 #import "ALSourceSettings.h"
-#import "ALUVCServiceClient.h"
 #import "ALScreenMonitor.h"
 #import <PhotosUI/PhotosUI.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
@@ -70,7 +69,6 @@ static NSString *ALFriendlyStreamError(NSString *error) {
 @property(nonatomic) UIButton *fileButton;
 @property(nonatomic) UIButton *streamButton;
 @property(nonatomic) UIButton *usbButton;
-@property(nonatomic) UIButton *externalButton;
 @property(nonatomic) UIButton *monitorButton;
 @property(nonatomic) UILabel *monitorLabel;
 @property(nonatomic) UIButton *playButton;
@@ -99,8 +97,15 @@ static NSString *ALFriendlyStreamError(NSString *error) {
         if (instance) return;
         instance = [ALFloatingPanel new];
         instance.controls = [ALLoadAppControls() mutableCopy];
-        instance.source = [ALMigrateMediaSource([NSUserDefaults.standardUserDefaults dictionaryForKey:kALSourceDefaults],
-            ALDefaultStreamURL()) mutableCopy];
+        NSDictionary *savedSource = [NSUserDefaults.standardUserDefaults dictionaryForKey:kALSourceDefaults];
+        BOOL removedExternalSource = [savedSource[@"kind"] isEqualToString:@"external"];
+        instance.source = [ALMigrateMediaSource(savedSource, ALDefaultStreamURL()) mutableCopy];
+        // External-camera support is no longer exposed. Clear an old saved
+        // external source so an upgrade cannot silently start that path.
+        if (removedExternalSource) {
+            instance.controls[@"enabled"] = @NO;
+            ALSaveAndPublishControls(instance.controls);
+        }
         [NSUserDefaults.standardUserDefaults setObject:instance.source forKey:kALSourceDefaults];
         NSDictionary *position = [NSUserDefaults.standardUserDefaults dictionaryForKey:@"AppleLive.BubblePosition.v1"];
         instance.bubbleFraction = position ? CGPointMake([position[@"x"] doubleValue], [position[@"y"] doubleValue]) : CGPointMake(0, 0.2);
@@ -229,12 +234,12 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     self.streamButton = [self button:@"检测" symbol:@"dot.radiowaves.left.and.right" action:@selector(editStream)];
     ((ALInjectedCyberButton *)self.streamButton).primary = YES;
     self.usbButton = [self button:@"USB 直连" symbol:@"cable.connector" action:@selector(selectUSB)];
-    self.externalButton = [self button:@"外接相机（测试）" symbol:@"camera.on.rectangle" action:@selector(selectExternal)];
     self.monitorButton = [self button:@"开始监控" symbol:@"eye" action:@selector(toggleMonitor)];
     self.monitorLabel = [self label:@"未开启监控" size:10]; self.monitorLabel.textColor = ALCyberMuted();
     UIStackView *files = [self row:@[self.albumButton, self.fileButton]]; files.distribution = UIStackViewDistributionFillEqually;
     UIStackView *inputs = [self row:@[self.streamButton, self.usbButton]]; inputs.distribution = UIStackViewDistributionFillEqually;
-    UIView *sourceSection = [self section:@"01 / 信号源" views:@[files, inputs, self.externalButton]];
+    UIView *sourceSection = [self section:@"01 / 信号源" views:@[files, inputs,
+        [self row:@[self.monitorButton, self.monitorLabel]]]];
     // Keep source selection compact; longer picture settings scroll below it.
     [sourceSection.heightAnchor constraintGreaterThanOrEqualToConstant:164].active = YES;
     [sourceSection setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisVertical];
@@ -285,13 +290,10 @@ static NSString *ALFriendlyStreamError(NSString *error) {
         visualToggleRow, fisheyeRow, self.fisheyeStrengthControls, formatRow]];
     UIView *audioSection = [self section:@"03 / 声音" views:@[
         [self row:@[[self label:@"内录" size:14], self.audioSwitch]], self.audioLabel]];
-    UIView *monitorSection = [self section:@"04 / 账号监控" views:@[
-        [self row:@[self.monitorButton, self.monitorLabel]]]];
-    [monitorSection.heightAnchor constraintGreaterThanOrEqualToConstant:52].active = YES;
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[
         header, signal,
-        sourceSection, imageSection, audioSection, monitorSection,
-        [self section:@"05 / 播放" views:@[self.playRow]],
+        sourceSection, imageSection, audioSection,
+        [self section:@"04 / 播放" views:@[self.playRow]],
     ]]; content.axis = UILayoutConstraintAxisVertical; content.spacing = 3; content.translatesAutoresizingMaskIntoConstraints = NO;
     UIScrollView *scroll = [UIScrollView new];
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
@@ -364,60 +366,12 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     self.source[@"kind"] = @"usb";
     [self saveSource];
 }
-- (void)selectExternal {
-    UIAlertController *menu = [UIAlertController alertControllerWithTitle:@"外接 UVC 相机（测试）"
-        message:@"相机 → HDMI 采集卡 → OTG → 手机。请先安装 AppleLive USB 采集服务并配对。目前仅采集画面，设备兼容性仍需实测。"
-        preferredStyle:UIAlertControllerStyleAlert];
-    [menu addAction:[UIAlertAction actionWithTitle:@"连接 / 重试" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        [self restoreKey]; self.source[@"kind"] = @"external"; [self saveSource];
-    }]];
-    [menu addAction:[UIAlertAction actionWithTitle:@"配对采集服务" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        UIAlertController *pair=[UIAlertController alertControllerWithTitle:@"配对手机采集服务"
-            message:@"先在桌面的 AppleLive USB 中复制连接码，再粘贴到这里。配对会自动保存。"
-            preferredStyle:UIAlertControllerStyleAlert];
-        [pair addTextFieldWithConfigurationHandler:^(UITextField *field) {
-            field.placeholder=@"粘贴连接码";field.autocapitalizationType=UITextAutocapitalizationTypeNone;
-            field.autocorrectionType=UITextAutocorrectionTypeNo;field.secureTextEntry=YES;
-        }];
-        [pair addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *a) {
-            BOOL valid=[ALUVCServiceClient saveConnectionCode:pair.textFields.firstObject.text];
-            [self restoreKey];
-            if (valid) { self.source[@"kind"]=@"external";[self saveSource]; }
-            else {
-                UIAlertController *error=[UIAlertController alertControllerWithTitle:@"连接码不完整"
-                    message:@"请在 AppleLive USB 中重新复制完整连接码。" preferredStyle:UIAlertControllerStyleAlert];
-                [error addAction:[UIAlertAction actionWithTitle:@"知道了" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *b) { [self restoreKey]; }]];
-                [self.window.rootViewController dismissViewControllerAnimated:YES completion:^{ [self present:error]; }];
-            }
-        }]];
-        [pair addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *a) { [self restoreKey]; }]];
-        [self.window.rootViewController dismissViewControllerAnimated:YES completion:^{ [self restoreKey];[self present:pair]; }];
-    }]];
-    [menu addAction:[UIAlertAction actionWithTitle:@"连接诊断" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        UIAlertController *report = [UIAlertController alertControllerWithTitle:@"外接相机连接诊断"
-            message:self.camera.externalCameraReport preferredStyle:UIAlertControllerStyleAlert];
-        [report addAction:[UIAlertAction actionWithTitle:@"复制诊断" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *a) {
-            UIPasteboard.generalPasteboard.string = self.camera.externalCameraReport; [self restoreKey];
-        }]];
-        [report addAction:[UIAlertAction actionWithTitle:@"关闭" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *a) { [self restoreKey]; }]];
-        [self.window.rootViewController dismissViewControllerAnimated:YES completion:^{
-            [self restoreKey]; [self present:report];
-        }];
-    }]];
-    if ([self.source[@"kind"] isEqualToString:@"external"] && [self.controls[@"enabled"] boolValue])
-        [menu addAction:[UIAlertAction actionWithTitle:@"断开外接相机" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-            [self restoreKey]; [self restoreCamera];
-        }]];
-    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) { [self restoreKey]; }]];
-    [self present:menu];
-}
 - (void)toggleMonitor {
     if (self.monitor.running) { [self.monitor stop]; [self refresh]; return; }
     NSString *device = self.monitor.deviceName.length ? self.monitor.deviceName : UIDevice.currentDevice.name;
     NSString *account = self.monitor.accountName ?: @"";
-    NSString *endpoint = self.monitor.endpoint ?: @"";
-    if (device.length && account.length && endpoint.length) {
-        [self.monitor startWithDeviceName:device accountName:account endpoint:endpoint]; [self refresh]; return;
+    if (device.length && account.length) {
+        [self.monitor startWithDeviceName:device accountName:account endpoint:@""]; [self refresh]; return;
     }
     UIAlertController *setup = [UIAlertController alertControllerWithTitle:@"开启账号监控"
         message:@"监控当前抖音画面，识别到安全验证弹窗后立即发送一次群提醒。弹窗持续存在时不会重复发送；消失后会重新布防。只上传设备名、账号名和事件时间，不上传截图。"
@@ -428,13 +382,8 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     [setup addTextFieldWithConfigurationHandler:^(UITextField *field) {
         field.text = account; field.placeholder = @"直播账号或昵称"; field.accessibilityLabel = @"直播账号";
     }];
-    [setup addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        field.text = endpoint; field.placeholder = @"https://服务器/mobile-alerts/令牌";
-        field.keyboardType = UIKeyboardTypeURL; field.autocapitalizationType = UITextAutocapitalizationTypeNone;
-        field.autocorrectionType = UITextAutocorrectionTypeNo; field.accessibilityLabel = @"预警地址";
-    }];
     [setup addAction:[UIAlertAction actionWithTitle:@"开始监控" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        [self.monitor startWithDeviceName:setup.textFields[0].text accountName:setup.textFields[1].text endpoint:setup.textFields[2].text];
+        [self.monitor startWithDeviceName:setup.textFields[0].text accountName:setup.textFields[1].text endpoint:@""];
         [self restoreKey]; [self refresh];
     }]];
     [setup addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) { [self restoreKey]; }]];
@@ -588,17 +537,14 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     BOOL local = [kind isEqualToString:@"local"];
     BOOL network = [kind isEqualToString:@"network"];
     BOOL usb = [kind isEqualToString:@"usb"];
-    BOOL external = [kind isEqualToString:@"external"];
     BOOL enabled = [self.controls[@"enabled"] boolValue], video = enabled && [status[@"video"] boolValue];
     BOOL emptyStream = network && !ALValidStreamURL(self.source[@"url"]);
     self.sourceLabel.text = local ? self.source[@"name"] ?: @"本地素材"
-        : external ? media[@"device"] ?: @"手机外接 UVC 相机"
         : usb ? @"USB 数据线直连"
         : emptyStream ? @"点击「检测」填写 RTMP / RTSP 地址" : self.source[@"url"];
     self.sourceLabel.numberOfLines = 1; self.sourceLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
     if (self.importing) self.statusLabel.text = @"正在导入…";
     else if (![self.controls[@"enabled"] boolValue]) self.statusLabel.text = @"使用手机摄像头";
-    else if (external) self.statusLabel.text = media[@"message"] ?: @"正在识别外接相机…";
     else if (emptyStream) self.statusLabel.text = @"等待添加信号";
     else if (usb && ![status[@"connected"] boolValue]) self.statusLabel.text = @"等待电脑 USB 连接";
     else if (usb && !video) self.statusLabel.text = @"USB 已连接 · 等待 OBS 画面";
@@ -613,7 +559,6 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     self.signalDot.backgroundColor = video ? self.accent : ALCyberMuted();
     self.streamButton.selected = enabled && !emptyStream && [kind isEqualToString:@"network"];
     self.usbButton.selected = enabled && usb;
-    self.externalButton.selected = enabled && external;
     [self.usbButton setTitle:enabled && usb ? @"断开 USB" : @"USB 直连" forState:UIControlStateNormal];
     self.usbButton.accessibilityLabel = enabled && usb ? @"断开 USB" : @"USB 直连";
     BOOL seekable = local && [media[@"duration"] doubleValue] > 0;
@@ -623,7 +568,6 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     self.playButton.accessibilityLabel = [self.playButton titleForState:UIControlStateNormal];
     self.audioLabel.hidden = !enabled || ![self.controls[@"audio"] boolValue];
     self.audioLabel.text = [status[@"audio"] boolValue] ? @"内录中 · 手机麦克风已关闭" : @"等待源音频 · 手机麦克风已关闭";
-    if (external) self.audioLabel.text = @"外接相机暂仅采集画面 · 手机麦克风已关闭";
     BOOL monitoring = self.monitor.running;
     [self.monitorButton setTitle:monitoring ? @"停止监控" : @"开始监控" forState:UIControlStateNormal];
     self.monitorButton.accessibilityLabel = monitoring ? @"停止监控" : @"开始监控";
