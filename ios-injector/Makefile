@@ -23,10 +23,11 @@ AppleLive_FILES = ../ios-tweak/Tweak.xm \
     ALUVCServiceClient.m \
     ALUVCFrame.m \
     ALUVCWire.m \
+    ALScreenMonitor.m \
     ALAudioUnitBridge.m \
     ../.build/fishhook/fishhook.m \
     ../ios-tweak/ALVirtualCamera.m
-AppleLive_FRAMEWORKS = Foundation UIKit AVFoundation CoreMedia CoreVideo CoreImage CoreGraphics VideoToolbox AudioToolbox QuartzCore Photos PhotosUI UniformTypeIdentifiers Security ImageIO Network
+AppleLive_FRAMEWORKS = Foundation UIKit AVFoundation CoreMedia CoreVideo CoreImage CoreGraphics VideoToolbox AudioToolbox QuartzCore Photos PhotosUI UniformTypeIdentifiers Security ImageIO Network Vision
 FFMPEG_ROOT = $(THEOS_PROJECT_DIR)/../.build/ios-ffmpeg/universal
 AppleLive_LDFLAGS = -L$(FFMPEG_ROOT)/lib -lavformat -lavcodec -lswresample -lswscale -lavutil -lz -lbz2 -liconv
 AppleLive_CFLAGS = -fobjc-arc -fvisibility=hidden -DAPPLELIVE_STANDALONE=1 \

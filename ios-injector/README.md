@@ -10,6 +10,7 @@ The standalone library is imported into each target application with the user's 
 - Existing `computer` sources migrate to Detection. Existing `usb` sources remain USB Direct so an update does not silently change the transport.
 - Internal audio replaces microphone input with source sound. Silence is used when the source has no audio or the audio buffer underflows. Mute silences the injected audio. Turning off internal audio restores the app's microphone path.
 - Mirror, rotation, fit/fill and Restore Camera apply to the selected source. The compact panel shows all controls on one screen without vertical scrolling. Internal audio is the only audio option; it replaces the microphone when enabled.
+- Account monitoring is available from the compact panel. It captures the target app's visible window locally about every 1.5 seconds, uses Apple's Vision OCR to recognize the supplied security-verification popup, sends once on the first completed match, and sends only device name, account name, event kind and timestamp to the configured HTTPS `/mobile-alerts/<token>` endpoint. It never uploads screenshots, clicks the popup or ends a live session. The monitor stops when the target app enters the background and rearms after the popup disappears.
 
 The phone panel uses an ice white/blue theme with soft rounded borders, native controls and a circular floating launcher. The `替换画面` switch applies to RTMP/RTSP streams, Album and Files. The launcher is transparent outside its disc, clips to a circle and only accepts touches inside that circle.
 

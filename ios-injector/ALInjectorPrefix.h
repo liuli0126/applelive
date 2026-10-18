@@ -14,3 +14,5 @@
 #define ALExternalCamera ALInjectedExternalCamera
 #define ALUVCSession ALInjectedUVCSession
 #define ALUVCServiceClient ALInjectedUVCServiceClient
+#define ALScreenMonitor ALInjectedScreenMonitor
+#define ALMonitorTextLine ALInjectedMonitorTextLine

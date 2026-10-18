@@ -6,6 +6,7 @@
 #import "ALCyberTheme.h"
 #import "ALSourceSettings.h"
 #import "ALUVCServiceClient.h"
+#import "ALScreenMonitor.h"
 #import <PhotosUI/PhotosUI.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
@@ -70,6 +71,8 @@ static NSString *ALFriendlyStreamError(NSString *error) {
 @property(nonatomic) UIButton *streamButton;
 @property(nonatomic) UIButton *usbButton;
 @property(nonatomic) UIButton *externalButton;
+@property(nonatomic) UIButton *monitorButton;
+@property(nonatomic) UILabel *monitorLabel;
 @property(nonatomic) UIButton *playButton;
 @property(nonatomic) UIButton *rotateButton;
 @property(nonatomic) UISwitch *enabledSwitch;
@@ -104,10 +107,18 @@ static NSString *ALFriendlyStreamError(NSString *error) {
         [NSNotificationCenter.defaultCenter addObserver:instance selector:@selector(refresh) name:UIApplicationDidBecomeActiveNotification object:nil];
         [NSNotificationCenter.defaultCenter addObserver:instance selector:@selector(background) name:UIApplicationDidEnterBackgroundNotification object:nil];
         [NSTimer scheduledTimerWithTimeInterval:0.4 target:instance selector:@selector(refresh) userInfo:nil repeats:YES];
+        __weak ALFloatingPanel *weakInstance = instance;
+        instance.monitor.onStatus = ^(NSString *status, BOOL running) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                weakInstance.monitorLabel.text = status;
+                [weakInstance refresh];
+            });
+        };
         [instance applySource]; [instance refresh];
     });
 }
 - (ALVirtualCamera *)camera { return ALVirtualCamera.sharedInstance; }
+- (ALScreenMonitor *)monitor { return ALScreenMonitor.sharedMonitor; }
 - (UIColor *)accent { return ALCyberRed(); }
 - (UILabel *)label:(NSString *)text size:(CGFloat)size {
     UILabel *label = [UILabel new]; label.text = text; label.textColor = ALCyberText();
@@ -179,7 +190,7 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     self.bubble.backgroundColor = UIColor.clearColor; self.bubble.tintColor = self.accent;
     self.bubble.layer.cornerRadius = 28; self.bubble.clipsToBounds = YES;
     [self.bubble setImage:ALCyberMarkImage(CGSizeMake(56, 56)) forState:UIControlStateNormal];
-    self.bubble.accessibilityLabel = @"打开 AppleLive 控制面板";
+    self.bubble.accessibilityLabel = @"打开福煋推流插件";
     self.bubble.accessibilityHint = @"双击打开，拖动可移动悬浮按钮";
     [self.bubble addTarget:self action:@selector(togglePanel) forControlEvents:UIControlEventTouchUpInside];
     [self.bubble addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragBubble:)]];
@@ -190,8 +201,8 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     UIImageView *brand = [[UIImageView alloc] initWithImage:ALCyberMarkImage(CGSizeMake(36, 36))];
     [brand.widthAnchor constraintEqualToConstant:36].active = YES;
     [brand.heightAnchor constraintEqualToConstant:36].active = YES;
-    UILabel *title = [self label:@"AppleLive" size:21]; title.font = [UIFont systemFontOfSize:21 weight:UIFontWeightBold];
-    UILabel *subtitle = [self label:@"ICE BLUE / ALL SOURCES" size:8];
+    UILabel *title = [self label:@"福煋推流插件" size:19]; title.font = [UIFont systemFontOfSize:19 weight:UIFontWeightBold];
+    UILabel *subtitle = [self label:@"画面与声音控制" size:8];
     subtitle.font = [UIFont monospacedSystemFontOfSize:9 weight:UIFontWeightMedium]; subtitle.textColor = self.accent;
     UIStackView *wordmark = [[UIStackView alloc] initWithArrangedSubviews:@[title, subtitle]];
     wordmark.axis = UILayoutConstraintAxisVertical; wordmark.spacing = 2;
@@ -219,6 +230,8 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     ((ALInjectedCyberButton *)self.streamButton).primary = YES;
     self.usbButton = [self button:@"USB 直连" symbol:@"cable.connector" action:@selector(selectUSB)];
     self.externalButton = [self button:@"外接相机（测试）" symbol:@"camera.on.rectangle" action:@selector(selectExternal)];
+    self.monitorButton = [self button:@"开始监控" symbol:@"eye" action:@selector(toggleMonitor)];
+    self.monitorLabel = [self label:@"未开启监控" size:10]; self.monitorLabel.textColor = ALCyberMuted();
     UIStackView *files = [self row:@[self.albumButton, self.fileButton]]; files.distribution = UIStackViewDistributionFillEqually;
     UIStackView *inputs = [self row:@[self.streamButton, self.usbButton]]; inputs.distribution = UIStackViewDistributionFillEqually;
     UIView *sourceSection = [self section:@"01 / 信号源" views:@[files, inputs, self.externalButton]];
@@ -272,10 +285,13 @@ static NSString *ALFriendlyStreamError(NSString *error) {
         visualToggleRow, fisheyeRow, self.fisheyeStrengthControls, formatRow]];
     UIView *audioSection = [self section:@"03 / 声音" views:@[
         [self row:@[[self label:@"内录" size:14], self.audioSwitch]], self.audioLabel]];
+    UIView *monitorSection = [self section:@"04 / 账号监控" views:@[
+        [self row:@[self.monitorButton, self.monitorLabel]]]];
+    [monitorSection.heightAnchor constraintGreaterThanOrEqualToConstant:52].active = YES;
     UIStackView *content = [[UIStackView alloc] initWithArrangedSubviews:@[
         header, signal,
-        sourceSection, imageSection, audioSection,
-        [self section:@"04 / 播放" views:@[self.playRow]],
+        sourceSection, imageSection, audioSection, monitorSection,
+        [self section:@"05 / 播放" views:@[self.playRow]],
     ]]; content.axis = UILayoutConstraintAxisVertical; content.spacing = 3; content.translatesAutoresizingMaskIntoConstraints = NO;
     UIScrollView *scroll = [UIScrollView new];
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
@@ -394,6 +410,35 @@ static NSString *ALFriendlyStreamError(NSString *error) {
         }]];
     [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) { [self restoreKey]; }]];
     [self present:menu];
+}
+- (void)toggleMonitor {
+    if (self.monitor.running) { [self.monitor stop]; [self refresh]; return; }
+    NSString *device = self.monitor.deviceName.length ? self.monitor.deviceName : UIDevice.currentDevice.name;
+    NSString *account = self.monitor.accountName ?: @"";
+    NSString *endpoint = self.monitor.endpoint ?: @"";
+    if (device.length && account.length && endpoint.length) {
+        [self.monitor startWithDeviceName:device accountName:account endpoint:endpoint]; [self refresh]; return;
+    }
+    UIAlertController *setup = [UIAlertController alertControllerWithTitle:@"开启账号监控"
+        message:@"监控当前抖音画面，识别到安全验证弹窗后立即发送一次群提醒。弹窗持续存在时不会重复发送；消失后会重新布防。只上传设备名、账号名和事件时间，不上传截图。"
+        preferredStyle:UIAlertControllerStyleAlert];
+    [setup addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.text = device; field.placeholder = @"手机名称，例如：前台手机"; field.accessibilityLabel = @"手机名称";
+    }];
+    [setup addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.text = account; field.placeholder = @"直播账号或昵称"; field.accessibilityLabel = @"直播账号";
+    }];
+    [setup addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.text = endpoint; field.placeholder = @"https://服务器/mobile-alerts/令牌";
+        field.keyboardType = UIKeyboardTypeURL; field.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        field.autocorrectionType = UITextAutocorrectionTypeNo; field.accessibilityLabel = @"预警地址";
+    }];
+    [setup addAction:[UIAlertAction actionWithTitle:@"开始监控" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [self.monitor startWithDeviceName:setup.textFields[0].text accountName:setup.textFields[1].text endpoint:setup.textFields[2].text];
+        [self restoreKey]; [self refresh];
+    }]];
+    [setup addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) { [self restoreKey]; }]];
+    [self present:setup];
 }
 - (void)applySource {
     if (![self.controls[@"enabled"] boolValue]) { [self.camera selectSource:@"none" URL:nil]; return; }
@@ -532,7 +577,7 @@ static NSString *ALFriendlyStreamError(NSString *error) {
         if (oldFile.length && ![oldFile isEqualToString:filename]) [NSFileManager.defaultManager removeItemAtURL:[ALMediaDirectory() URLByAppendingPathComponent:oldFile] error:nil];
     });
 }
-- (void)background { self.window.hidden = YES; [self restoreKey]; [self.camera selectSource:@"none" URL:nil]; }
+- (void)background { [self.monitor stop]; self.window.hidden = YES; [self restoreKey]; [self.camera selectSource:@"none" URL:nil]; }
 - (void)refresh {
     if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) { self.window.hidden = YES; return; }
     if (!self.window) [self buildWindow];
@@ -579,6 +624,11 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     self.audioLabel.hidden = !enabled || ![self.controls[@"audio"] boolValue];
     self.audioLabel.text = [status[@"audio"] boolValue] ? @"内录中 · 手机麦克风已关闭" : @"等待源音频 · 手机麦克风已关闭";
     if (external) self.audioLabel.text = @"外接相机暂仅采集画面 · 手机麦克风已关闭";
+    BOOL monitoring = self.monitor.running;
+    [self.monitorButton setTitle:monitoring ? @"停止监控" : @"开始监控" forState:UIControlStateNormal];
+    self.monitorButton.accessibilityLabel = monitoring ? @"停止监控" : @"开始监控";
+    self.monitorButton.selected = monitoring;
+    self.monitorLabel.text = self.monitor.status.length ? self.monitor.status : @"未开启监控";
     [self layoutControls];
 }
 @end
