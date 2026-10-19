@@ -13,6 +13,7 @@
 + (instancetype)sharedInstance;
 - (void)start;
 - (NSDictionary *)streamStatus;
+- (BOOL)isVideoReplacementActive;
 - (CMSampleBufferRef)replacementForVideoSample:(CMSampleBufferRef)original;
 - (CMSampleBufferRef)replacementForAudioSample:(CMSampleBufferRef)original;
 #ifdef APPLELIVE_STANDALONE

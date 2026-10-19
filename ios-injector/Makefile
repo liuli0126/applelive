@@ -18,6 +18,7 @@ AppleLive_FILES = ../ios-tweak/Tweak.xm \
     ALCyberTheme.m \
     ALSourceSettings.m \
     ALPreview.m \
+    ALPreviewRenderer.m \
     ALSampleAudio.m \
     ALUSBReceiver.m \
     ALUVCServiceClient.m \

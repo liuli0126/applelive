@@ -236,3 +236,9 @@ Phase43 results: desktop native shutdown fix only; phone dylib, media codec para
 - Existing repository liuli0126/applelive owns the requested name; GitHub CLI confirmed PRIVATE after the authorized visibility change.
 - Current branch codex/mobile-loop-lan-ui includes phone monitor changes. Desktop launcher, startup, shutdown and branding work remains uncommitted and must be included from the working tree.
 - Exclude local work/delivery folders, generated libraries/installers and ALMonitorConfig.h. Keep source assets and media test fixtures.
+
+## 2026-10-19 USB live camera flash
+- User confirmed the flash exposes the physical phone camera, on both local preview and viewer output, during USB direct use.
+- ALFrameStore discarded USB frames after 0.75 seconds (wall-clock age), while local/network selected holdsFrame. USB reconnect callbacks immediately cleared the store. Both delegate and BW hooks forwarded the physical sample whenever replacement returned nil/failed.
+- ALPreview separately hid its overlay and removed the displayed image whenever a single preview render returned nil. A session restart also deactivated it. These are concrete code paths matching the reported appearance; the customer's initiating packet gap/render error still has no captured device log.
+- Fix keeps one retained frame until an explicit source change/stop, distinguishes recent reception from retained display, suppresses unmodified video samples only while replacement is active, and preserves preview across missing frames/backpressure. No growing queue or added playback delay.

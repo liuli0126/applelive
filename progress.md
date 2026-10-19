@@ -367,3 +367,10 @@
 - Confirmed authenticated account and changed the existing applelive repository to PRIVATE.
 - Reviewing the full working-tree source snapshot before staging. No cleanup/reset or build requested.
 - Initial Git fetch timed out; repository metadata through gh remains reachable.
+
+## 2026-10-19 USB live camera flash
+- User confirmed momentary physical-camera exposure in both phone preview and audience video over USB.
+- Replaced the 0.75-second display expiry with one retained frame plus separate monotonic reception freshness. Transient decoder/transport resets no longer clear the image; explicit source changes/stop still do.
+- Added an output policy shared by delegate/BW hooks to suppress unmodified video while replacement is active; audio and explicit camera restoration retain their existing route.
+- Preview now preserves the displayed picture during missing frames/backpressure and uses a source-generation token for explicit clearing. Refactored preview rendering to hold a single input buffer through allocation and rendering.
+- Added real CoreVideo/CoreMedia regression tests for expiry, reconnect, preview backpressure/failure, explicit restore, capture policy and concurrent bounded ownership. CI includes an old-source expiry probe and real H264 gap/reconnect continuity checks. Compilation and execution pending.

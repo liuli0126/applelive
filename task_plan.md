@@ -1,5 +1,12 @@
 # AppleLive 越狱虚拟摄像头
 
+## Current task: intermittent live video flash (2026-10-19)
+- [x] Trace source selection, frame expiration, decode reset and preview/capture output; add an old-source expiry reproduction for CI.
+- [x] Apply a focused fix that preserves explicit camera/stop behavior and bounded frame ownership.
+- [ ] Run the relevant regression checks, compile the phone fix when verified, and deliver with precise remaining device-validation limits.
+- User confirms USB direct, with the physical camera briefly visible on both phone and viewer output. Matched to 0.75-second frame expiry plus fail-open delegate/BW delivery and preview removal; exact initiating customer gap/render failure has no captured log yet.
+- Hindsight search/list attempted first; both failed because the local service at 127.0.0.1:9077 refused the connection. Use source and prior verification records without claiming memory results.
+
 ## Current task: private GitHub source handoff (2026-10-18)
 - [x] Confirm account/repository and change liuli0126/applelive to PRIVATE as requested.
 - [x] Include current desktop, native OBS, mobile dylib/DEB sources, assets, tests and build documentation; exclude local deliveries and credentials.

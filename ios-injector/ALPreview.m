@@ -1,5 +1,7 @@
 #import "ALPreview.h"
 #import "ALVirtualCamera.h"
+#import "ALFrameStore.h"
+#import "ALPreviewRenderer.h"
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
 
@@ -20,24 +22,16 @@ static void ALReplaceMethod(Class cls, SEL selector, IMP replacement, IMP *origi
 }
 
 static void ALPaintPreview(AVSampleBufferDisplayLayer *layer, CGSize size, BOOL active) {
-    if (!active || size.width < 1 || size.height < 1) { layer.hidden = YES; [layer flushAndRemoveImage]; return; }
-    CGFloat scale = MIN(1, 720 / MAX(size.width, size.height));
-    CVPixelBufferRef pixel = [[ALVirtualCamera sharedInstance] copyPreviewPixelBuffer:CGSizeMake(ceil(size.width * scale), ceil(size.height * scale))];
-    if (!pixel) { layer.hidden = YES; [layer flushAndRemoveImage]; return; }
-    if (layer.status == AVQueuedSampleBufferRenderingStatusFailed) [layer flush];
-    if (layer.readyForMoreMediaData) {
-        CMVideoFormatDescriptionRef format = NULL;
-        CMVideoFormatDescriptionCreateForImageBuffer(NULL, pixel, &format);
-        CMSampleTimingInfo timing = {kCMTimeInvalid, CMTimeMakeWithSeconds(CACurrentMediaTime(), 600), kCMTimeInvalid};
-        CMSampleBufferRef sample = NULL;
-        if (format && CMSampleBufferCreateForImageBuffer(NULL, pixel, YES, NULL, NULL, format, &timing, &sample) == noErr) {
-            CFArrayRef attachments = CMSampleBufferGetSampleAttachmentsArray(sample, YES);
-            CFDictionarySetValue((CFMutableDictionaryRef)CFArrayGetValueAtIndex(attachments, 0), kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
-            [layer enqueueSampleBuffer:sample]; CFRelease(sample); layer.hidden = NO;
-        }
-        if (format) CFRelease(format);
+    ALVirtualCamera *camera = [ALVirtualCamera sharedInstance];
+    active = active && [camera isVideoReplacementActive];
+    uint64_t generation = camera.frameStore.generation;
+    if (!active || size.width < 1 || size.height < 1) {
+        ALUpdatePreviewLayer(layer, NULL, generation, active); return;
     }
-    CVPixelBufferRelease(pixel);
+    CGFloat scale = MIN(1, 720 / MAX(size.width, size.height));
+    CVPixelBufferRef pixel = [camera copyPreviewPixelBuffer:CGSizeMake(ceil(size.width * scale), ceil(size.height * scale))];
+    ALUpdatePreviewLayer(layer, pixel, generation, active);
+    if (pixel) CVPixelBufferRelease(pixel);
 }
 
 @interface ALPreviewTicker : NSObject
@@ -49,8 +43,11 @@ static void ALPaintPreview(AVSampleBufferDisplayLayer *layer, CGSize size, BOOL 
     for (AVCaptureVideoPreviewLayer *preview in gALPreviewLayers.allObjects) {
         AVSampleBufferDisplayLayer *overlay = objc_getAssociatedObject(preview, kALPreviewLayer);
         [CATransaction begin]; [CATransaction setDisableActions:YES];
-        overlay.frame = preview.bounds; [CATransaction commit];
-        ALPaintPreview(overlay, preview.bounds.size, foreground && preview.session.isRunning && preview.superlayer != nil);
+        if (preview.bounds.size.width > 0 && preview.bounds.size.height > 0) overlay.frame = preview.bounds;
+        [CATransaction commit];
+        // A capture-session restart is not an explicit request to reveal its
+        // physical camera. The selected source controls overlay visibility.
+        ALPaintPreview(overlay, preview.bounds.size, foreground && preview.superlayer != nil);
     }
     for (ALPreviewView *view in gALPreviewViews.allObjects)
         ALPaintPreview((AVSampleBufferDisplayLayer *)view.layer, view.bounds.size, foreground && view.window != nil && !view.hidden);
@@ -69,7 +66,7 @@ static void ALTrackPreview(AVCaptureVideoPreviewLayer *preview) {
         objc_setAssociatedObject(preview, kALPreviewLayer, overlay, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [preview addSublayer:overlay]; [gALPreviewLayers addObject:preview];
     }
-    overlay.frame = preview.bounds;
+    if (preview.bounds.size.width > 0 && preview.bounds.size.height > 0) overlay.frame = preview.bounds;
 }
 static void ALPreviewLayout(id self, SEL selector) {
     if (gALPreviewLayout) gALPreviewLayout(self, selector);

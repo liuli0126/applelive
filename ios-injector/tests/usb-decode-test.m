@@ -2,6 +2,7 @@
 #import <CoreVideo/CoreVideo.h>
 #import "ALStreamClient.h"
 #import "ALVideoDecoder.h"
+#import "ALFrameStore.h"
 #include <math.h>
 
 static uint32_t LE(const uint8_t *p) {
@@ -30,11 +31,13 @@ int main(int argc, const char **argv) {
         NSArray<NSData *> *multi = Packets(@(argv[2]));
         ALStreamClient *stream = [ALStreamClient new];
         ALVideoDecoder *decoder = [ALVideoDecoder new];
+        ALFrameStore *display = [ALFrameStore new];
         __block NSUInteger pictures = 0, audioFrames = 0;
         __block double audioEnergy = 0;
         decoder.onFrame = ^(CVPixelBufferRef image, uint32_t sequence) {
             NSCAssert(image && CVPixelBufferGetWidth(image) > 0, @"empty decoded frame");
             pictures++;
+            [display storePixelBuffer:image sequence:sequence];
             (void)sequence;
         };
         stream.onVideoNAL = ^(NSData *data, uint32_t sequence, uint32_t flags, uint32_t w, uint32_t h) {
@@ -65,6 +68,8 @@ int main(int argc, const char **argv) {
         [stream acceptBinaryData:video[0]];
         [stream acceptBinaryData:video[1]];
         NSCAssert(pictures == 2, @"initial IDR did not decode");
+        CVPixelBufferRef beforeGap = [display copyLatestPixelBuffer];
+        uint32_t beforeSequence = display.latestSequence;
         // Simulate bounded sender queue overflow: lose one dependent frame.
         NSUInteger before = pictures;
         BOOL recovered = NO;
@@ -74,8 +79,23 @@ int main(int argc, const char **argv) {
             [stream acceptBinaryData:packet];
             if (keyframe) { recovered = pictures == before + 1; break; }
             NSCAssert(pictures == before, @"delta displayed after sequence gap");
+            CVPixelBufferRef held = [display copyLatestPixelBuffer];
+            NSCAssert(held == beforeGap && display.latestSequence == beforeSequence,
+                      @"waiting for IDR must preserve the last good image");
+            if (held) CVPixelBufferRelease(held);
         }
         NSCAssert(recovered, @"did not resume on IDR after gap");
+        CVPixelBufferRelease(beforeGap);
+
+        CVPixelBufferRef beforeReconnect = [display copyLatestPixelBuffer];
+        [display markInterrupted]; [decoder reset];
+        CVPixelBufferRef duringReconnect = [display copyLatestPixelBuffer];
+        NSCAssert(duringReconnect == beforeReconnect && ![display hasFrameReceivedWithin:60],
+                  @"decoder reconnect must hold the image but report interrupted reception");
+        CVPixelBufferRelease(duringReconnect); CVPixelBufferRelease(beforeReconnect);
+        [stream acceptBinaryData:video[0]];
+        NSCAssert([display hasFrameReceivedWithin:2] && display.latestSequence == LE((const uint8_t *)video[0].bytes + 4),
+                  @"first new IDR must restore current video after reconnect");
 
         // Concurrent teardown used to free the AAC decoder while USB used it.
         dispatch_group_t group = dispatch_group_create();

@@ -22,6 +22,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Test continuous video during gaps and explicit source changes
+        run: |
+          BASE="$RUNNER_TEMP/frame-store-baseline"
+          mkdir -p "$BASE"
+          git show HEAD^:ios-tweak/ALFrameStore.m > "$BASE/ALFrameStore.m"
+          if grep -q 'age < 0.75' "$BASE/ALFrameStore.m"; then
+            git show HEAD^:ios-tweak/ALFrameStore.h > "$BASE/ALFrameStore.h"
+            xcrun clang -fobjc-arc -DAL_FRAME_STORE_EXPIRY_PROBE=1 -I"$BASE" \
+              ios-injector/tests/frame-continuity-test.m "$BASE/ALFrameStore.m" \
+              -framework Foundation -framework CoreVideo -o "$BASE/expiry-probe"
+            if "$BASE/expiry-probe"; then
+              echo "Expected the old USB frame expiry to fail the continuity assertion"; exit 1
+            fi
+            echo "Confirmed: previous source loses the replacement frame after 0.75 seconds"
+          fi
+          xcrun clang -fobjc-arc -Iios-tweak -Iios-injector \
+            ios-injector/tests/frame-continuity-test.m ios-tweak/ALFrameStore.m ios-injector/ALPreviewRenderer.m \
+            -framework Foundation -framework CoreVideo -framework CoreMedia -framework AVFoundation \
+            -framework QuartzCore -o "$RUNNER_TEMP/applelive-continuity-test"
+          "$RUNNER_TEMP/applelive-continuity-test"
 
       - name: Test external UVC frame ownership and bounds
         run: |
@@ -63,7 +86,7 @@ jobs:
         run: |
           xcrun clang -fobjc-arc -Iios-tweak \
             ios-injector/tests/usb-decode-test.m ios-tweak/ALStreamClient.m \
-            ios-tweak/ALVideoDecoder.m ios-tweak/ALColorPipeline.m \
+            ios-tweak/ALVideoDecoder.m ios-tweak/ALColorPipeline.m ios-tweak/ALFrameStore.m \
             -framework Foundation -framework CoreVideo -framework CoreMedia \
             -framework CoreImage -framework CoreGraphics -framework VideoToolbox \
             -framework AudioToolbox -o "$RUNNER_TEMP/applelive-usb-test"
