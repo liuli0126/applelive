@@ -3,7 +3,9 @@
 ## Current task: intermittent live video flash (2026-10-19)
 - [x] Trace source selection, frame expiration, decode reset and preview/capture output; add an old-source expiry reproduction for CI.
 - [x] Apply a focused fix that preserves explicit camera/stop behavior and bounded frame ownership.
-- [ ] Run the relevant regression checks, compile the phone fix when verified, and deliver with precise remaining device-validation limits.
+- [x] Run the relevant regression checks, compile the phone fix when verified, and deliver with precise remaining device-validation limits.
+- Completed 2026-10-20: source dc43aa4, CI 39215618040 attempt 2 passed. Old-source 900ms expiry reproduced, new continuity/USB H264/AAC/audio/network/color tests passed. Download ZIP SHA256/CRC, both Mach-O slices and 94 relink source files verified. Delivered the same-name 福煋推流插件.dylib (SHA256 8ebd4aa3a6068da282799c373edb31199a621c1684b733a3778ea83a83ae7067); matching phone materials updated. Affected-phone long livestream acceptance remains user-run; existing desktop archives were not rebuilt.
+- Latest repository instruction completed 2026-10-20: liuli0126/applelive is PUBLIC at the user's request. This supersedes the earlier private visibility requirement below and unblocked the successful CI rerun.
 - User confirms USB direct, with the physical camera briefly visible on both phone and viewer output. Matched to 0.75-second frame expiry plus fail-open delegate/BW delivery and preview removal; exact initiating customer gap/render failure has no captured log yet.
 - Hindsight search/list attempted first; both failed because the local service at 127.0.0.1:9077 refused the connection. Use source and prior verification records without claiming memory results.
 
