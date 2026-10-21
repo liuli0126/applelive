@@ -238,3 +238,12 @@ Status: complete
 - [x] Document standalone rootless, full rootless+UVC, and legacy rootful/rootless tweak package routes.
 - [x] Package 101 source/build/license files and relink materials into dedicated DEB source archive.
 - [x] Update full source handoff archive with DEB docs and package script; verify ZIP CRC, required paths, file hashes and Python syntax.
+
+## Phase46. Restore the complete automatic-injection DEB (2026-10-21)
+Status: complete (installer verified and delivered; physical-phone duration testing remains user acceptance)
+- [x] User clarified the deployed installer is the full jailbreak package, not the UVC service-only package. Inspect original com.applelive.full 0.1.13-usb1 and both plugin paths.
+- [x] Update both bundled dylibs with the verified continuity + screen-monitor binary; retain automatic injection, USB service, app filters, scripts and permissions.
+- [x] Verify package identity, increasing version, both architectures, monitoring and exact unchanged service/configuration contents; reject stale or mismatched plugins. Seven packaging checks passed; existing full builder reproduces identical bytes.
+- [x] Replace same-name 交付文件/万能版本.deb with com.applelive.full 0.1.13-usb2 (9,360,374 bytes) and correct installation/handoff instructions. Verified final delivered file after atomic replacement. Physical-phone duration testing remains user acceptance.
+
+Phase46 validation note: initial AST text probe encountered the existing builder's UTF-8 BOM; utf-8-sig decoding passed. The failed probe did not modify the delivered installer.

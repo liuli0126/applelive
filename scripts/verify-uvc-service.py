@@ -1,10 +1,11 @@
-"""Inspect the actual rootless package, paired plugin and signed Mach-O slices."""
+"""Inspect a rootless service/full package, its plugins and signed Mach-O slices."""
 
+import argparse
 import hashlib
 import io
 import plistlib
+import re
 import struct
-import sys
 import tarfile
 from pathlib import Path
 
@@ -86,15 +87,22 @@ def verify_executable(data, expected_entitlements):
     assert subtypes == {0, 0x80000002}, 'Expected arm64 and modern arm64e'
 
 
-def verify(package, plugin):
+def verify(package, plugin, *, expected_package='com.applelive.uvchost'):
     root = Path(__file__).resolve().parents[1]
     members = ar_members(package.read_bytes())
     assert members['debian-binary'] == b'2.0\n'
     control = tar_members(next(value for name, value in members.items() if name.startswith('control.tar')))
     payload = tar_members(next(value for name, value in members.items() if name.startswith('data.tar')))
     meta = dict(line.split(': ', 1) for line in control['control'][1].decode().splitlines() if ': ' in line)
-    assert meta['Package'] == 'com.applelive.uvchost' and meta['Architecture'] == 'iphoneos-arm64'
-    assert meta['Depends'] == 'firmware (>= 15.0)'
+    assert expected_package in ('com.applelive.uvchost', 'com.applelive.full')
+    assert meta['Package'] == expected_package and meta['Architecture'] == 'iphoneos-arm64'
+    full = expected_package == 'com.applelive.full'
+    dependencies = 'firmware (>= 15.0)'
+    if full:
+        dependencies += ', mobilesubstrate | ellekit | libhooker | substitute'
+        for field in ('Conflicts', 'Replaces'):
+            assert meta[field] == 'com.applelive.tweak, com.applelive.injector, com.applelive.uvchost'
+    assert meta['Depends'] == dependencies
     for name in ('postinst', 'prerm', 'postrm'):
         member, data = control[name]
         assert member.mode == 0o755 and data.startswith(b'#!/bin/sh\n')
@@ -110,6 +118,16 @@ def verify(package, plugin):
         print('Verified device architectures, iOS 15 minimum, imports and declared entitlements:', name)
     embedded = payload['var/jb/Library/AppleLive/AppleLive.dylib'][1]
     assert embedded == plugin.read_bytes(), 'Installer and standalone plugin differ'
+    if full:
+        automatic = 'var/jb/Library/MobileSubstrate/DynamicLibraries/AppleLive'
+        assert payload[automatic + '.dylib'][1] == embedded, 'Automatic-load plugin differs'
+        filter_text = payload[automatic + '.plist'][1].decode('utf-8')
+        match = re.fullmatch(r'\s*\{\s*Filter\s*=\s*\{\s*Bundles\s*=\s*\(([^)]*)\);\s*\};\s*\}\s*', filter_text)
+        assert match and re.fullmatch(r'\s*"[^"]+"(?:\s*,\s*"[^"]+")*\s*', match[1]), 'Unexpected injection filter'
+        assert re.findall(r'"([^"]+)"', match[1]) == [
+            'com.apple.camera', 'com.ss.iphone.ugc.Aweme',
+            'com.zhiliaoapp.musically', 'com.tencent.xin',
+        ], 'Wrong automatic-injection target apps'
     launch = plistlib.loads(payload['var/jb/Library/LaunchDaemons/com.applelive.uvchost.plist'][1])
     assert launch['UserName'] == 'mobile' and launch['Label'] == 'com.applelive.uvchost'
     assert launch['ProgramArguments'] == ['/var/jb/usr/libexec/AppleLiveUVCHost']
@@ -117,13 +135,25 @@ def verify(package, plugin):
     assert info['CFBundleExecutable'] == 'AppleLiveUSB' and info['MinimumOSVersion'] == '15.0'
     # A Debian revision can update the bundled plugin without recompiling the
     # unchanged service application; its upstream app version remains the same.
-    upstream_version = meta['Version'].rsplit('-', 1)[0]
-    assert info['CFBundleShortVersionString'] == upstream_version, 'Service/app version mismatch'
+    if full:
+        # The full installer and its unchanged service application have independent versions.
+        assert re.fullmatch(r'\d+(?:\.\d+)+', info['CFBundleShortVersionString'])
+    else:
+        upstream_version = meta['Version'].rsplit('-', 1)[0]
+        assert info['CFBundleShortVersionString'] == upstream_version, 'Service/app version mismatch'
     for license in ('libusb-LICENSE.txt', 'libuvc-LICENSE.txt', 'USBHost-NOTICE.txt', 'SOURCE.txt'):
         assert payload['var/jb/usr/share/doc/com.applelive.uvchost/' + license][1]
     print('Verified rootless layout, ownership, permissions, service registration and matched plugin')
+    if full:
+        print('Verified full-package dependencies, both matched plugin copies and four-app automatic injection')
     print('Installer SHA256:', hashlib.sha256(package.read_bytes()).hexdigest())
 
 
 if __name__ == '__main__':
-    verify(Path(sys.argv[1]), Path(sys.argv[2]))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('package', type=Path)
+    parser.add_argument('plugin', type=Path)
+    parser.add_argument('--package-id', choices=('com.applelive.uvchost', 'com.applelive.full'),
+                        default='com.applelive.uvchost')
+    args = parser.parse_args()
+    verify(args.package, args.plugin, expected_package=args.package_id)

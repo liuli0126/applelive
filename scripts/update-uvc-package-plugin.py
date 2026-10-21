@@ -1,4 +1,4 @@
-"""Update the embedded plugin in an existing AppleLive UVC DEB, preserving its service."""
+"""Update plugins in an existing AppleLive service/full DEB, preserving its installer."""
 
 from __future__ import annotations
 
@@ -12,6 +12,11 @@ import struct
 import tempfile
 
 PLUGIN_PATH = 'var/jb/Library/AppleLive/AppleLive.dylib'
+AUTOMATIC_PLUGIN_PATH = 'var/jb/Library/MobileSubstrate/DynamicLibraries/AppleLive.dylib'
+PACKAGE_PLUGINS = {
+    'com.applelive.uvchost': (PLUGIN_PATH,),
+    'com.applelive.full': (PLUGIN_PATH, AUTOMATIC_PLUGIN_PATH),
+}
 
 
 def load(name, filename):
@@ -52,8 +57,9 @@ def update(source: Path, plugin: Path, destination: Path, revision: int):
         body = binary[offset:offset + size]
         for marker in (b'hasFrameReceivedWithin:', b'markInterrupted', b'isVideoReplacementActive',
                        b'renderVideoIntoSample:pixelBuffer:',
-                       b'retaining last video frame during transport recovery'):
-            require(marker in body, f'Missing video-continuity fix in slice {subtype:#x}')
+                       b'retaining last video frame during transport recovery',
+                       b'ALInjectedScreenMonitor', b'observeMatch:usable:', b'sendPendingAlert'):
+            require(marker in body, f'Missing continuity/monitor implementation in slice {subtype:#x}: {marker!r}')
 
     original_bytes = source.read_bytes()
     members = package_verifier.ar_members(original_bytes)
@@ -70,21 +76,26 @@ def update(source: Path, plugin: Path, destination: Path, revision: int):
             'Unexpected control files; checksums or additional scripts require review')
     old_control = parsed_control['control'][1]
     fields = dict(line.split(': ', 1) for line in old_control.decode().splitlines() if ': ' in line)
-    require(fields.get('Package') == 'com.applelive.uvchost', 'Wrong existing package identity')
+    package_id = fields.get('Package')
+    require(package_id in PACKAGE_PLUGINS, 'Wrong existing package identity')
+    plugin_paths = PACKAGE_PLUGINS[package_id]
     require(fields.get('Architecture') == 'iphoneos-arm64', 'Wrong existing package architecture')
-    match = re.fullmatch(r'(\d+(?:\.\d+)+)(?:-(\d+))?', fields['Version'])
+    full = package_id == 'com.applelive.full'
+    pattern = r'(\d+(?:\.\d+)+)-usb(\d+)' if full else r'(\d+(?:\.\d+)+)(?:-(\d+))?'
+    match = re.fullmatch(pattern, fields['Version'])
     require(match is not None, 'Unsupported existing version format')
     require(revision > int(match[2] or 0), 'Revision must increase for an existing installation')
-    version = f'{match[1]}-{revision}'
+    version = f'{match[1]}-{"usb" if full else ""}{revision}'
     new_control = re.sub(rb'(?m)^Version: [^\r\n]+', b'Version: ' + version.encode(), old_control)
-    require(sum(normalized(info.name) == PLUGIN_PATH for info, _ in payload) == 1,
-            'Expected exactly one embedded plugin')
-    new_payload = [(info, binary if normalized(info.name) == PLUGIN_PATH else body)
+    for path in plugin_paths:
+        require(sum(normalized(info.name) == path for info, _ in payload) == 1,
+                f'Expected exactly one embedded plugin at {path}')
+    new_payload = [(info, binary if normalized(info.name) in plugin_paths else body)
                    for info, body in payload]
     new_controls = [(info, new_control if normalized(info.name) == 'control' else body)
                     for info, body in control]
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(prefix='uvc-plugin-', suffix='.deb', delete=False,
+    with tempfile.NamedTemporaryFile(prefix='applelive-plugin-', suffix='.deb', delete=False,
                                      dir=destination.parent) as pending_file:
         pending = Path(pending_file.name)
     try:
@@ -95,16 +106,16 @@ def update(source: Path, plugin: Path, destination: Path, revision: int):
         ])
         rebuilt = package_verifier.ar_members(pending.read_bytes())
         for old_entries, name, allowed, replacement in (
-            (control, 'control.tar.gz', 'control', new_control),
-            (payload, 'data.tar.gz', PLUGIN_PATH, binary),
+            (control, 'control.tar.gz', ('control',), new_control),
+            (payload, 'data.tar.gz', plugin_paths, binary),
         ):
             updated_entries = archive_tools.read_tar(rebuilt[name])
             require(len(old_entries) == len(updated_entries), 'Package entry count changed')
             for (before_info, before), (after_info, after) in zip(old_entries, updated_entries):
                 require(metadata(before_info) == metadata(after_info), 'Package path/permissions changed')
-                expected = replacement if normalized(before_info.name) == allowed else before
+                expected = replacement if normalized(before_info.name) in allowed else before
                 require(after == expected, f'Unexpected payload change: {before_info.name}')
-        package_verifier.verify(pending, plugin)
+        package_verifier.verify(pending, plugin, expected_package=package_id)
         result = {
             'package': fields['Package'], 'previous_version': fields['Version'], 'version': version,
             'source_deb_sha256': hashlib.sha256(original_bytes).hexdigest(),
@@ -112,7 +123,8 @@ def update(source: Path, plugin: Path, destination: Path, revision: int):
             'deb_sha256': hashlib.sha256(pending.read_bytes()).hexdigest(),
             'deb_bytes': pending.stat().st_size,
             'control_entries': len(control), 'payload_entries': len(payload),
-            'only_changes': ['control/Version', PLUGIN_PATH],
+            'automatic_injection': full,
+            'only_changes': ['control/Version', *plugin_paths],
         }
         pending.replace(destination)
         print(json.dumps(result, ensure_ascii=False, indent=2))

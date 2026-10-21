@@ -4,20 +4,23 @@
 
 ## 当前使用的“万能版本.deb”更新（2026-10-21）
 
-用户确认实际使用 `交付文件/万能版本.deb`。本次在这个原包上更新：包 ID 保持 `com.applelive.uvchost`，版本从 `0.1.1` 升为 `0.1.1-1`，只替换 `/var/jb/Library/AppleLive/AppleLive.dylib` 为已通过 USB 防闪回回归的构建。原服务程序、配套 App、启动/卸载脚本、路径和权限逐项保持不变。
+当前交付是带越狱自动加载的完整安装包：`交付文件/万能版本.deb`，包 ID 为 `com.applelive.full`，版本从原完整包的 `0.1.13-usb1` 升为 `0.1.13-usb2`。安装后由越狱注入环境自动加载到相机、抖音、TikTok 和微信；无需手动导出或使用注入器。覆盖安装完成后完全退出并重新打开目标 App；若包管理器要求重载界面，按提示操作。
+
+两处 dylib 同时更新为已通过 USB 防闪回回归且包含画面监控的构建：`/var/jb/Library/AppleLive/AppleLive.dylib` 和 `/var/jb/Library/MobileSubstrate/DynamicLibraries/AppleLive.dylib`。原服务程序、配套 App、自动加载过滤配置、依赖、冲突/替换声明、启动/卸载脚本、路径和权限逐项保持不变。
 
     python3 scripts/update-uvc-package-plugin.py \
       path/to/original.deb path/to/fixed/AppleLive.dylib \
-      output/万能版本.deb --revision 1 --report output/verification.json
-    python3 scripts/verify-uvc-service.py output/万能版本.deb path/to/fixed/AppleLive.dylib
+      output/万能版本.deb --revision 2 --report output/verification.json
+    python3 scripts/verify-uvc-service.py output/万能版本.deb path/to/fixed/AppleLive.dylib \
+      --package-id com.applelive.full
 
 修复 dylib 来自 `dc43aa4`、CI `39215618040` 第 2 次成功执行。其 SHA256 为 `8ebd4aa3a6068da282799c373edb31199a621c1684b733a3778ea83a83ae7067`。
 
-更新后的 DEB 为 `4,789,978` 字节，SHA256 为 `20926c0963a9be18868981ee90be45094db8fbf6cdcc9ebfe34eb93a282b14b5`。打包器核对所有 tar 项的内容与权限，只允许 control 的 Version 和内置 dylib 改变；包修订号提高并不改变配套 App 的原始版本号。
+更新后的完整 DEB 为 `9,360,374` 字节（约 8.93 MiB），SHA256 为 `24287e287dcfe98e76a895ba70b3369b36714913afe3bab89e2fef510289ed0f`。打包器核对所有 tar 项的内容与权限，只允许 control 的 Version 和两份 dylib 改变。完整包版本与配套服务 App 的 `0.1.1` 版本分别维护。
 
-这个包的配套 App 使用“导出配套手机插件”分享上述 dylib。覆盖安装 DEB 后，若直播 App 之前是通过导出/注入加载的，需要重新导出新版并在原注入器替换旧副本，然后完全退出并重新打开目标 App；DEB 更新不会改写已经拷进目标 App 的旧 dylib。
+更新脚本也能维护独立的 `com.applelive.uvchost` 服务包，但该服务包只带导出副本，没有自动加载的 dylib 和过滤配置，不能作为当前完整安装包交付。原约 8.87 MiB 的 `0.1.13-usb1` 完整包才是本次升级的来源。
 
-此前另做的独立注入 DEB 不是用户这次指定的交付路线，其新增自动出包流程已撤回。下面三条路线保留为源码参考，本次交付入口仍是同名 `万能版本.deb`。实际手机长时间直播验收仍由用户进行。
+已验证旧 dylib、未提高版本、缺少自动加载副本、错误目标 App 和仅一份副本更新均会被拒绝，并保留原输出。现有完整包构建器可以重现相同的 DEB 字节。实际手机长时间直播验收仍由用户进行。
 
 ## 三条构建路线
 
@@ -46,6 +49,9 @@ ios-uvc-service/ 是手机本地外接 UVC 服务；scripts/build-uvc-service.sh
       injector-artifact/AppleLive.dylib \
       injector-artifact/AppleLive-UVC-Service-rootless.deb \
       injector-artifact/AppleLive-Full-rootless.deb
+    python3 scripts/verify-uvc-service.py \
+      injector-artifact/AppleLive-Full-rootless.deb \
+      injector-artifact/AppleLive.dylib --package-id com.applelive.full
 
 这条路线需要 macOS、iPhoneOS SDK、Theos、ldid、dpkg 和已构建的 libusb/libuvc。ios-uvc-service/ 内的 entitlements、LaunchDaemon、安装/卸载脚本都属于 DEB 源码的一部分。
 
@@ -67,6 +73,7 @@ ios-tweak/Makefile、ios-tweak/control、ios-tweak/postinst.rootless 和 ios-twe
 | scripts/build-uvc-service.sh | 编译、签名并生成 UVC service DEB |
 | scripts/verify-injector-dylib.py | 检查 dylib 架构、部署版本和导入依赖 |
 | scripts/verify-uvc-service.py | 检查 DEB 布局、权限、签名、entitlements 和 dylib 是否匹配 |
+| scripts/update-uvc-package-plugin.py | 在原服务包或完整包内更新所有 dylib 副本，逐项保留其他内容并提高修订号 |
 | scripts/relink-injector.sh | 使用 relink 目录中的对象和静态库重新链接 dylib |
 | scripts/relink-uvc-service.sh | 重新链接 UVC 服务二进制 |
 
