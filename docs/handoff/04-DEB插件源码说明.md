@@ -12,9 +12,19 @@ ios-injector/ 负责构建独立 AppleLive.dylib。它由注入器加载到目�
     python3 scripts/build-rootless-injector-deb.py \
       path/to/AppleLive.dylib \
       output/AppleLive-Dopamine-rootless.deb
+    python3 scripts/verify-rootless-injector-deb.py \
+      output/AppleLive-Dopamine-rootless.deb path/to/AppleLive.dylib
 
 包装入口：scripts/build-rootless-injector-deb.py。
 它生成 com.applelive.injector，把 dylib 和 ElleKit/越狱过滤 plist 放到 /var/jb/Library/MobileSubstrate/DynamicLibraries/。
+
+2026-10-21 的安装包版本为 `0.1.14`，包含 USB 断帧/自动重连时保留上一帧、阻止原始摄像头帧透传及预览保留修复。DEB 直接复用已通过原生回归的独立 dylib，不另外编译一套媒体逻辑；打包后检查两份架构的修复标记及嵌入文件是否逐字节一致，校验失败不会覆盖已存在的成品。
+
+过滤范围是系统相机、抖音、TikTok 和微信，排除 `mediaserverd` 等系统服务。包 ID 保持 `com.applelive.injector`，版本高于旧 `0.1.13-standalone1`；与拥有相同加载路径的 `com.applelive.tweak`、`com.applelive.full` 声明冲突和替换。安装后需要完全退出并重新打开目标 App。若以前用 TrollFools 等工具手动注入过同类 dylib，应先在原工具中撤销该注入，避免与 DEB 重复加载。
+
+主手机构建现在自动生成并校验 `AppleLive-Dopamine-rootless.deb`。若已有成功的手机构建，可运行 **Package verified injector as Dopamine DEB**，把该构建的数字 run ID 填入 `phone_run_id`；它只下载已有二进制并打包，用真实 `dpkg-deb` 验证和解包，不重新编译媒体代码。
+
+交付目录的历史 `万能版本.deb` 实际为 `com.applelive.uvchost` 服务包，不能当作自动注入的 DEB，也不代表支持所有 iOS/越狱。新的手机安装入口为 `福煋推流插件-Dopamine.deb`，仅适用于 iOS 15+ 的兼容 rootless 越狱环境。用户当前使用 Dopamine；iOS 13/rootful 不使用这个包。
 
 ### 2. 完整 rootless DEB（注入器 + 手机 UVC 服务）
 
@@ -49,6 +59,7 @@ ios-tweak/Makefile、ios-tweak/control、ios-tweak/postinst.rootless 和 ios-twe
 | scripts/build-full-rootless-deb.py | 合并 UVC 服务和 dylib 的完整 rootless DEB 打包器 |
 | scripts/build-uvc-service.sh | 编译、签名并生成 UVC service DEB |
 | scripts/verify-injector-dylib.py | 检查 dylib 架构、部署版本和导入依赖 |
+| scripts/verify-rootless-injector-deb.py | 检查实际注入 DEB 的路径、过滤范围、升级冲突、双架构修复标记及嵌入字节 |
 | scripts/verify-uvc-service.py | 检查 DEB 布局、权限、签名、entitlements 和 dylib 是否匹配 |
 | scripts/relink-injector.sh | 使用 relink 目录中的对象和静态库重新链接 dylib |
 | scripts/relink-uvc-service.sh | 重新链接 UVC 服务二进制 |

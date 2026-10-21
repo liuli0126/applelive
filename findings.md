@@ -1,5 +1,10 @@
 # Findings
 
+## 2026-10-21 DEB video-continuity delivery
+- Actual delivery/万能版本.deb is com.applelive.uvchost 0.1.1, architecture iphoneos-arm64, containing only the legacy service and an exportable dylib at var/jb/Library/AppleLive/AppleLive.dylib. Its embedded library SHA256 fcb6f891f8a9c279953b53fee75da46def7a66e3cf2fb5a1df18bb9e16587268 predates the continuity fix; no MobileSubstrate filter is installed by this package.
+- scripts/build-rootless-injector-deb.py already packages the standalone binary into the correct rootless auto-injection path, but has stale version 0.1.13-standalone1 and omits WeChat from its bundle filter. It also lacks a conflict against the full package that owns the same files.
+- Use the exact verified dc43aa4 dylib from CI 39215618040 (SHA256 8ebd4aa3a6068da282799c373edb31199a621c1684b733a3778ea83a83ae7067) for the new rootless app-injection installer. No media source changes or recompilation are needed for this packaging route.
+
 ## 2026-10-05 current USB direct-mode gap
 - The no-SSH transport already exists: `desktop_sender/usb_direct.py` discovers trusted USB devices with `pymobiledevice3`, connects through usbmux to phone TCP 8766, checks `ALUSB1\r\n`, and sends length-prefixed legacy media packets.
 - `ios-injector/ALUSBReceiver.m` already listens only on phone loopback TCP 8766 and parses those framed packets. This avoids OpenSSH and an exposed LAN listener.

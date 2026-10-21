@@ -20,6 +20,7 @@ SCRIPTS = [
     "scripts/relink-injector.sh",
     "scripts/relink-uvc-service.sh",
     "scripts/verify-injector-dylib.py",
+    "scripts/verify-rootless-injector-deb.py",
     "scripts/verify-uvc-service.py",
 ]
 EXTRA = [

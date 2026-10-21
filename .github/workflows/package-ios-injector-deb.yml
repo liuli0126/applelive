@@ -1,0 +1,63 @@
+name: Package verified injector as Dopamine DEB
+
+on:
+  workflow_dispatch:
+    inputs:
+      phone_run_id:
+        description: Successful Build AppleLive injector dylib run in this repository
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  package-rootless:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate source build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PHONE_RUN_ID: ${{ inputs.phone_run_id }}
+        run: |
+          [[ "$PHONE_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PHONE_RUN_ID" > "$RUNNER_TEMP/source-run.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          run = json.loads((Path(os.environ['RUNNER_TEMP']) / 'source-run.json').read_text())
+          assert run['status'] == 'completed' and run['conclusion'] == 'success'
+          assert run['path'] == '.github/workflows/build-ios-injector.yml'
+          assert run['repository']['full_name'] == os.environ['GITHUB_REPOSITORY']
+          print('Verified successful source build:', run['id'], run['head_sha'])
+          PY
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: AppleLive-Injector-iOS14
+          path: phone-artifact
+          run-id: ${{ inputs.phone_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Package and verify actual DEB
+        run: |
+          mkdir -p deb-artifact
+          python3 scripts/build-rootless-injector-deb.py phone-artifact/AppleLive.dylib deb-artifact/AppleLive-Dopamine-rootless.deb
+          python3 scripts/verify-rootless-injector-deb.py deb-artifact/AppleLive-Dopamine-rootless.deb phone-artifact/AppleLive.dylib
+          dpkg-deb --info deb-artifact/AppleLive-Dopamine-rootless.deb
+          dpkg-deb --contents deb-artifact/AppleLive-Dopamine-rootless.deb
+          dpkg-deb --extract deb-artifact/AppleLive-Dopamine-rootless.deb "$RUNNER_TEMP/installed"
+          cmp phone-artifact/AppleLive.dylib "$RUNNER_TEMP/installed/var/jb/Library/MobileSubstrate/DynamicLibraries/AppleLive.dylib"
+          version=$(dpkg-deb --field deb-artifact/AppleLive-Dopamine-rootless.deb Version)
+          dpkg --compare-versions "$version" gt 0.1.13-standalone1
+          sha256sum deb-artifact/AppleLive-Dopamine-rootless.deb phone-artifact/AppleLive.dylib > deb-artifact/SHA256.txt
+          cp "$RUNNER_TEMP/source-run.json" deb-artifact/SOURCE-RUN.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AppleLive-Dopamine-rootless-deb
+          path: deb-artifact/*
+          if-no-files-found: error

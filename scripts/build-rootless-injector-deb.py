@@ -13,25 +13,30 @@ import gzip
 import hashlib
 import importlib.util
 import io
+import plistlib
 import tarfile
+import tempfile
 from pathlib import Path
 
 PACKAGE = "com.applelive.injector"
-VERSION = "0.1.13-standalone1"
+VERSION = "0.1.14"
 ARCHITECTURE = "iphoneos-arm64"
 
-PLIST = """{\n    Filter = {\n        Bundles = (\"com.apple.camera\", \"com.ss.iphone.ugc.Aweme\", \"com.zhiliaoapp.musically\");\n    };\n}\n"""
+PLIST = plistlib.dumps({"Filter": {"Bundles": [
+    "com.apple.camera", "com.ss.iphone.ugc.Aweme",
+    "com.zhiliaoapp.musically", "com.tencent.xin",
+]}}, fmt=plistlib.FMT_XML)
 
 CONTROL_TEMPLATE = """Package: {package}
-Name: AppleLive Virtual Camera (Dopamine)
+Name: 福煋推流插件
 Version: {version}
 Architecture: {architecture}
-Description: AppleLive standalone camera replacement as a Dopamine rootless tweak
+Description: Fuxing camera and audio source with continuous video during USB recovery, for Dopamine rootless
 Maintainer: AppleLive
 Section: Tweaks
 Depends: firmware (>= 15.0), mobilesubstrate | ellekit | libhooker | substitute
-Conflicts: com.applelive.tweak
-Replaces: com.applelive.tweak
+Conflicts: com.applelive.tweak, com.applelive.full
+Replaces: com.applelive.tweak, com.applelive.full
 """
 
 
@@ -103,18 +108,35 @@ def build(source: Path, destination: Path) -> None:
             ),
             (
                 "var/jb/Library/MobileSubstrate/DynamicLibraries/AppleLive.plist",
-                PLIST.encode("utf-8"),
+                PLIST,
                 0o644,
             ),
         ]
     )
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with destination.open("wb") as output:
-        output.write(b"!<arch>\n")
-        output.write(ar_member("debian-binary", b"2.0\n"))
-        output.write(ar_member("control.tar.gz", control_tar))
-        output.write(ar_member("data.tar.gz", data_tar))
+    # Only publish after inspecting the actual archive, including an exact
+    # binary comparison and a check that both slices contain the continuity fix.
+    spec = importlib.util.spec_from_file_location(
+        "verify_rootless_deb", Path(__file__).with_name("verify-rootless-injector-deb.py")
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load rootless DEB verifier")
+    package_verifier = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(package_verifier)
+    with tempfile.NamedTemporaryFile(mode="wb", prefix="applelive-", suffix=".deb",
+                                     dir=destination.parent, delete=False) as output:
+        pending = Path(output.name)
+    try:
+        with pending.open("wb") as output:
+            output.write(b"!<arch>\n")
+            output.write(ar_member("debian-binary", b"2.0\n"))
+            output.write(ar_member("control.tar.gz", control_tar))
+            output.write(ar_member("data.tar.gz", data_tar))
+        package_verifier.verify(pending, source)
+        pending.replace(destination)
+    finally:
+        pending.unlink(missing_ok=True)
     print(f"Created {destination}")
     print(f"Source SHA256: {hashlib.sha256(source.read_bytes()).hexdigest()}")
 

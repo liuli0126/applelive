@@ -1,5 +1,12 @@
 # AppleLive 越狱虚拟摄像头
 
+## Current task: DEB video-continuity fix delivery (2026-10-21)
+- [x] Inspect actual delivered DEB identity and injection paths; distinguish legacy UVC service package from app injection package.
+- [x] Package the verified fixed standalone dylib for iOS 15+ Dopamine/rootless, preserving its package identity and raising its version; verify filters, archive layout and exact embedded bytes.
+- [ ] Add the DEB to phone build outputs so future releases contain the matching fix; publish one clearly named current installer and instructions, then sync source.
+- Existing 万能版本.deb is com.applelive.uvchost 0.1.1 with an old dylib in Library/AppleLive, not an auto-loading app tweak. Keep its service role unchanged; deliver a distinct com.applelive.injector installer.
+- No live phone/OBS restart or installation. Real-device acceptance remains user-run. Hindsight now responds, but all five knowledge pages have no content.
+
 ## Current task: intermittent live video flash (2026-10-19)
 - [x] Trace source selection, frame expiration, decode reset and preview/capture output; add an old-source expiry reproduction for CI.
 - [x] Apply a focused fix that preserves explicit camera/stop behavior and bounded frame ownership.
