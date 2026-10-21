@@ -2,6 +2,23 @@
 
 这份目录对应 iOS 15+ Dopamine/rootless 和历史 rootful 的 DEB 打包路线。源码包不包含任何 Apple 账号、设备配对数据或私钥。
 
+## 当前使用的“万能版本.deb”更新（2026-10-21）
+
+用户确认实际使用 `交付文件/万能版本.deb`。本次在这个原包上更新：包 ID 保持 `com.applelive.uvchost`，版本从 `0.1.1` 升为 `0.1.1-1`，只替换 `/var/jb/Library/AppleLive/AppleLive.dylib` 为已通过 USB 防闪回回归的构建。原服务程序、配套 App、启动/卸载脚本、路径和权限逐项保持不变。
+
+    python3 scripts/update-uvc-package-plugin.py \
+      path/to/original.deb path/to/fixed/AppleLive.dylib \
+      output/万能版本.deb --revision 1 --report output/verification.json
+    python3 scripts/verify-uvc-service.py output/万能版本.deb path/to/fixed/AppleLive.dylib
+
+修复 dylib 来自 `dc43aa4`、CI `39215618040` 第 2 次成功执行。其 SHA256 为 `8ebd4aa3a6068da282799c373edb31199a621c1684b733a3778ea83a83ae7067`。
+
+更新后的 DEB 为 `4,789,978` 字节，SHA256 为 `20926c0963a9be18868981ee90be45094db8fbf6cdcc9ebfe34eb93a282b14b5`。打包器核对所有 tar 项的内容与权限，只允许 control 的 Version 和内置 dylib 改变；包修订号提高并不改变配套 App 的原始版本号。
+
+这个包的配套 App 使用“导出配套手机插件”分享上述 dylib。覆盖安装 DEB 后，若直播 App 之前是通过导出/注入加载的，需要重新导出新版并在原注入器替换旧副本，然后完全退出并重新打开目标 App；DEB 更新不会改写已经拷进目标 App 的旧 dylib。
+
+此前另做的独立注入 DEB 不是用户这次指定的交付路线，其新增自动出包流程已撤回。下面三条路线保留为源码参考，本次交付入口仍是同名 `万能版本.deb`。实际手机长时间直播验收仍由用户进行。
+
 ## 三条构建路线
 
 ### 1. 独立注入器 rootless DEB
@@ -12,19 +29,9 @@ ios-injector/ 负责构建独立 AppleLive.dylib。它由注入器加载到目�
     python3 scripts/build-rootless-injector-deb.py \
       path/to/AppleLive.dylib \
       output/AppleLive-Dopamine-rootless.deb
-    python3 scripts/verify-rootless-injector-deb.py \
-      output/AppleLive-Dopamine-rootless.deb path/to/AppleLive.dylib
 
 包装入口：scripts/build-rootless-injector-deb.py。
 它生成 com.applelive.injector，把 dylib 和 ElleKit/越狱过滤 plist 放到 /var/jb/Library/MobileSubstrate/DynamicLibraries/。
-
-2026-10-21 的安装包版本为 `0.1.14`，包含 USB 断帧/自动重连时保留上一帧、阻止原始摄像头帧透传及预览保留修复。DEB 直接复用已通过原生回归的独立 dylib，不另外编译一套媒体逻辑；打包后检查两份架构的修复标记及嵌入文件是否逐字节一致，校验失败不会覆盖已存在的成品。
-
-过滤范围是系统相机、抖音、TikTok 和微信，排除 `mediaserverd` 等系统服务。包 ID 保持 `com.applelive.injector`，版本高于旧 `0.1.13-standalone1`；与拥有相同加载路径的 `com.applelive.tweak`、`com.applelive.full` 声明冲突和替换。安装后需要完全退出并重新打开目标 App。若以前用 TrollFools 等工具手动注入过同类 dylib，应先在原工具中撤销该注入，避免与 DEB 重复加载。
-
-主手机构建现在自动生成并校验 `AppleLive-Dopamine-rootless.deb`。若已有成功的手机构建，可运行 **Package verified injector as Dopamine DEB**，把该构建的数字 run ID 填入 `phone_run_id`；它只下载已有二进制并打包，用真实 `dpkg-deb` 验证和解包，不重新编译媒体代码。
-
-交付目录的历史 `万能版本.deb` 实际为 `com.applelive.uvchost` 服务包，不能当作自动注入的 DEB，也不代表支持所有 iOS/越狱。新的手机安装入口为 `福煋推流插件-Dopamine.deb`，仅适用于 iOS 15+ 的兼容 rootless 越狱环境。用户当前使用 Dopamine；iOS 13/rootful 不使用这个包。
 
 ### 2. 完整 rootless DEB（注入器 + 手机 UVC 服务）
 
@@ -59,7 +66,6 @@ ios-tweak/Makefile、ios-tweak/control、ios-tweak/postinst.rootless 和 ios-twe
 | scripts/build-full-rootless-deb.py | 合并 UVC 服务和 dylib 的完整 rootless DEB 打包器 |
 | scripts/build-uvc-service.sh | 编译、签名并生成 UVC service DEB |
 | scripts/verify-injector-dylib.py | 检查 dylib 架构、部署版本和导入依赖 |
-| scripts/verify-rootless-injector-deb.py | 检查实际注入 DEB 的路径、过滤范围、升级冲突、双架构修复标记及嵌入字节 |
 | scripts/verify-uvc-service.py | 检查 DEB 布局、权限、签名、entitlements 和 dylib 是否匹配 |
 | scripts/relink-injector.sh | 使用 relink 目录中的对象和静态库重新链接 dylib |
 | scripts/relink-uvc-service.sh | 重新链接 UVC 服务二进制 |

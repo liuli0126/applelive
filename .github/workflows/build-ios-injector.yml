@@ -9,8 +9,6 @@ on:
       - "ios-uvc-service/**"
       - "ios-tweak/**"
       - "scripts/verify-injector-dylib.py"
-      - "scripts/build-rootless-injector-deb.py"
-      - "scripts/verify-rootless-injector-deb.py"
       - "scripts/build-ios-ffmpeg.sh"
       - "scripts/build-ios-uvc.sh"
       - "scripts/build-uvc-service.sh"
@@ -256,17 +254,6 @@ jobs:
             exit 1
           fi
           shasum -a 256 injector-artifact/AppleLive.dylib > injector-artifact/SHA256.txt
-
-      - name: Package and verify Dopamine app-injection DEB
-        run: |
-          python3 scripts/build-rootless-injector-deb.py injector-artifact/AppleLive.dylib injector-artifact/AppleLive-Dopamine-rootless.deb
-          python3 scripts/verify-rootless-injector-deb.py injector-artifact/AppleLive-Dopamine-rootless.deb injector-artifact/AppleLive.dylib
-          dpkg-deb --info injector-artifact/AppleLive-Dopamine-rootless.deb
-          dpkg-deb --extract injector-artifact/AppleLive-Dopamine-rootless.deb "$RUNNER_TEMP/dopamine-deb"
-          cmp injector-artifact/AppleLive.dylib "$RUNNER_TEMP/dopamine-deb/var/jb/Library/MobileSubstrate/DynamicLibraries/AppleLive.dylib"
-          version=$(dpkg-deb --field injector-artifact/AppleLive-Dopamine-rootless.deb Version)
-          dpkg --compare-versions "$version" gt 0.1.13-standalone1
-          shasum -a 256 injector-artifact/AppleLive-Dopamine-rootless.deb > injector-artifact/DEB-SHA256.txt
 
       - name: Upload dylib
         uses: actions/upload-artifact@v4

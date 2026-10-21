@@ -1,11 +1,12 @@
 # AppleLive 越狱虚拟摄像头
 
 ## Current task: DEB video-continuity fix delivery (2026-10-21)
-- [x] Inspect actual delivered DEB identity and injection paths; distinguish legacy UVC service package from app injection package.
-- [x] Package the verified fixed standalone dylib for iOS 15+ Dopamine/rootless, preserving its package identity and raising its version; verify filters, archive layout and exact embedded bytes.
-- [ ] Add the DEB to phone build outputs so future releases contain the matching fix; publish one clearly named current installer and instructions, then sync source.
-- Existing 万能版本.deb is com.applelive.uvchost 0.1.1 with an old dylib in Library/AppleLive, not an auto-loading app tweak. Keep its service role unchanged; deliver a distinct com.applelive.injector installer.
-- No live phone/OBS restart or installation. Real-device acceptance remains user-run. Hindsight now responds, but all five knowledge pages have no content.
+- [x] Confirm user's actual delivery target: update the existing 万能版本.deb; the separate app-injection package is not their requested installation route.
+- [x] Replace its embedded dylib with the verified dc43aa4 binary, preserve all service executables/scripts/paths, and increase only the Debian package revision.
+- [x] Verify package metadata, signatures/architectures, unchanged payload entries and exact new dylib bytes; publish the same 万能版本.deb filename and concise upgrade instructions.
+- Delivered 0.1.1-1, 4,789,978 bytes, SHA256 20926c0963a9be18868981ee90be45094db8fbf6cdcc9ebfe34eb93a282b14b5. Verified all 5 control tar entries and 24 payload tar entries (including root entries), allowing only Version and embedded dylib byte changes.
+- The user's explicit correction supersedes the previously proposed com.applelive.injector route. Existing 万能版本.deb is com.applelive.uvchost 0.1.1; ServiceApp.m exports its Library/AppleLive/AppleLive.dylib through the original UI. The package identity alone was not evidence that the user did not use it.
+- No live phone/OBS restart or installation. Real-device acceptance remains user-run. Hindsight search/list currently fail with ECONNREFUSED 127.0.0.1:9077.
 
 ## Current task: intermittent live video flash (2026-10-19)
 - [x] Trace source selection, frame expiration, decode reset and preview/capture output; add an old-source expiry reproduction for CI.

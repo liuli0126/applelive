@@ -1,6 +1,9 @@
 # Findings
 
 ## 2026-10-21 DEB video-continuity delivery
+- User correction supersedes the initially proposed independent injection package: the actual requested artifact is the existing 万能版本.deb. Its package identity alone did not establish that it was unused. ServiceApp.m:62 reads its embedded Library/AppleLive/AppleLive.dylib for the “导出配套手机插件” action.
+- Updated the original package to Debian revision 0.1.1-1 with the verified dc43aa4 dylib; original service/app executables, maintainer scripts, directories and permissions are unchanged. The app's CFBundleShortVersionString remains 0.1.1 because only packaging/plugin content changed; verifier now compares the Debian upstream version.
+- DEB update does not replace a previously copied library inside a target app. Users of the package's export/inject flow need to export the new payload and replace the old injected copy. No phone installation or claim of completed long-run hardware acceptance.
 - Actual delivery/万能版本.deb is com.applelive.uvchost 0.1.1, architecture iphoneos-arm64, containing only the legacy service and an exportable dylib at var/jb/Library/AppleLive/AppleLive.dylib. Its embedded library SHA256 fcb6f891f8a9c279953b53fee75da46def7a66e3cf2fb5a1df18bb9e16587268 predates the continuity fix; no MobileSubstrate filter is installed by this package.
 - scripts/build-rootless-injector-deb.py already packages the standalone binary into the correct rootless auto-injection path, but has stale version 0.1.13-standalone1 and omits WeChat from its bundle filter. It also lacks a conflict against the full package that owns the same files.
 - Use the exact verified dc43aa4 dylib from CI 39215618040 (SHA256 8ebd4aa3a6068da282799c373edb31199a621c1684b733a3778ea83a83ae7067) for the new rootless app-injection installer. No media source changes or recompilation are needed for this packaging route.

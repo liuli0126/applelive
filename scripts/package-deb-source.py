@@ -20,8 +20,9 @@ SCRIPTS = [
     "scripts/relink-injector.sh",
     "scripts/relink-uvc-service.sh",
     "scripts/verify-injector-dylib.py",
-    "scripts/verify-rootless-injector-deb.py",
     "scripts/verify-uvc-service.py",
+    "scripts/update-uvc-package-plugin.py",
+    "scripts/repack-deb-gzip.py",
 ]
 EXTRA = [
     "docs/handoff/04-DEB插件源码说明.md",
