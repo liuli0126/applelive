@@ -127,6 +127,7 @@ def verify(package, plugin, *, expected_package='com.applelive.uvchost'):
         assert re.findall(r'"([^"]+)"', match[1]) == [
             'com.apple.camera', 'com.ss.iphone.ugc.Aweme',
             'com.zhiliaoapp.musically', 'com.tencent.xin',
+            'com.ss.iphone.ugc.aweme.livepro',
         ], 'Wrong automatic-injection target apps'
     launch = plistlib.loads(payload['var/jb/Library/LaunchDaemons/com.applelive.uvchost.plist'][1])
     assert launch['UserName'] == 'mobile' and launch['Label'] == 'com.applelive.uvchost'
@@ -145,7 +146,7 @@ def verify(package, plugin, *, expected_package='com.applelive.uvchost'):
         assert payload['var/jb/usr/share/doc/com.applelive.uvchost/' + license][1]
     print('Verified rootless layout, ownership, permissions, service registration and matched plugin')
     if full:
-        print('Verified full-package dependencies, both matched plugin copies and four-app automatic injection')
+        print('Verified full-package dependencies, both matched plugin copies and five-app automatic injection')
     print('Installer SHA256:', hashlib.sha256(package.read_bytes()).hexdigest())
 
 

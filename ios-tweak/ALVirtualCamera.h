@@ -18,6 +18,8 @@
 - (CMSampleBufferRef)replacementForAudioSample:(CMSampleBufferRef)original;
 #ifdef APPLELIVE_STANDALONE
 - (void)selectSource:(NSString *)kind URL:(NSURL *)url;
+- (void)suspendSource;
+- (void)resumeSource;
 - (NSDictionary *)mediaStatus;
 - (NSString *)externalCameraReport;
 - (void)setMediaPaused:(BOOL)paused;

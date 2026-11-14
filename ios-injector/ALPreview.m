@@ -21,11 +21,11 @@ static void ALReplaceMethod(Class cls, SEL selector, IMP replacement, IMP *origi
         class_replaceMethod(cls, selector, replacement, method_getTypeEncoding(method));
 }
 
-static void ALPaintPreview(AVSampleBufferDisplayLayer *layer, CGSize size, BOOL active) {
+static void ALPaintPreview(AVSampleBufferDisplayLayer *layer, CGSize size, BOOL render) {
     ALVirtualCamera *camera = [ALVirtualCamera sharedInstance];
-    active = active && [camera isVideoReplacementActive];
+    BOOL active = [camera isVideoReplacementActive];
     uint64_t generation = camera.frameStore.generation;
-    if (!active || size.width < 1 || size.height < 1) {
+    if (!active || !render || size.width < 1 || size.height < 1) {
         ALUpdatePreviewLayer(layer, NULL, generation, active); return;
     }
     CGFloat scale = MIN(1, 720 / MAX(size.width, size.height));
@@ -56,17 +56,21 @@ static void ALPaintPreview(AVSampleBufferDisplayLayer *layer, CGSize size, BOOL 
 
 static void ALTrackPreview(AVCaptureVideoPreviewLayer *preview) {
     if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ ALTrackPreview(preview); }); return; }
-    if (!preview.session) return;
     AVSampleBufferDisplayLayer *overlay = objc_getAssociatedObject(preview, kALPreviewLayer);
     if (!overlay) {
         overlay = [AVSampleBufferDisplayLayer layer];
         overlay.videoGravity = AVLayerVideoGravityResize;
         overlay.backgroundColor = UIColor.blackColor.CGColor;
-        overlay.hidden = YES;
+        // Cover before attaching: waiting for the 15 Hz ticker would expose
+        // up to one physical preview frame when a session/layer is rebuilt.
+        ALVirtualCamera *camera = [ALVirtualCamera sharedInstance];
+        ALUpdatePreviewLayer(overlay, NULL, camera.frameStore.generation, [camera isVideoReplacementActive]);
         objc_setAssociatedObject(preview, kALPreviewLayer, overlay, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [preview addSublayer:overlay]; [gALPreviewLayers addObject:preview];
     }
     if (preview.bounds.size.width > 0 && preview.bounds.size.height > 0) overlay.frame = preview.bounds;
+    ALVirtualCamera *camera = [ALVirtualCamera sharedInstance];
+    ALUpdatePreviewLayer(overlay, NULL, camera.frameStore.generation, [camera isVideoReplacementActive]);
 }
 static void ALPreviewLayout(id self, SEL selector) {
     if (gALPreviewLayout) gALPreviewLayout(self, selector);
@@ -77,11 +81,17 @@ static void ALPreviewSetSession(id self, SEL selector, AVCaptureSession *session
     ALTrackPreview(self);
 }
 static NSData *ALStillJPEG(id self, SEL selector, CMSampleBufferRef sample) {
-    NSData *replacement = [[ALVirtualCamera sharedInstance] sourceJPEG];
+    ALVirtualCamera *camera = [ALVirtualCamera sharedInstance];
+    BOOL protecting = [camera isVideoReplacementActive];
+    NSData *replacement = [camera sourceJPEG];
+    if (!replacement && (protecting || [camera isVideoReplacementActive])) return nil;
     return replacement ?: (gALStillJPEG ? gALStillJPEG(self, selector, sample) : nil);
 }
 static NSData *ALPhotoData(id self, SEL selector) {
-    NSData *replacement = [[ALVirtualCamera sharedInstance] sourceJPEG];
+    ALVirtualCamera *camera = [ALVirtualCamera sharedInstance];
+    BOOL protecting = [camera isVideoReplacementActive];
+    NSData *replacement = [camera sourceJPEG];
+    if (!replacement && (protecting || [camera isVideoReplacementActive])) return nil;
     return replacement ?: (gALPhotoData ? gALPhotoData(self, selector) : nil);
 }
 @implementation ALPreviewView
@@ -95,6 +105,18 @@ static NSData *ALPhotoData(id self, SEL selector) {
     return self;
 }
 @end
+void ALRefreshPreviewProtection(void) {
+    if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ ALRefreshPreviewProtection(); }); return; }
+    ALVirtualCamera *camera = [ALVirtualCamera sharedInstance];
+    BOOL active = [camera isVideoReplacementActive];
+    uint64_t generation = camera.frameStore.generation;
+    for (AVCaptureVideoPreviewLayer *preview in gALPreviewLayers.allObjects) {
+        AVSampleBufferDisplayLayer *overlay = objc_getAssociatedObject(preview, kALPreviewLayer);
+        ALUpdatePreviewLayer(overlay, NULL, generation, active);
+    }
+    for (ALPreviewView *view in gALPreviewViews.allObjects)
+        ALUpdatePreviewLayer((AVSampleBufferDisplayLayer *)view.layer, NULL, generation, active);
+}
 void ALInstallPreviewHooks(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{

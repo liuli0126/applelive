@@ -11,10 +11,10 @@ import tarfile
 from pathlib import Path
 
 PACKAGE = "com.applelive.full"
-VERSION = "0.1.13-usb2"
+VERSION = "0.1.13-usb4"
 ARCHITECTURE = "iphoneos-arm64"
 
-PLIST = """{\n    Filter = {\n        Bundles = (\"com.apple.camera\", \"com.ss.iphone.ugc.Aweme\", \"com.zhiliaoapp.musically\", \"com.tencent.xin\");\n    };\n}\n"""
+PLIST = """{\n    Filter = {\n        Bundles = (\"com.apple.camera\", \"com.ss.iphone.ugc.Aweme\", \"com.zhiliaoapp.musically\", \"com.tencent.xin\", \"com.ss.iphone.ugc.aweme.livepro\");\n    };\n}\n"""
 
 CONTROL = f"""Package: {PACKAGE}
 Name: AppleLive USB + App Injection (Dopamine)

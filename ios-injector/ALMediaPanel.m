@@ -87,6 +87,7 @@ static NSString *ALFriendlyStreamError(NSString *error) {
 @property(nonatomic, weak) UIWindow *previousKeyWindow;
 @property(nonatomic) BOOL expanded;
 @property(nonatomic) BOOL importing;
+@property(nonatomic, weak) UITextField *streamURLField;
 @property(nonatomic) CGPoint bubbleFraction;
 @end
 
@@ -478,7 +479,7 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     [self refresh];
 }
 - (void)editStream {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"检测 · 网络信号" message:@"粘贴完整 RTMP 或 RTSP 地址。此模式要求手机与推流电脑连接同一 Wi-Fi。" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"检测 · 网络信号" message:@"填写完整 RTMP 或 RTSP 拉流地址。本地地址需连接同一局域网，公网地址需能访问互联网。" preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
         field.text = [self.source[@"url"] length] ? self.source[@"url"] : ALDefaultStreamURL();
         field.placeholder = @"rtmp://电脑IP:1935/live/applelive";
@@ -486,6 +487,15 @@ static NSString *ALFriendlyStreamError(NSString *error) {
         field.backgroundColor = ALCyberBackground();
         field.keyboardType = UIKeyboardTypeURL; field.autocorrectionType = UITextAutocorrectionTypeNo;
         field.autocapitalizationType = UITextAutocapitalizationTypeNone; field.accessibilityLabel = @"拉流地址";
+        field.clearButtonMode = UITextFieldViewModeWhileEditing;
+        self.streamURLField = field;
+        UIToolbar *shortcuts = [[UIToolbar alloc] initWithFrame:CGRectMake(0, 0, 320, 44)];
+        shortcuts.barStyle = UIBarStyleBlack; shortcuts.tintColor = ALCyberText();
+        UIBarButtonItem *clear = [[UIBarButtonItem alloc] initWithTitle:@"一键清空" style:UIBarButtonItemStylePlain target:self action:@selector(clearStreamURL)];
+        UIBarButtonItem *paste = [[UIBarButtonItem alloc] initWithTitle:@"一键粘贴" style:UIBarButtonItemStylePlain target:self action:@selector(pasteStreamURL)];
+        clear.accessibilityLabel = @"清空拉流地址"; paste.accessibilityLabel = @"粘贴拉流地址";
+        shortcuts.items = @[clear, [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil], paste];
+        field.inputAccessoryView = shortcuts;
         [field addTarget:self action:@selector(validateStream:) forControlEvents:UIControlEventEditingChanged];
     }];
     [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(id action) { [self restoreKey]; }]];
@@ -499,8 +509,25 @@ static NSString *ALFriendlyStreamError(NSString *error) {
     }]; play.enabled = ALValidStreamURL(alert.textFields.firstObject.text); [alert addAction:play]; [self present:alert];
 }
 - (void)validateStream:(UITextField *)field {
-    UIAlertController *alert = (id)self.window.rootViewController.presentedViewController;
+    UIViewController *presented = self.window.rootViewController.presentedViewController;
+    if (![presented isKindOfClass:UIAlertController.class]) return;
+    UIAlertController *alert = (UIAlertController *)presented;
+    if (field != alert.textFields.firstObject) return;
     alert.actions.lastObject.enabled = ALValidStreamURL([field.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]);
+}
+- (void)clearStreamURL {
+    self.streamURLField.text = @"";
+    [self.streamURLField sendActionsForControlEvents:UIControlEventEditingChanged];
+    [self.streamURLField becomeFirstResponder];
+}
+- (void)pasteStreamURL {
+    // Access the clipboard only on an explicit tap. Preserve the URL query
+    // verbatim: signed cloud stream addresses must not be decoded or rewritten.
+    NSString *value = UIPasteboard.generalPasteboard.string;
+    if (!value.length) { UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, @"剪贴板中没有文字"); return; }
+    self.streamURLField.text = [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    [self.streamURLField sendActionsForControlEvents:UIControlEventEditingChanged];
+    [self.streamURLField becomeFirstResponder];
 }
 - (void)pickAlbum {
     if (self.importing) return;
@@ -554,12 +581,12 @@ static NSString *ALFriendlyStreamError(NSString *error) {
         if (oldFile.length && ![oldFile isEqualToString:filename]) [NSFileManager.defaultManager removeItemAtURL:[ALMediaDirectory() URLByAppendingPathComponent:oldFile] error:nil];
     });
 }
-- (void)background { [self.monitor pauseForBackground]; self.window.hidden = YES; [self restoreKey]; [self.camera selectSource:@"none" URL:nil]; }
+- (void)background { [self.monitor pauseForBackground]; self.window.hidden = YES; [self restoreKey]; [self.camera suspendSource]; }
 - (void)refresh {
     if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) { self.window.hidden = YES; return; }
     [self.monitor resumeIfEnabled];
     if (!self.window) [self buildWindow];
-    if (self.window.hidden) [self applySource];
+    [self.camera resumeSource];
     self.window.hidden = NO;
     NSDictionary *status = self.camera.streamStatus, *media = self.camera.mediaStatus;
     NSString *kind = self.source[@"kind"], *state = media[@"state"];

@@ -73,6 +73,7 @@ static void ALHookMessage(Class cls, SEL selector, IMP replacement, IMP *origina
 @property(nonatomic) ALUSBReceiver *usbReceiver;
 @property(nonatomic) ALUVCServiceClient *externalCamera;
 @property(atomic) BOOL directUSB;
+@property(atomic) BOOL sourceSuspended;
 #endif
 - (BOOL)renderVideoIntoSample:(CMSampleBufferRef)sample;
 - (BOOL)renderVideoIntoSample:(CMSampleBufferRef)sample pixelBuffer:(CVPixelBufferRef)incoming;
@@ -115,11 +116,12 @@ static CMSampleBufferRef ALCreateVideoSample(CVPixelBufferRef pixelBuffer,
 }
 
 static CMSampleBufferRef ALHookBWCopyNext(id self, SEL selector) {
-    CMSampleBufferRef original = gOriginalBWCopyNext ? gOriginalBWCopyNext(self, selector) : NULL;
     ALVirtualCamera *camera = [ALVirtualCamera sharedInstance];
+    BOOL protecting = [camera isVideoReplacementActive];
+    CMSampleBufferRef original = gOriginalBWCopyNext ? gOriginalBWCopyNext(self, selector) : NULL;
     CMSampleBufferRef replacement = [camera replacementForVideoSample:original];
     if (!replacement) {
-        if (!ALCanDeliverVideoSample(original, [camera isVideoReplacementActive])) {
+        if (!ALCanDeliverVideoSample(original, protecting || [camera isVideoReplacementActive])) {
             if (original) CFRelease(original);
             return NULL;
         }
@@ -133,7 +135,9 @@ static void ALHookBWEmitSample(id self, SEL selector, CMSampleBufferRef sample) 
     @autoreleasepool {
         static uint64_t calls = 0;
         uint64_t count = __sync_add_and_fetch(&calls, 1);
-        BOOL replaced = [[ALVirtualCamera sharedInstance] renderVideoIntoSample:sample];
+        ALVirtualCamera *camera = [ALVirtualCamera sharedInstance];
+        BOOL protecting = [camera isVideoReplacementActive];
+        BOOL replaced = [camera renderVideoIntoSample:sample];
         if (count == 1 || count % 900 == 0) {
             CVImageBufferRef image = sample ? CMSampleBufferGetImageBuffer(sample) : NULL;
             os_log(OS_LOG_DEFAULT, "[AppleLive] BW emit calls=%llu replaced=%d image=%dx%d",
@@ -141,7 +145,7 @@ static void ALHookBWEmitSample(id self, SEL selector, CMSampleBufferRef sample) 
                    image ? (int)CVPixelBufferGetHeight(image) : 0);
         }
         if (gOriginalBWEmitSample && ALCanDeliverVideoSample(sample,
-                [[ALVirtualCamera sharedInstance] isVideoReplacementActive]))
+                protecting || [camera isVideoReplacementActive]))
             gOriginalBWEmitSample(self, selector, sample);
     }
 }
@@ -246,11 +250,12 @@ static void ALInstallHooks(void) {
     id target = _target;
     ALVirtualCamera *owner = _owner;
     if (!target) return;
+    BOOL protecting = !_audio && [owner isVideoReplacementActive];
     CMSampleBufferRef replacement = NULL;
     if (_audio) replacement = [owner replacementForAudioSample:sampleBuffer];
     else replacement = [owner replacementForVideoSample:sampleBuffer];
     CMSampleBufferRef delivered = replacement ?: sampleBuffer;
-    if (!_audio && !ALCanDeliverVideoSample(delivered, [owner isVideoReplacementActive])) {
+    if (!_audio && !ALCanDeliverVideoSample(delivered, protecting || [owner isVideoReplacementActive])) {
         if (replacement) CFRelease(replacement);
         return;
     }
@@ -302,7 +307,7 @@ static void ALInstallHooks(void) {
         _decoder.onFrame = ^(CVPixelBufferRef pixelBuffer, uint32_t sequence) {
             if (weakSelf.connectionPaused) return;
 #ifdef APPLELIVE_STANDALONE
-            if (![weakSelf.sourceKind isEqualToString:@"usb"]) return;
+            if (weakSelf.sourceSuspended || ![weakSelf.sourceKind isEqualToString:@"usb"]) return;
 #endif
             [weakSelf.frameStore storePixelBuffer:pixelBuffer sequence:sequence];
             weakSelf.lastVideoTime = CFAbsoluteTimeGetCurrent();
@@ -316,12 +321,15 @@ static void ALInstallHooks(void) {
         };
         _client.onAudioPCM = ^(const float *samples, NSUInteger count,
                                uint32_t channels, double rate) {
+#ifdef APPLELIVE_STANDALONE
+            if (weakSelf.sourceSuspended) return;
+#endif
             [weakSelf pushAudioSamples:samples count:count channels:channels sampleRate:rate];
             weakSelf.lastAudioTime = CFAbsoluteTimeGetCurrent();
         };
         _client.onDisconnected = ^{
 #ifdef APPLELIVE_STANDALONE
-            if (weakSelf.directUSB || ![weakSelf.sourceKind isEqualToString:@"usb"]) return;
+            if (weakSelf.sourceSuspended || weakSelf.directUSB || ![weakSelf.sourceKind isEqualToString:@"usb"]) return;
 #endif
             weakSelf.lastVideoTime = 0;
             weakSelf.lastAudioTime = 0;
@@ -331,33 +339,34 @@ static void ALInstallHooks(void) {
         };
 #ifdef APPLELIVE_STANDALONE
         _mediaPlayer.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) {
-            if (![@[@"local", @"network"] containsObject:weakSelf.sourceKind ?: @""]) return;
+            if (weakSelf.sourceSuspended || ![@[@"local", @"network"] containsObject:weakSelf.sourceKind ?: @""]) return;
             weakSelf.sourceRotation = rotation;
             [weakSelf.frameStore storePixelBuffer:frame sequence:weakSelf.frameStore.latestSequence + 1];
             weakSelf.lastVideoTime = CFAbsoluteTimeGetCurrent();
         };
         _mediaPlayer.onAudio = ^(const float *samples, NSUInteger frames) {
-            if (![@[@"local", @"network"] containsObject:weakSelf.sourceKind ?: @""]) return;
+            if (weakSelf.sourceSuspended || ![@[@"local", @"network"] containsObject:weakSelf.sourceKind ?: @""]) return;
             [weakSelf pushAudioSamples:samples count:frames channels:2 sampleRate:48000];
             weakSelf.lastAudioTime = CFAbsoluteTimeGetCurrent();
         };
         _mediaPlayer.onReset = ^{
-            if (![@[@"local", @"network"] containsObject:weakSelf.sourceKind ?: @""]) return;
+            if (weakSelf.sourceSuspended || ![@[@"local", @"network"] containsObject:weakSelf.sourceKind ?: @""]) return;
             [weakSelf clearAudioSamples];
-            if ([weakSelf.sourceKind isEqualToString:@"network"]) [weakSelf.frameStore markInterrupted];
+            [weakSelf.frameStore markInterrupted];
         };
         _usbReceiver.onConnected = ^{
-            if (![weakSelf.sourceKind isEqualToString:@"usb"]) return;
+            if (weakSelf.sourceSuspended || ![weakSelf.sourceKind isEqualToString:@"usb"]) return;
             weakSelf.directUSB = YES;
             [weakSelf.client disconnect];
             [weakSelf.decoder reset]; [weakSelf.frameStore markInterrupted]; [weakSelf clearAudioSamples];
             weakSelf.lastAudioTime = 0;
         };
         _usbReceiver.onBinary = ^(NSData *data) {
-            if (weakSelf.directUSB && !weakSelf.connectionPaused && [weakSelf.sourceKind isEqualToString:@"usb"])
+            if (!weakSelf.sourceSuspended && weakSelf.directUSB && !weakSelf.connectionPaused && [weakSelf.sourceKind isEqualToString:@"usb"])
                 [weakSelf.client acceptBinaryData:data];
         };
         _usbReceiver.onDisconnected = ^{
+            if (weakSelf.sourceSuspended) return;
             weakSelf.directUSB = NO;
             [weakSelf.client disconnect];
             if (![weakSelf.sourceKind isEqualToString:@"usb"]) return;
@@ -379,6 +388,7 @@ static void ALInstallHooks(void) {
         weakSelf.controls = controls;
 #ifdef APPLELIVE_STANDALONE
         [weakSelf configureAudioBridge];
+        ALRefreshPreviewProtection();
 #endif
         os_log(OS_LOG_DEFAULT, "[AppleLive] controls enabled=%d rotation=%d mirror=%d fill=%d camera=%d",
                [controls[@"enabled"] boolValue], [controls[@"rotation"] intValue],
@@ -431,7 +441,7 @@ static void ALInstallHooks(void) {
 
 - (void)applyConnection:(NSDictionary *)settings {
 #ifdef APPLELIVE_STANDALONE
-    if (![self.sourceKind isEqualToString:@"usb"]) return;
+    if (self.sourceSuspended || ![self.sourceKind isEqualToString:@"usb"]) return;
     self.connectionPaused = NO;
     [self configureAudioBridge];
     [self.client disconnect];
@@ -651,22 +661,33 @@ static void ALInstallHooks(void) {
 
 #ifdef APPLELIVE_STANDALONE
 - (void)selectSource:(NSString *)kind URL:(NSURL *)url {
+    kind = kind.length ? kind : @"none";
+    BOOL sameSource = [self.sourceKind isEqualToString:kind] &&
+        (self.sourceURL == url || [self.sourceURL isEqual:url]);
+    // Stop callbacks before tearing down transports. Suspension is distinct
+    // from explicitly restoring the physical camera. Every source uses this.
+    self.sourceSuspended = YES;
     self.sourceKind = kind;
+    ALRefreshPreviewProtection();
     [self.externalCamera stop];
     [self.mediaPlayer stop];
-    self.sourceURL = url;
-    self.sourceRotation = 0;
-    self.directUSB = NO;
     [self.usbReceiver stop];
-    self.connectionPaused = NO;
-    [self configureAudioBridge];
     [self.client disconnect];
     [self.decoder reset];
-    [self.frameStore clear];
+    self.sourceURL = url;
+    if (!sameSource || [kind isEqualToString:@"none"]) {
+        self.sourceRotation = 0;
+        [self.frameStore clear];
+    } else [self.frameStore markInterrupted];
+    ALRefreshPreviewProtection();
+    self.directUSB = NO;
+    self.connectionPaused = NO;
     [self clearAudioSamples];
     self.lastVideoTime = self.lastAudioTime = 0;
-    // Only an explicit source change clears the retained image. USB/LAN
-    // interruptions retain one frame while their decoders recover.
+    self.sourceSuspended = NO;
+    [self configureAudioBridge];
+    // Reapplying the same source (including foreground recovery) retains the
+    // last frame and its rotation until a new decoded image replaces it.
     if ([kind isEqualToString:@"usb"]) [self applyConnection:ALConnectionSettings()];
     else if ([kind isEqualToString:@"external"]) {
         if (!self.externalCamera) {
@@ -674,7 +695,7 @@ static void ALInstallHooks(void) {
             __weak typeof(self) weakSelf = self;
             self.externalCamera.onFrame = ^(CVPixelBufferRef frame) {
                 ALVirtualCamera *owner = weakSelf;
-                if (!owner || ![owner.sourceKind isEqualToString:@"external"]) return;
+                if (!owner || owner.sourceSuspended || ![owner.sourceKind isEqualToString:@"external"]) return;
                 [owner.frameStore storePixelBuffer:frame sequence:owner.frameStore.latestSequence + 1];
                 owner.lastVideoTime = CFAbsoluteTimeGetCurrent();
             };
@@ -699,6 +720,24 @@ static void ALInstallHooks(void) {
             }
         } else [self.mediaPlayer playURL:url];
     }
+}
+- (void)suspendSource {
+    if (self.sourceSuspended) return;
+    self.sourceSuspended = YES;
+    [self.externalCamera stop];
+    [self.mediaPlayer stop];
+    [self.usbReceiver stop];
+    [self.client disconnect];
+    [self.decoder reset];
+    self.directUSB = NO;
+    [self.frameStore markInterrupted];
+    [self clearAudioSamples];
+    self.lastVideoTime = self.lastAudioTime = 0;
+    // Keep the selected source and capture guard, even while background work
+    // is stopped. Returning to the app must never pass a physical-camera frame.
+}
+- (void)resumeSource {
+    if (self.sourceSuspended) [self selectSource:self.sourceKind URL:self.sourceURL];
 }
 - (NSDictionary *)mediaStatus {
     return [self.sourceKind isEqualToString:@"external"] ? self.externalCamera.status : self.mediaPlayer.status;

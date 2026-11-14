@@ -1,4 +1,5 @@
 #import "ALMediaPlayer.h"
+#import "ALFrameStore.h"
 #include <libavformat/avformat.h>
 #include <libavutil/time.h>
 #include <stdatomic.h>
@@ -51,16 +52,20 @@ done:
     av_packet_free(&packet); avformat_close_input(&input);
     if (output) { avio_closep(&output->pb); avformat_free_context(output); }
 }
-static BOOL testSource(NSString *url) {
+static BOOL testSource(NSString *url, const char *fixture, dispatch_group_t publisher) {
     ALMediaPlayer *player = [ALMediaPlayer new];
-    __block atomic_uint frames, audio;
+    ALFrameStore *store = [ALFrameStore new];
+    uint64_t sourceGeneration = store.generation;
+    __block atomic_uint frames, audio, resets;
     __block atomic_bool colorMetadata;
-    atomic_init(&frames, 0); atomic_init(&audio, 0); atomic_init(&colorMetadata, false);
+    atomic_init(&frames, 0); atomic_init(&audio, 0); atomic_init(&resets, 0); atomic_init(&colorMetadata, false);
     player.onFrame = ^(CVPixelBufferRef frame, NSInteger rotation) {
         if (hasVideoColorMetadata(frame)) atomic_store(&colorMetadata, true);
+        [store storePixelBuffer:frame sequence:atomic_load(&frames) + 1];
         atomic_fetch_add(&frames, 1);
     };
     player.onAudio = ^(const float *pcm, NSUInteger count) { atomic_fetch_add(&audio, (unsigned)count); };
+    player.onReset = ^{ [store markInterrupted]; atomic_fetch_add(&resets, 1); };
     [player playURL:[NSURL URLWithString:url]];
     BOOL started = NO, sawError = NO;
     // Give the demuxer/hardware-decoder probe a bounded startup window before
@@ -89,7 +94,37 @@ static BOOL testSource(NSString *url) {
             "%s passed=%d started=%d sawError=%d middleFrames=%u finalFrames=%u middleAudio=%u finalAudio=%u state=%s\n",
             url.UTF8String, passed, started, sawError, middleFrames, finalFrames, middleAudio, finalAudio,
             player.status.description.UTF8String);
+    // Disconnect a real H.264/AAC publisher. FFmpeg must reconnect without
+    // clearing the camera's replacement frame or changing the source token.
+    unsigned beforeReset = atomic_load(&resets);
+    atomic_store(&gStopPublisher, true);
+    if (dispatch_group_wait(publisher, dispatch_time(DISPATCH_TIME_NOW, 8 * NSEC_PER_SEC)) != 0) {
+        fputs("publisher did not stop within its I/O deadline\n", stderr); exit(1);
+    }
+    for (int i = 0; i < 240 && atomic_load(&resets) == beforeReset; i++) usleep(50000);
+    CVPixelBufferRef held = [store copyLatestPixelBuffer];
+    BOOL interrupted = atomic_load(&resets) > beforeReset && held &&
+        ![store hasFrameReceivedWithin:2] && store.generation == sourceGeneration;
+    usleep(900000);
+    CVPixelBufferRef stillHeld = [store copyLatestPixelBuffer];
+    interrupted = interrupted && stillHeld == held;
+    if (stillHeld) CVPixelBufferRelease(stillHeld);
+    if (held) CVPixelBufferRelease(held);
+    unsigned beforeRecovery = atomic_load(&frames);
+    atomic_store(&gStopPublisher, false);
+    dispatch_group_async(publisher, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{ publishFixture(fixture); });
+    BOOL recovered = NO;
+    for (int i = 0; i < 300; i++) {
+        if (atomic_load(&frames) >= beforeRecovery + 5 &&
+            [player.status[@"state"] isEqualToString:@"playing"] && [store hasFrameReceivedWithin:2]) { recovered = YES; break; }
+        usleep(50000);
+    }
+    passed = passed && interrupted && recovered && store.generation == sourceGeneration;
+    fprintf(passed ? stdout : stderr, "%s disconnect-retains=%d recovered=%d generation=%llu\n",
+            url.UTF8String, interrupted, recovered, (unsigned long long)store.generation);
     [player stop];
+    [store clear];
+    if ([store copyLatestPixelBuffer] != NULL) passed = NO;
     return passed;
 }
 int main(int argc, char **argv) {
@@ -99,8 +134,8 @@ int main(int argc, char **argv) {
         dispatch_group_t group = dispatch_group_create();
         dispatch_group_async(group, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{ publishFixture(argv[1]); });
         usleep(250000);
-        BOOL rtmp = testSource(@"rtmp://127.0.0.1:1935/live/applelive-test");
-        BOOL rtsp = testSource(@"rtsp://127.0.0.1:8554/live/applelive-test");
+        BOOL rtmp = testSource(@"rtmp://127.0.0.1:1935/live/applelive-test", argv[1], group);
+        BOOL rtsp = testSource(@"rtsp://127.0.0.1:8554/live/applelive-test", argv[1], group);
         atomic_store(&gStopPublisher, true); dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
         if (!rtmp || !rtsp) return 1;
         puts("RTMP and RTSP H.264/AAC network sources passed");

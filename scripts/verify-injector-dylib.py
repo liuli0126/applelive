@@ -19,6 +19,11 @@ def verify(path: Path) -> None:
         header = struct.unpack_from("<IIIIIIII", data, offset)
         if header[:3] != (0xFEEDFACF, cpu, subtype) or header[3] != 6:
             raise ValueError("Expected a 64-bit Mach-O dylib")
+        binary = data[offset:offset + size]
+        for marker in (b"ALInjectedScreenMonitor", b"suspendSource", b"resumeSource",
+                       b"clearStreamURL", b"pasteStreamURL"):
+            if marker not in binary:
+                raise ValueError(f"Missing current phone feature in {subtype:#x}: {marker.decode()}")
         cursor = offset + 32
         minimum = None
         imports = []

@@ -177,7 +177,7 @@ jobs:
           FF=.build/ios-ffmpeg/host
           xcrun clang -fobjc-arc -Iios-injector -Iios-tweak -I"$FF/include" \
             ios-injector/tests/media-test.m ios-injector/ALMediaPlayer.m \
-            ios-injector/ALSampleAudio.m ios-tweak/ALAudioRing.m ios-tweak/ALColorPipeline.m \
+            ios-injector/ALSampleAudio.m ios-tweak/ALAudioRing.m ios-tweak/ALColorPipeline.m ios-tweak/ALFrameStore.m \
             -L"$FF/lib" -lavformat -lavcodec -lswresample -lswscale -lavutil -lz -lbz2 -liconv \
             -framework Foundation -framework QuartzCore -framework CoreVideo -framework CoreMedia \
             -framework CoreImage -framework CoreGraphics -framework VideoToolbox \
@@ -201,7 +201,7 @@ jobs:
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           FF=.build/ios-ffmpeg/host
           xcrun clang -fobjc-arc -Iios-injector -I"$FF/include" \
-            -Iios-tweak ios-injector/tests/network-test.m ios-injector/ALMediaPlayer.m ios-tweak/ALColorPipeline.m \
+            -Iios-tweak ios-injector/tests/network-test.m ios-injector/ALMediaPlayer.m ios-tweak/ALColorPipeline.m ios-tweak/ALFrameStore.m \
             -L"$FF/lib" -lavformat -lavcodec -lswresample -lswscale -lavutil -lz -lbz2 -liconv \
             -framework Foundation -framework QuartzCore -framework CoreVideo -framework CoreMedia \
             -framework CoreImage -framework CoreGraphics -framework VideoToolbox \
@@ -246,6 +246,13 @@ jobs:
       - name: Build signed rootless UVC service and pairing app
         run: bash scripts/build-uvc-service.sh
 
+      - name: Build complete automatic-loading jailbreak installer
+        run: |
+          python3 scripts/build-full-rootless-deb.py injector-artifact/AppleLive.dylib \
+            injector-artifact/AppleLive-UVC-Service-rootless.deb injector-artifact/AppleLive-full-rootless.deb
+          python3 scripts/verify-uvc-service.py injector-artifact/AppleLive-full-rootless.deb \
+            injector-artifact/AppleLive.dylib --package-id com.applelive.full
+
       - name: Verify standalone binary
         run: |
           python3 scripts/verify-injector-dylib.py injector-artifact/AppleLive.dylib
@@ -254,6 +261,7 @@ jobs:
             exit 1
           fi
           shasum -a 256 injector-artifact/AppleLive.dylib > injector-artifact/SHA256.txt
+          shasum -a 256 injector-artifact/AppleLive-full-rootless.deb >> injector-artifact/SHA256.txt
 
       - name: Upload dylib
         uses: actions/upload-artifact@v4

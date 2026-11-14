@@ -8,10 +8,24 @@
 #include <libavutil/channel_layout.h>
 #include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 #include <stdatomic.h>
 #include <errno.h>
 #include <math.h>
+
+static BOOL ALIsLocalStreamHost(NSString *host) {
+    if (!host.length) return NO;
+    NSString *normalized = host.lowercaseString;
+    if ([normalized isEqualToString:@"localhost"] || [normalized hasSuffix:@".local"]) return YES;
+    struct in_addr address;
+    if (inet_pton(AF_INET, normalized.UTF8String, &address) != 1) return NO;
+    uint32_t value = ntohl(address.s_addr);
+    uint8_t first = (uint8_t)(value >> 24);
+    uint8_t second = (uint8_t)(value >> 16);
+    return first == 10 || first == 127 || (first == 169 && second == 254) ||
+        (first == 192 && second == 168) || (first == 172 && second >= 16 && second <= 31);
+}
 
 typedef struct {
     atomic_uint *generation;
@@ -166,44 +180,52 @@ static int ALSwsColorSpace(enum AVColorSpace space) {
     BOOL local = url.isFileURL;
     NSString *scheme = nil;
     BOOL rtmp = NO;
+    double ioTimeout = 5;
     if (!input || !packet || !frame) goto cleanup;
     input->interrupt_callback = (AVIOInterruptCB){ALInterruptMedia, &interrupt};
     scheme = url.scheme.lowercaseString;
     rtmp = [scheme isEqualToString:@"rtmp"] || [scheme isEqualToString:@"rtmps"];
     BOOL rtsp = [scheme isEqualToString:@"rtsp"];
-    if (!local && !rtsp) { input->flags |= AVFMT_FLAG_NOBUFFER; input->max_delay = 100000; }
+    BOOL lowLatencyRTMP = rtmp && ALIsLocalStreamHost(url.host);
+    ioTimeout = rtmp && !lowLatencyRTMP ? 10 : rtsp ? 8 : 5;
+    if (!local && lowLatencyRTMP) { input->flags |= AVFMT_FLAG_NOBUFFER; input->max_delay = 100000; }
     AVDictionary *options = NULL;
     if (!local) {
-        // RTSP needs its probe packets retained so the decoder can see the
-        // first keyframe. RTMP keeps the shorter low-latency probe below.
-        av_dict_set(&options, "rw_timeout", "3000000", 0);
+        // RTSP keeps probe packets so the decoder can see the first keyframe.
+        // Non-local RTMP uses a longer probe; local RTMP uses the short one.
+        av_dict_set(&options, "rw_timeout", rtmp ? (lowLatencyRTMP ? "3000000" : "10000000") : "3000000", 0);
         if (rtsp) {
             av_dict_set(&options, "rtsp_transport", "tcp", 0);
             av_dict_set(&options, "probesize", "1048576", 0);
             av_dict_set(&options, "analyzeduration", "1500000", 0);
-        } else {
+        } else if (lowLatencyRTMP) {
             av_dict_set(&options, "probesize", "262144", 0);
             av_dict_set(&options, "analyzeduration", "750000", 0);
         }
         if (rtmp) {
-            // RTMP from OBS benefits from a short probe and no demux queue;
-            // RTSP keeps the more conservative probe settings for decoder
-            // compatibility with cameras and MediaMTX.
-            av_dict_set(&options, "fpsprobesize", "2", 0);
-            av_dict_set(&options, "fflags", "nobuffer", 0);
-            av_dict_set(&options, "flags", "low_delay", 0);
-            av_dict_set(&options, "max_delay", "0", 0);
+            // Local OBS streams use the short probe for latency. Non-local RTMP
+            // endpoints may need more packets to expose stream metadata, so
+            // leave their normal buffering enabled.
+            if (lowLatencyRTMP) {
+                av_dict_set(&options, "fpsprobesize", "2", 0);
+                av_dict_set(&options, "fflags", "nobuffer", 0);
+                av_dict_set(&options, "flags", "low_delay", 0);
+                av_dict_set(&options, "max_delay", "0", 0);
+            } else {
+                av_dict_set(&options, "probesize", "1048576", 0);
+                av_dict_set(&options, "analyzeduration", "2500000", 0);
+            }
         }
         if (rtmp) av_dict_set(&options, "rtmp_live", "live", 0);
     }
     // Both opening the socket and probing stream metadata can block when a
     // RTSP path exists but has no publisher. Bound each phase separately so
     // the panel leaves "正在读取" with a useful error instead of hanging.
-    if (!local) interrupt.deadline = CACurrentMediaTime() + (rtsp ? 8 : 5);
+    if (!local) interrupt.deadline = CACurrentMediaTime() + ioTimeout;
     error = avformat_open_input(&input, local ? url.path.UTF8String : url.absoluteString.UTF8String, NULL, &options);
     av_dict_free(&options);
     if (error < 0) goto cleanup;
-    if (!local) interrupt.deadline = CACurrentMediaTime() + (rtsp ? 8 : 5);
+    if (!local) interrupt.deadline = CACurrentMediaTime() + ioTimeout;
     error = avformat_find_stream_info(input, NULL);
     interrupt.deadline = 0;
     if (error < 0) goto cleanup;
@@ -255,7 +277,7 @@ static int ALSwsColorSpace(enum AVColorSpace space) {
                     lastVideoOutput = 0; originPTS = NAN;
                 }
             }
-            interrupt.deadline = local ? 0 : now + 5;
+            interrupt.deadline = local ? 0 : now + ioTimeout;
             error = av_read_frame(input, packet);
             interrupt.deadline = 0;
             if (firstVideoDeadline > 0 && CACurrentMediaTime() > firstVideoDeadline) {

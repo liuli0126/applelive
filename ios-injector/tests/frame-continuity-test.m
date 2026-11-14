@@ -59,6 +59,10 @@ static void checkHeld(ALFrameStore *store, CVPixelBufferRef expected) {
 static void testPreview(void) {
     TestDisplayLayer *layer = [TestDisplayLayer new];
     layer.acceptsFrames = YES;
+    layer.hidden = YES;
+    ALUpdatePreviewLayer(layer, NULL, 1, YES);
+    check(!layer.hidden && !layer.displayedPixel,
+          "newly attached preview covers the physical camera before its first decoded frame");
     CVPixelBufferRef first = pixel(), second = pixel();
     ALUpdatePreviewLayer(layer, first, 1, YES);
     check(!layer.hidden && layer.displayedPixel == first, "first stream frame is visible");
